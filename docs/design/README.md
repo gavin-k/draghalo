@@ -27,3 +27,5 @@
 - 轮盘：直径 300–340 px，外环 r=146，内环 r=54，6 扇区 60° 起点 -120°，中心圆 108 px
 
 > 导出的 PNG / SVG 放入本目录 `exports/`。
+
+- Logo：`exports/dropwheel-logo.svg`（母版）和 `exports/dropwheel-logo-1024.png`，与 App 的全部图标一起由 `scripts/gen-icons.py` 生成，不要手改；概念和尺寸说明见 `src/DropWheel.App/Assets/README.md`。
