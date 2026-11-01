@@ -5,7 +5,7 @@ namespace DropWheel.Core.Wheel;
 
 /// <summary>
 /// The built-in operations followed by whatever the user's tools folder holds right now, read afresh on every
-/// enumeration, so a tool written while DropWheel runs is on the next wheel that opens.
+/// enumeration, so a tool written while DragHalo runs is on the next wheel that opens.
 /// </summary>
 public sealed class LiveOperations(IReadOnlyList<IWheelOperation> builtIns, UserToolCatalog catalog) : IReadOnlyList<IWheelOperation>
 {

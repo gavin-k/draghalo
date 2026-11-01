@@ -140,7 +140,7 @@ internal static class HostScenario
 
     public static string SampleFile(string name)
     {
-        var dir = Path.Combine(Path.GetTempPath(), "DropWheelAcceptance");
+        var dir = Path.Combine(Path.GetTempPath(), "DragHaloAcceptance");
         Directory.CreateDirectory(dir);
         var file = Path.Combine(dir, name);
         File.WriteAllBytes(file, new byte[1024]);

@@ -42,7 +42,7 @@ public sealed unsafe class DropTargetHost : IDisposable
 {
     private const uint ShowMessage = PInvoke.WM_APP + 1;
     private const uint HideMessage = PInvoke.WM_APP + 2;
-    private const string ClassName = "DropWheel.DropTargetHost";
+    private const string ClassName = "DragHalo.DropTargetHost";
 
     private readonly Target _target;
     private Thread? _thread;
@@ -171,7 +171,7 @@ public sealed unsafe class DropTargetHost : IDisposable
         var hwnd = PInvoke.CreateWindowEx(
             WINDOW_EX_STYLE.WS_EX_LAYERED | WINDOW_EX_STYLE.WS_EX_TOPMOST | WINDOW_EX_STYLE.WS_EX_TOOLWINDOW | WINDOW_EX_STYLE.WS_EX_NOACTIVATE,
             ClassName,
-            "DropWheel drop target",
+            "DragHalo drop target",
             WINDOW_STYLE.WS_POPUP,
             0, 0, 1, 1,
             default, null, module, null);

@@ -11,7 +11,7 @@ internal static class Program
                                                    on the centre, on a disabled sector
           DropWheel.Acceptance hooks [--explorer]  DragMonitor: drag phases, Shift / Ctrl+Alt / Win taps, long hold
           DropWheel.Acceptance fileops             ShellFileOperations: recycle, move with a collision
-          DropWheel.Acceptance app --exe <DropWheel.exe> [--root <folder>] [--explorer]
+          DropWheel.Acceptance app --exe <DragHalo.exe> [--root <folder>] [--explorer]
                                                    the M0 flow against the real app: JPG to PNG, Undo,
                                                    then a release off the wheel. --root is the package's
                                                    install folder when --exe is the MSIX execution alias

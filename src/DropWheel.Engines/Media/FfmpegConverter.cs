@@ -10,7 +10,7 @@ namespace DropWheel.Engines.Media;
 /// </summary>
 public sealed class FfmpegConverter : IConverter
 {
-    internal static string Missing => L.T("找不到 ffmpeg 组件，请重新安装 DropWheel");
+    internal static string Missing => L.T("找不到 ffmpeg 组件，请重新安装 DragHalo");
 
     private readonly Lazy<FfmpegTools?> _tools;
     private readonly TimeProvider _time;

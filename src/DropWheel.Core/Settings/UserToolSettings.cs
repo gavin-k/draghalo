@@ -4,7 +4,7 @@ namespace DropWheel.Core.Settings;
 
 /// <summary>
 /// Which user tools the user has switched on in Settings › 我的工具, each with the command hash it was switched
-/// on for: a script tool runs code DropWheel did not write, so a new tool, or one whose command changed since,
+/// on for: a script tool runs code DragHalo did not write, so a new tool, or one whose command changed since,
 /// is greyed until the user looks at it and switches it on again.
 /// </summary>
 public sealed record UserToolSettings(ImmutableSortedDictionary<string, string> Trusted)

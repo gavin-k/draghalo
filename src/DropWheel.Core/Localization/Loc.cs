@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 
 namespace DropWheel.Core.Localization;
 
-/// <summary>The language DropWheel speaks to the user in.</summary>
+/// <summary>The language DragHalo speaks to the user in.</summary>
 public enum UiLanguage { Chinese, English }
 
 /// <summary>

@@ -7,7 +7,7 @@ namespace DropWheel.Acceptance;
 
 internal static partial class AppScenario
 {
-    private const string ConflictTitle = "DropWheel 同名文件";
+    private const string ConflictTitle = "DragHalo 同名文件";
 
     // TDM_CLICK_BUTTON and the question's button ids, from DropWheel.Shell.ConflictDialog.
     private const uint ClickButton = 0x0400 + 102;
@@ -34,7 +34,7 @@ internal static partial class AppScenario
 
     private static void SameNameSteps(Checks checks, AppLog log, int app, string folder, bool explorer)
     {
-        var dir = Path.Combine(Path.GetTempPath(), "DropWheelAcceptance", "same");
+        var dir = Path.Combine(Path.GetTempPath(), "DragHaloAcceptance", "same");
         Directory.CreateDirectory(dir);
         foreach (var old in Directory.GetFiles(dir))
         {

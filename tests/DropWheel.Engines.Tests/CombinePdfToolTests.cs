@@ -12,7 +12,7 @@ namespace DropWheel.Engines.Tests;
 
 public sealed class CombinePdfToolTests : IDisposable
 {
-    private readonly string _dir = Directory.CreateTempSubdirectory("dropwheel-combine-").FullName;
+    private readonly string _dir = Directory.CreateTempSubdirectory("draghalo-combine-").FullName;
     private readonly CombinePdfTool _tool = new();
 
     public void Dispose() => Directory.Delete(_dir, recursive: true);

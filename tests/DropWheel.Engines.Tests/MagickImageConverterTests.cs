@@ -8,7 +8,7 @@ namespace DropWheel.Engines.Tests;
 
 public sealed class MagickImageConverterTests : IDisposable
 {
-    private readonly string _dir = Directory.CreateTempSubdirectory("dropwheel-engines-").FullName;
+    private readonly string _dir = Directory.CreateTempSubdirectory("draghalo-engines-").FullName;
     private readonly MagickImageConverter _converter = new();
 
     /// <summary>

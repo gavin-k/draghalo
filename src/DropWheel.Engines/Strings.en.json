@@ -96,7 +96,7 @@
   "幻灯片 {0}": "Slide {0}",
   "扫描件没有文字层，提取不出文字": "A scan has no text layer, so no text comes out",
   "扫描件没有文字层，提取不出文字；带文字层的扫描件只保留文字": "A scan has no text layer, so no text comes out; a scan with a text layer keeps only the text",
-  "找不到 ffmpeg 组件，请重新安装 DropWheel": "The ffmpeg component is missing; reinstall DropWheel",
+  "找不到 ffmpeg 组件，请重新安装 DragHalo": "The ffmpeg component is missing; reinstall DragHalo",
   "找不到 {0}": "Can't find {0}",
   "拆分 PDF": "Split PDF",
   "按 SVG 标明的尺寸转成位图": "Drawn as pixels at the size the SVG gives",

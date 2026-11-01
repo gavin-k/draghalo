@@ -13,7 +13,7 @@ using DropWheel.Engines.Tools;
 namespace DropWheel.App;
 
 /// <summary>
-/// The converters DropWheel ships, registered into one graph, and the built-in tools made from them. The app and
+/// The converters DragHalo ships, registered into one graph, and the built-in tools made from them. The app and
 /// the tool command line (<see cref="Program"/>) both build this, so a recipe an agent validates from the console
 /// is checked against the same steps and the same conversions the wheel will run.
 /// </summary>

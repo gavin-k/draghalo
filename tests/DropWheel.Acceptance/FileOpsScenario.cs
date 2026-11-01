@@ -10,7 +10,7 @@ internal static class FileOpsScenario
     {
         var checks = new Checks();
         var ops = new ShellFileOperations();
-        var dir = Path.Combine(Path.GetTempPath(), "DropWheelAcceptance", "fileops");
+        var dir = Path.Combine(Path.GetTempPath(), "DragHaloAcceptance", "fileops");
         Directory.CreateDirectory(dir);
         var stamp = DateTime.Now.ToString("HHmmss");
 

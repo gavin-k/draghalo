@@ -3,10 +3,10 @@
 # dependencies = ["pillow>=10"]
 # ///
 """
-Draws the DropWheel logo and writes every size the app ships:
+Draws the DragHalo logo and writes every size the app ships:
 
-  docs/design/exports/dropwheel-logo.svg       master (256 x 256)
-  src/DropWheel.App/Assets/DropWheel.ico       windows, tray, exe, MSI (16 ... 256 px)
+  docs/design/exports/draghalo-logo.svg       master (256 x 256)
+  src/DropWheel.App/Assets/DragHalo.ico       windows, tray, exe, MSI (16 ... 256 px)
   src/DropWheel.App/Assets/*.png               MSIX visual assets, unqualified plus scale-* / targetsize-* variants
 
 The mark is the conversion wheel itself: an orange plate, a ring cut into the wheel's six 60-degree sectors (the
@@ -120,7 +120,7 @@ def svg() -> str:
     top, bottom = ("#%02X%02X%02X" % PLATE_TOP), ("#%02X%02X%02X" % PLATE_BOTTOM)
     return "\n".join([
         '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">',
-        "  <title>DropWheel</title>",
+        "  <title>DragHalo</title>",
         f'  <defs><linearGradient id="plate" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{top}"/><stop offset="1" stop-color="{bottom}"/></linearGradient></defs>',
         f'  <rect x="{inset}" y="{inset}" width="{side}" height="{side}" rx="{g["radius"]}" fill="url(#plate)"/>',
         *paths,
@@ -173,10 +173,10 @@ def save(img: Image.Image, name: str):
 
 def main():
     EXPORTS.mkdir(parents=True, exist_ok=True)
-    (EXPORTS / "dropwheel-logo.svg").write_text(svg(), encoding="utf-8")
-    icon(1024).save(EXPORTS / "dropwheel-logo-1024.png", "PNG", optimize=True)
+    (EXPORTS / "draghalo-logo.svg").write_text(svg(), encoding="utf-8")
+    icon(1024).save(EXPORTS / "draghalo-logo-1024.png", "PNG", optimize=True)
 
-    write_ico(ASSETS / "DropWheel.ico", [16, 20, 24, 28, 32, 36, 40, 48, 64, 96, 128, 256])
+    write_ico(ASSETS / "DragHalo.ico", [16, 20, 24, 28, 32, 36, 40, 48, 64, 96, 128, 256])
 
     scales = [100, 125, 150, 200, 400]
     # Square44x44Logo: app list, taskbar, Alt+Tab. The plate is the icon, so plated and unplated are the same picture.

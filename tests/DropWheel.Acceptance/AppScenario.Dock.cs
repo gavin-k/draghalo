@@ -7,7 +7,7 @@ namespace DropWheel.Acceptance;
 
 internal static partial class AppScenario
 {
-    private const string DockTitle = "DropWheel 停靠栏";
+    private const string DockTitle = "DragHalo 停靠栏";
     private const int DockBudgetMs = 300;
 
     /// <summary>

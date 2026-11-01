@@ -2,12 +2,12 @@ using System.Globalization;
 
 namespace DropWheel.Core.Privacy;
 
-/// <summary>Which daily logs, named dropwheel-yyyyMMdd.log, are past keeping: they hold the paths of converted files.</summary>
+/// <summary>Which daily logs, named draghalo-yyyyMMdd.log, are past keeping: they hold the paths of converted files.</summary>
 public static class LogRetention
 {
     public const int KeepDays = 7;
 
-    private const string Prefix = "dropwheel-";
+    private const string Prefix = "draghalo-";
 
     /// <summary>The logs among <paramref name="files"/> older than <see cref="KeepDays"/> days, today counted as one; other files are left alone.</summary>
     public static IEnumerable<string> Expired(IEnumerable<string> files, DateOnly today) =>

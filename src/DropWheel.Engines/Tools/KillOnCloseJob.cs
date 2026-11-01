@@ -6,7 +6,7 @@ namespace DropWheel.Engines.Tools;
 
 /// <summary>
 /// One Windows job object for the app's lifetime with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: every process assigned to
-/// it dies with DropWheel, even when DropWheel crashes and never gets to kill it. A no-op elsewhere.
+/// it dies with DragHalo, even when DragHalo crashes and never gets to kill it. A no-op elsewhere.
 /// </summary>
 public static class KillOnCloseJob
 {

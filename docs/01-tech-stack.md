@@ -142,7 +142,7 @@ Windows **没有**「全局拖拽开始」事件。Microsoft Q&A 上的讨论给
 ## 6. 许可证边界（MIT 主程序）
 
 ```
-DropWheel.exe (MIT)
+DragHalo.exe (MIT)
  ├─ 进程内：Magick.NET (Apache-2.0) · PdfPig (Apache-2.0) · PDFium (BSD-3 / Apache-2.0) · SkiaSharp (MIT) · SharpCompress (MIT)
  └─ 子进程：ffmpeg.exe (LGPL-2.1+) · soffice.exe (MPL-2.0，可选下载)
 ```

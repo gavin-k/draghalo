@@ -4,8 +4,8 @@ using Windows.ApplicationModel;
 namespace DropWheel.App.Settings;
 
 /// <summary>
-/// 登录 Windows 时启动 for a DropWheel without a package (the MSI, a copied folder), which has no startup
-/// task: a value under the user's Run key that starts this DropWheel.exe with <see cref="Switch"/>. The state
+/// 登录 Windows 时启动 for a DragHalo without a package (the MSI, a copied folder), which has no startup
+/// task: a value under the user's Run key that starts this DragHalo.exe with <see cref="Switch"/>. The state
 /// uses the startup task's words, so the settings window shows both the same way.
 /// </summary>
 internal static class SignInRun
@@ -15,7 +15,7 @@ internal static class SignInRun
 
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string ApprovedKey = @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
-    private const string Name = "DropWheel";
+    private const string Name = "DragHalo";
 
     /// <summary>
     /// Enabled while the value is there, DisabledByUser once Task Manager's 启动应用 has turned it off (the

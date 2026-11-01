@@ -16,7 +16,7 @@ internal sealed class DragSourceForm : Form
     public DragSourceForm(string file, Point at)
     {
         _file = file;
-        Text = "DropWheel acceptance source";
+        Text = "DragHalo acceptance source";
         FormBorderStyle = FormBorderStyle.FixedSingle;
         StartPosition = FormStartPosition.Manual;
         Location = at;

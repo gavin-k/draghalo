@@ -1,5 +1,5 @@
 {
-  "DropWheel 同名文件": "DropWheel Name Conflict",
+  "DragHalo 同名文件": "DragHalo Name Conflict",
   "「{0}」已经存在": "“{0}” already exists",
   "位置：{0}\n替换会把原来的文件夹移到回收站，之后撤销这个任务也不会把它移回来。保留两个会给新的加上编号。": "Location: {0}\nReplace moves the existing folder to the Recycle Bin, and undoing this task later won't bring it back. Keep both gives the new one a number.",
   "位置：{0}\n替换会把原来的文件移到回收站，之后撤销这个任务也不会把它移回来。保留两个会给新的加上编号。": "Location: {0}\nReplace moves the existing file to the Recycle Bin, and undoing this task later won't bring it back. Keep both gives the new one a number.",

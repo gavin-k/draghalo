@@ -7,7 +7,7 @@ namespace DropWheel.Core.Tests;
 public sealed class OutputFilesTests : IDisposable
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 25, 9, 0, 0, TimeSpan.FromHours(8));
-    private readonly string _dir = Directory.CreateTempSubdirectory("dropwheel-outputs-").FullName;
+    private readonly string _dir = Directory.CreateTempSubdirectory("draghalo-outputs-").FullName;
 
     public void Dispose() => Directory.Delete(_dir, recursive: true);
 

@@ -6,7 +6,7 @@ using DropWheel.Core.Wheel;
 namespace DropWheel.Core.Tools;
 
 /// <summary>
-/// A user tool that runs a script. DropWheel hands the script a temporary output path beside the target and moves
+/// A user tool that runs a script. DragHalo hands the script a temporary output path beside the target and moves
 /// the file into place through <see cref="OutputFiles"/>, so naming, conflicts, rollback and undo work as for any
 /// engine; the script never names its own output. Stateless, as the queue reuses the instance for retries.
 /// </summary>

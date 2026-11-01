@@ -18,7 +18,7 @@ public sealed class ArchiveConverterTests : IDisposable
     /// <summary>Even seconds: zip stores times in two-second steps.</summary>
     private static readonly DateTime Modified = new(2024, 5, 6, 7, 8, 10, DateTimeKind.Local);
 
-    private readonly string _dir = Directory.CreateTempSubdirectory("dropwheel-archive-").FullName;
+    private readonly string _dir = Directory.CreateTempSubdirectory("draghalo-archive-").FullName;
     private readonly SharpCompressArchiveConverter _converter = new(legacyNames: Gbk);
 
     private static Encoding Gbk

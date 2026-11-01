@@ -19,7 +19,7 @@ internal static partial class AppScenario
     /// </summary>
     private static void Tools(Checks checks, AppLog log, string exe, bool explorer)
     {
-        var dir = Path.Combine(Path.GetTempPath(), "DropWheelAcceptance", "tools");
+        var dir = Path.Combine(Path.GetTempPath(), "DragHaloAcceptance", "tools");
         Directory.CreateDirectory(dir);
         foreach (var old in Directory.GetFiles(dir))
         {
@@ -74,7 +74,7 @@ internal static partial class AppScenario
         {
             g.Clear(Color.White);
             g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-            g.DrawString("DropWheel 2026", font, Brushes.Black, 24, 20);
+            g.DrawString("DragHalo 2026", font, Brushes.Black, 24, 20);
             g.DrawString("Hello OCR", font, Brushes.Black, 24, 110);
             bitmap.Save(png, ImageFormat.Png);
         }

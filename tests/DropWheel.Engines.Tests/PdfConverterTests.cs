@@ -20,7 +20,7 @@ namespace DropWheel.Engines.Tests;
 
 public sealed class PdfConverterTests : IDisposable
 {
-    private readonly string _dir = Directory.CreateTempSubdirectory("dropwheel-pdf-").FullName;
+    private readonly string _dir = Directory.CreateTempSubdirectory("draghalo-pdf-").FullName;
     private readonly PdfConverter _converter = new();
 
     public void Dispose() => Directory.Delete(_dir, recursive: true);

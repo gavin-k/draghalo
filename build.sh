@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# DropWheel build entry point.
+# DragHalo build entry point.
 #   macOS / Linux : restore + build + test DropWheel.Core, DropWheel.Engines and their tests. Engines targets
 #                   net10.0-windows but only needs Windows APIs at run time for things the tests do not touch,
 #                   and Magick.NET ships macOS / Linux native libraries.

@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/gavin-k/dropwheel/main/docs/tool-manifest.schema.json",
+  "$schema": "https://raw.githubusercontent.com/gavin-k/draghalo/main/docs/tool-manifest.schema.json",
   "schema": 1,
   "id": "user.web-jpg",
   "name": { "zh": "发网上", "en": "Web JPG" },

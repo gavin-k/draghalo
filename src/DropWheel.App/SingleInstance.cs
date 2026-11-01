@@ -3,13 +3,13 @@ using Windows.Win32;
 namespace DropWheel.App;
 
 /// <summary>
-/// One DropWheel per session. A second launch hands over to the first and exits: a plain launch asks it
+/// One DragHalo per session. A second launch hands over to the first and exits: a plain launch asks it
 /// to show its task window, <c>--quit</c> asks it to exit. Named auto-reset events, so a signal sent
 /// before the first instance starts listening is not lost.
 /// </summary>
 internal sealed class SingleInstance : IDisposable
 {
-    private const string Name = @"Local\DropWheel.App";
+    private const string Name = @"Local\DragHalo.App";
     private readonly Mutex _mutex;
     private readonly EventWaitHandle _show = new(false, EventResetMode.AutoReset, Name + ".Show");
     private readonly EventWaitHandle _quit = new(false, EventResetMode.AutoReset, Name + ".Quit");

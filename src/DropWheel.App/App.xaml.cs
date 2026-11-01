@@ -28,7 +28,7 @@ namespace DropWheel.App;
 /// Composition: the conversion engines and file actions, job queue with Recycle Bin undo, the hook thread
 /// and drop target host from DropWheel.Shell, the wheel overlay, the dock at the screen edge, the task, settings and
 /// first-run guide windows and the tray icon. Key changes made in Settings reach the hooks at once. One instance per session; launching
-/// again shows the task window (the guide, until it has been seen), <c>DropWheel.exe --quit</c> exits
+/// again shows the task window (the guide, until it has been seen), <c>DragHalo.exe --quit</c> exits
 /// the running one.
 /// The app lives in the tray: closing the task window hides it, the tray menu's 退出 quits.
 /// </summary>
@@ -69,12 +69,12 @@ public partial class App : Application
         {
             if (_instance.IsFirst)
             {
-                FileLog.Info("--quit: no DropWheel is running in this session");
+                FileLog.Info("--quit: no DragHalo is running in this session");
             }
             else
             {
                 _instance.Signal(quit);
-                FileLog.Info($"another DropWheel is already running in this session; asked it to {(quit ? "quit" : "show its task window")}");
+                FileLog.Info($"another DragHalo is already running in this session; asked it to {(quit ? "quit" : "show its task window")}");
             }
 
             FileLog.Flush(TimeSpan.FromSeconds(1));
@@ -87,7 +87,7 @@ public partial class App : Application
         {
             _network = new NetworkWatch();
             _network.Seen += what => FileLog.Info($"network: {what}");
-            FileLog.Info($"DropWheel {typeof(App).Assembly.GetName().Version} starting on {RuntimeInformation.OSDescription} {RuntimeInformation.OSArchitecture}, process {RuntimeInformation.ProcessArchitecture}");
+            FileLog.Info($"DragHalo {typeof(App).Assembly.GetName().Version} starting on {RuntimeInformation.OSDescription} {RuntimeInformation.OSArchitecture}, process {RuntimeInformation.ProcessArchitecture}");
             if (FileLog.Prune() is > 0 and var pruned)
             {
                 FileLog.Info($"log: deleted {pruned} daily log(s) older than {LogRetention.KeepDays} days");
@@ -141,7 +141,7 @@ public partial class App : Application
             _monitor.Faulted += ex => FileLog.Error("hook thread handler failed", ex);
             _host = new DropTargetHost();
 
-            var skillPath = Path.Combine(AppContext.BaseDirectory, "skills", "dropwheel-tool", "SKILL.md");
+            var skillPath = Path.Combine(AppContext.BaseDirectory, "skills", "draghalo-tool", "SKILL.md");
             var settingsWindow = _settingsWindow = new SettingsWindow(settings, operations, catalog, layout, skillPath, _network, ui);
             var queueWindow = _queueWindow = new QueueWindow(_queue, ui, settingsWindow.Show);
             queueWindow.ShowKeys(settings.Current.Keys.KeysFor(WheelMode.Convert));
@@ -160,12 +160,12 @@ public partial class App : Application
 
             _host.Start();
             _monitor.Start();
-            _tray = new TrayIcon(queueWindow.Handle, "DropWheel", Path.Combine(AppContext.BaseDirectory, "Assets", "DropWheel.ico"),
+            _tray = new TrayIcon(queueWindow.Handle, "DragHalo", Path.Combine(AppContext.BaseDirectory, "Assets", "DragHalo.ico"),
             [
                 (L.T("打开任务窗口"), () => queueWindow.Show()),
                 (L.T("设置"), settingsWindow.Show),
                 (L.T("入门指南"), onboarding.Show),
-                (L.T("退出 DropWheel"), Shutdown),
+                (L.T("退出 DragHalo"), Shutdown),
             ]);
             _tray.Selected += () => queueWindow.Show();
             catalog.Changed += snapshot => ui.TryEnqueue(() => OnToolsChanged(snapshot, layout, operations));
@@ -240,9 +240,9 @@ public partial class App : Application
         Shutdown();
     }
 
-    /// <summary>Where settings, layout and the tools folder live: <c>--data-dir</c>, else %LOCALAPPDATA%\DropWheel.</summary>
+    /// <summary>Where settings, layout and the tools folder live: <c>--data-dir</c>, else %LOCALAPPDATA%\DragHalo.</summary>
     internal static string DataDir(string[] args) =>
-        ArgValue(args, "--data-dir") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DropWheel");
+        ArgValue(args, "--data-dir") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DragHalo");
 
     private static string? ArgValue(string[] args, string name) =>
         Array.IndexOf(args, name) is var i and >= 0 && i + 1 < args.Length ? args[i + 1] : null;

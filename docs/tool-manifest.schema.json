@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/gavin-k/dropwheel/schemas/tool-manifest/v1",
-  "title": "DropWheel tool manifest",
-  "description": "tool.json for a user tool in %LOCALAPPDATA%\\DropWheel\\tools\\<slug>\\. See skills/dropwheel-tool/SKILL.md and docs/adr/0005-user-tools-manifest-and-trust.md.",
+  "$id": "https://github.com/gavin-k/draghalo/schemas/tool-manifest/v1",
+  "title": "DragHalo tool manifest",
+  "description": "tool.json for a user tool in %LOCALAPPDATA%\\DragHalo\\tools\\<slug>\\. See skills/draghalo-tool/SKILL.md and docs/adr/0005-user-tools-manifest-and-trust.md.",
   "type": "object",
   "required": ["schema", "id", "name", "wheel"],
   "additionalProperties": true,
@@ -15,7 +15,7 @@
     "id": {
       "type": "string",
       "pattern": "^user\\.[a-z0-9-]+$",
-      "description": "Unique across the tools folder. Becomes the operation id DropWheel records in jobs."
+      "description": "Unique across the tools folder. Becomes the operation id DragHalo records in jobs."
     },
     "name": { "$ref": "#/$defs/text", "description": "Shown on the wheel sector." },
     "hint": { "$ref": "#/$defs/text", "description": "One line shown in the wheel's centre while hovering." },

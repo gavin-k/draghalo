@@ -3,12 +3,12 @@ using System.Text;
 namespace DropWheel.Acceptance;
 
 /// <summary>
-/// Tails the app's own log (%LOCALAPPDATA%\DropWheel\logs\dropwheel-*.log) from the moment this object is
+/// Tails the app's own log (%LOCALAPPDATA%\DragHalo\logs\draghalo-*.log) from the moment this object is
 /// created, so a scenario can wait for lines the app writes. Every new line is echoed as "app> ...".
 /// </summary>
 internal sealed class AppLog
 {
-    private readonly string _directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DropWheel", "logs");
+    private readonly string _directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DragHalo", "logs");
     private readonly Dictionary<string, long> _offsets = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<string> _lines = [];
     private int _mark;
@@ -17,7 +17,7 @@ internal sealed class AppLog
     {
         if (Directory.Exists(_directory))
         {
-            foreach (var file in Directory.GetFiles(_directory, "dropwheel-*.log"))
+            foreach (var file in Directory.GetFiles(_directory, "draghalo-*.log"))
             {
                 _offsets[file] = new FileInfo(file).Length;
             }
@@ -75,7 +75,7 @@ internal sealed class AppLog
             return;
         }
 
-        foreach (var file in Directory.GetFiles(_directory, "dropwheel-*.log").Order(StringComparer.OrdinalIgnoreCase))
+        foreach (var file in Directory.GetFiles(_directory, "draghalo-*.log").Order(StringComparer.OrdinalIgnoreCase))
         {
             var offset = _offsets.GetValueOrDefault(file);
             try

@@ -17,7 +17,7 @@ public sealed class SheetConverterTests : IDisposable
 
     private const string S = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 
-    private readonly string _dir = Directory.CreateTempSubdirectory("dropwheel-sheet-").FullName;
+    private readonly string _dir = Directory.CreateTempSubdirectory("draghalo-sheet-").FullName;
     private readonly SheetConverter _converter = new();
     private readonly List<X.SharedStringItem> _shared = [];
 

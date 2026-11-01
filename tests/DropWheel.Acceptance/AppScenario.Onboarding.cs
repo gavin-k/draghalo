@@ -7,15 +7,15 @@ namespace DropWheel.Acceptance;
 
 internal static partial class AppScenario
 {
-    private const string GuideTitle = "DropWheel 入门";
+    private const string GuideTitle = "DragHalo 入门";
 
     /// <summary>
-    /// Started the way the Run value starts it, with --at-sign-in, DropWheel stays in the tray even with no
+    /// Started the way the Run value starts it, with --at-sign-in, DragHalo stays in the tray even with no
     /// settings file yet: no guide, no task window. With no language picked it speaks the one Windows shows.
     /// </summary>
     private static void AtSignIn(Checks checks, string exe)
     {
-        var profile = Path.Combine(Path.GetTempPath(), "DropWheelAcceptance", "at-sign-in");
+        var profile = Path.Combine(Path.GetTempPath(), "DragHaloAcceptance", "at-sign-in");
         if (Directory.Exists(profile))
         {
             Directory.Delete(profile, recursive: true);
@@ -32,14 +32,14 @@ internal static partial class AppScenario
             var queue = PInvoke.FindWindow(null, QueueTitle);
             var shown = (!guide.IsNull && PInvoke.IsWindowVisible(guide)) || (!queue.IsNull && PInvoke.IsWindowVisible(queue));
             var signIn = log.FindSinceStart("started by Windows at sign-in");
-            checks.Check("started with --at-sign-in and no settings yet, DropWheel stays in the tray", ready is not null && signIn is not null && !shown,
+            checks.Check("started with --at-sign-in and no settings yet, DragHalo stays in the tray", ready is not null && signIn is not null && !shown,
                 $"{(ready is null ? "no 'ready:' line within 30 s" : signIn ?? "no 'started by Windows at sign-in' line")}; guide or task window visible={shown}");
 
             var windows = CultureInfo.CurrentUICulture;
             var expected = $"language: {(windows.TwoLetterISOLanguageName == "zh" ? "Chinese" : "English")} (setting System, Windows {windows.Name})";
             var language = log.FindSinceStart(expected);
             var refused = log.FindSinceStart("language: Windows refused");
-            checks.Check("with no language picked, DropWheel speaks the language Windows shows", language is not null && refused is null,
+            checks.Check("with no language picked, DragHalo speaks the language Windows shows", language is not null && refused is null,
                 $"{language ?? log.FindSinceStart("language: ") ?? "no 'language:' line"}, expected '{expected}'{(refused is null ? "" : "; " + refused)}");
         }
         finally
@@ -63,7 +63,7 @@ internal static partial class AppScenario
     /// </summary>
     private static void FirstRun(Checks checks, string exe, bool explorer)
     {
-        var profile = Path.Combine(Path.GetTempPath(), "DropWheelAcceptance", "first-run");
+        var profile = Path.Combine(Path.GetTempPath(), "DragHaloAcceptance", "first-run");
         if (Directory.Exists(profile))
         {
             Directory.Delete(profile, recursive: true);
@@ -71,7 +71,7 @@ internal static partial class AppScenario
 
         Directory.CreateDirectory(profile);
         File.WriteAllText(Path.Combine(profile, "settings.json"), """{ "language": "Chinese" }""");
-        var samples = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "DropWheel 示例");
+        var samples = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "DragHalo 示例");
         if (Directory.Exists(samples))
         {
             Directory.Delete(samples, recursive: true);

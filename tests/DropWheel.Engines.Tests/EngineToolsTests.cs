@@ -74,9 +74,9 @@ public sealed class EngineToolsTests
     {
         var root = Root();
         IReadOnlyList<IWheelOperation> builtIns = [.. EngineTools.Create(new SharpCompressArchiveConverter(), new FfmpegConverter(), recognizer: new NoText()), new CompressZipAction()];
-        var catalog = new UserToolCatalog(Path.Combine(root, "skills", "dropwheel-tool", "examples"), new NoProcess(), new CommandResolver(File.Exists, [], []), builtIns: builtIns);
+        var catalog = new UserToolCatalog(Path.Combine(root, "skills", "draghalo-tool", "examples"), new NoProcess(), new CommandResolver(File.Exists, [], []), builtIns: builtIns);
 
-        var recipes = Directory.GetDirectories(Path.Combine(root, "skills", "dropwheel-tool", "examples")).Select(catalog.Validate).Where(r => r.Manifest?.IsRecipe == true).ToList();
+        var recipes = Directory.GetDirectories(Path.Combine(root, "skills", "draghalo-tool", "examples")).Select(catalog.Validate).Where(r => r.Manifest?.IsRecipe == true).ToList();
 
         recipes.Should().NotBeEmpty();
         recipes.Should().OnlyContain(r => !r.HasErrors, string.Join("; ", recipes.SelectMany(r => r.Problems).Select(p => p.Message)));

@@ -6,7 +6,7 @@
     <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
     <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
     <RootNamespace>DropWheel.App</RootNamespace>
-    <AssemblyName>DropWheel</AssemblyName>
+    <AssemblyName>DragHalo</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Platforms>x64;ARM64</Platforms>
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
@@ -23,7 +23,7 @@
       application"). Keyed on _IsPublishing so a plain build is unchanged.
     -->
     <SelfContained Condition="'$(_IsPublishing)' == 'true'">true</SelfContained>
-    <ApplicationIcon>Assets/DropWheel.ico</ApplicationIcon>
+    <ApplicationIcon>Assets/DragHalo.ico</ApplicationIcon>
     <GenerateAppInstallerFile>False</GenerateAppInstallerFile>
     <AppxPackageSigningEnabled>False</AppxPackageSigningEnabled>
     <AppxAutoIncrementPackageRevision>False</AppxAutoIncrementPackageRevision>
@@ -43,13 +43,13 @@
 
   <!-- The skill an agent reads to write a tool, next to the exe so Settings can point at it; the schema rides along. -->
   <ItemGroup>
-    <Content Include="../../skills/dropwheel-tool/**" Link="skills/dropwheel-tool/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="../../docs/tool-manifest.schema.json" Link="skills/dropwheel-tool/tool-manifest.schema.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../skills/draghalo-tool/**" Link="skills/draghalo-tool/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../docs/tool-manifest.schema.json" Link="skills/draghalo-tool/tool-manifest.schema.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!--
     ffmpeg sidecar (LGPL, kept out of process, see ADR-0003), fetched into tools/sidecars by scripts/fetch-sidecars.{sh,ps1}.
-    Ships as sidecars/ffmpeg next to DropWheel.exe. Without it the app still builds and greys out audio and video targets.
+    Ships as sidecars/ffmpeg next to DragHalo.exe. Without it the app still builds and greys out audio and video targets.
     The RuntimeIdentifier is only known up front when it is passed in (winapp pack, publish); a plain build has the Platform.
   -->
   <PropertyGroup>

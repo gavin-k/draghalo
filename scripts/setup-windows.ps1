@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    One-shot, idempotent Windows developer setup for DropWheel.
+    One-shot, idempotent Windows developer setup for DragHalo.
 
 .DESCRIPTION
     Installs / verifies everything needed to build DropWheel.slnx and package the WinUI 3 app:
@@ -50,7 +50,7 @@ function Get-WinappVersion([string]$exe) {
 }
 
 $Arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
-$Temp = Join-Path $env:TEMP 'dropwheel-setup'
+$Temp = Join-Path $env:TEMP 'draghalo-setup'
 New-Item -ItemType Directory -Force -Path $Temp | Out-Null
 $Summary = New-Object System.Collections.Generic.List[string]
 
@@ -110,7 +110,7 @@ function Invoke-Winget([string]$id, [string]$override) {
     return $p.ExitCode -in @(0, 3010, -1978335189, -1978335215)
 }
 
-Write-Step "DropWheel Windows setup  ·  arch=$Arch  ·  repo=$RepoRoot"
+Write-Step "DragHalo Windows setup  ·  arch=$Arch  ·  repo=$RepoRoot"
 $wingetOk = Test-Winget
 if ($wingetOk) { Write-Host "    winget: $script:Winget" } else { Write-Host '    winget: unavailable in this session, using direct downloads' -ForegroundColor Yellow }
 

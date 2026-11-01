@@ -11,7 +11,7 @@ namespace DropWheel.Core.Tools;
 /// and undo are the last step's as for any built-in. Steps run per file unless the item works on a batch; a
 /// step that writes nothing for a file (compress found it small enough) passes the file on as it is. A step's
 /// suffix stays in the name, so a compress-then-shrink recipe writes "a-压缩-600x400.jpg". Nothing here runs code
-/// the user did not get from DropWheel, so no trust switch applies. Stateless, as the queue reuses the instance.
+/// the user did not get from DragHalo, so no trust switch applies. Stateless, as the queue reuses the instance.
 /// </summary>
 public sealed class RecipeTool : IUserTool
 {
@@ -146,7 +146,7 @@ public sealed class RecipeTool : IUserTool
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                // Explorer may hold a handle for a moment; the folder is hidden and ends in .dropwheel-tmp.
+                // Explorer may hold a handle for a moment; the folder is hidden and ends in .draghalo-tmp.
             }
         }
     }

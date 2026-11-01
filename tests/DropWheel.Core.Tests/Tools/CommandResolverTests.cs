@@ -78,6 +78,6 @@ public sealed class CommandResolverTests
         var shell = OperatingSystem.IsWindows() ? "cmd" : "sh";
 
         resolver.Resolve(shell, Tool).Should().NotBeNull();
-        resolver.Resolve("no-such-command-dropwheel", Tool).Should().BeNull();
+        resolver.Resolve("no-such-command-draghalo", Tool).Should().BeNull();
     }
 }

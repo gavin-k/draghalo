@@ -30,9 +30,9 @@ internal static partial class AppScenario
     /// </summary>
     private static void UserTools(Checks checks, AppLog log, string exe, string profile, bool explorer)
     {
-        var examples = Path.Combine(InstallRoot(exe), "skills", "dropwheel-tool", "examples");
+        var examples = Path.Combine(InstallRoot(exe), "skills", "draghalo-tool", "examples");
         var tools = Path.Combine(profile, "tools");
-        var dir = Path.Combine(Path.GetTempPath(), "DropWheelAcceptance", "usertools");
+        var dir = Path.Combine(Path.GetTempPath(), "DragHaloAcceptance", "usertools");
         Directory.CreateDirectory(dir);
         foreach (var old in Directory.GetFileSystemEntries(dir))
         {
@@ -49,7 +49,7 @@ internal static partial class AppScenario
         // The command line first: the agent's self-check, from a console with redirected output.
         var hello = Path.Combine(examples, "hello-pwsh");
         var (code, json) = ToolCommand(exe, "--validate-tool", hello);
-        checks.Check("DropWheel.exe --validate-tool accepts the shipped hello-pwsh example", code == 0 && Problems(json) == "", $"exit {code}; {Shorten(json)}");
+        checks.Check("DragHalo.exe --validate-tool accepts the shipped hello-pwsh example", code == 0 && Problems(json) == "", $"exit {code}; {Shorten(json)}");
 
         var broken = Path.Combine(dir, "broken");
         Directory.CreateDirectory(broken);
@@ -147,7 +147,7 @@ internal static partial class AppScenario
                 var done = label is null ? null : log.WaitFor(60000, $"queue: {label} ");
                 var output = done is null ? null : OutputsRegex().Match(done) is { Success: true } m ? m.Groups[1].Value : null;
                 var expected = Path.Combine(dir, $"{Path.GetFileNameWithoutExtension(jpg)}-copy.jpg");
-                var scratch = Directory.GetFileSystemEntries(dir, "*.dropwheel-tmp");
+                var scratch = Directory.GetFileSystemEntries(dir, "*.draghalo-tmp");
                 checks.Check("复制一份 through the ring copies the JPG next to the source and leaves no scratch folder",
                     string.Equals(output, expected, StringComparison.OrdinalIgnoreCase) && File.Exists(expected) && new FileInfo(expected).Length == new FileInfo(jpg).Length && scratch.Length == 0,
                     $"{enqueued ?? "nothing enqueued within 3 s"}; {done ?? "no queue outcome within 60 s"}; scratch [{string.Join(", ", scratch.Select(f => Path.GetFileName(f)))}]");
@@ -191,7 +191,7 @@ internal static partial class AppScenario
     private static void SlowTool(Checks checks, AppLog log, string profile, bool explorer)
     {
         var tools = Path.Combine(profile, "tools");
-        var dir = Path.Combine(Path.GetTempPath(), "DropWheelAcceptance", "usertools");
+        var dir = Path.Combine(Path.GetTempPath(), "DragHaloAcceptance", "usertools");
         Directory.CreateDirectory(dir);
         var jpg = Path.Combine(dir, $"slow-{DateTime.Now:HHmmss}.jpg");
         WriteJpeg(jpg, 640, 400);
@@ -323,7 +323,7 @@ internal static partial class AppScenario
         return opened ? window : default;
     }
 
-    /// <summary>Runs DropWheel.exe with a tool command line and returns its exit code and what it printed.</summary>
+    /// <summary>Runs DragHalo.exe with a tool command line and returns its exit code and what it printed.</summary>
     private static (int Code, string Output) ToolCommand(string exe, params string[] args)
     {
         using var process = Process.Start(new ProcessStartInfo(exe, args) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8 })

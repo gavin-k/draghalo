@@ -126,7 +126,7 @@ internal sealed class WheelWindow
     /// <param name="white">Diagnostic (<c>--white-wheel</c>): an opaque white layer over the whole window, as a stuck graphics driver shows it.</param>
     public WheelWindow(bool white = false)
     {
-        _window = new Window { Title = L.T("DropWheel 轮盘") };
+        _window = new Window { Title = L.T("DragHalo 轮盘") };
         _appWindow = _window.AppWindow;
         var presenter = OverlappedPresenter.Create();
         presenter.SetBorderAndTitleBar(false, false);

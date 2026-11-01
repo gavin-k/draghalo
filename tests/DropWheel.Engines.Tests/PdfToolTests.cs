@@ -14,7 +14,7 @@ namespace DropWheel.Engines.Tests;
 
 public sealed class PdfToolTests : IDisposable
 {
-    private readonly string _dir = Directory.CreateTempSubdirectory("dropwheel-pdftools-").FullName;
+    private readonly string _dir = Directory.CreateTempSubdirectory("draghalo-pdftools-").FullName;
     private readonly MergePdfTool _merge = new();
     private readonly SplitPdfTool _split = new();
 

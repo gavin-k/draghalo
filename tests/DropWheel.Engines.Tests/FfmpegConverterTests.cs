@@ -11,7 +11,7 @@ namespace DropWheel.Engines.Tests;
 /// </summary>
 public sealed class FfmpegConverterTests : IDisposable
 {
-    private readonly string _dir = Directory.CreateTempSubdirectory("dropwheel-ffmpeg-").FullName;
+    private readonly string _dir = Directory.CreateTempSubdirectory("draghalo-ffmpeg-").FullName;
     private readonly FfmpegConverter _converter = new();
 
     private static FfmpegTools Tools => FfmpegLocator.Find() ?? throw new InvalidOperationException("ffmpeg and ffprobe must be on the PATH for these tests");

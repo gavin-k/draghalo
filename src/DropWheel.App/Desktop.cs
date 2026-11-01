@@ -28,7 +28,7 @@ internal sealed class Desktop(DispatcherQueue ui) : IDesktop, IConflictPrompt
                     var data = new DataPackage();
                     data.SetText(text);
                     Clipboard.SetContent(data);
-                    Clipboard.Flush(); // the text stays when DropWheel quits
+                    Clipboard.Flush(); // the text stays when DragHalo quits
                 }).ConfigureAwait(false);
                 return;
             }

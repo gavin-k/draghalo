@@ -1,6 +1,6 @@
-# 在 macOS 上开发 DropWheel
+# 在 macOS 上开发 DragHalo
 
-DropWheel 是 Windows 11 应用，但仓库被切成两半：一半是纯 .NET，可以在 Mac 上日常开发；另一半依赖 WinUI 3 / Windows App SDK，只能在 Windows 上构建。本页说明 Mac 上能做什么、不能做什么，以及如何用 Parallels 里的 Windows 11 虚拟机补上另一半。
+DragHalo 是 Windows 11 应用，但仓库被切成两半：一半是纯 .NET，可以在 Mac 上日常开发；另一半依赖 WinUI 3 / Windows App SDK，只能在 Windows 上构建。本页说明 Mac 上能做什么、不能做什么，以及如何用 Parallels 里的 Windows 11 虚拟机补上另一半。
 
 ## Mac 上能做什么
 
@@ -116,4 +116,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File \\Mac\Home\Projects\dropwhee
 - Visual Studio 2022 Community：`vs_community.exe --quiet --wait --norestart` 由脚本在 SYSTEM 下静默安装（Universal + ManagedDesktop 工作负载）。安装结果见下一条。
 - VS 安装结果：19:38 开始、20:22 结束（约 44 分钟），退出码 0，无需重启；`vswhere` 确认 Community 17.14.42 含 Universal + ManagedDesktop 两个工作负载。随后再次完整运行 `setup-windows.ps1`，所有步骤走「已安装」分支，1 秒结束，幂等性成立。
 - 未验证的路径：`setup-windows.ps1` 的 winget 分支（整个过程都在 SYSTEM 下，winget 不可用，只跑过直连下载回退）；`build.sh` 的 Windows/Git Bash 分支（VM 里没有 Git for Windows）。
-- 占位图标（`src/DropWheel.App/Assets/*.png`、`DropWheel.ico`）是脚本生成的橙色圆环，仅为让 MSIX 打包通过，正式发布前要替换。
+- 占位图标（`src/DropWheel.App/Assets/*.png`、`DragHalo.ico`）是脚本生成的橙色圆环，仅为让 MSIX 打包通过，正式发布前要替换。

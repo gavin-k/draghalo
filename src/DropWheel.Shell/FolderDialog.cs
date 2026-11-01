@@ -9,7 +9,7 @@ using Windows.Win32.UI.Shell;
 namespace DropWheel.Shell;
 
 /// <summary>
-/// The system folder picker on an STA thread of its own, with no owner: DropWheel has no window of its
+/// The system folder picker on an STA thread of its own, with no owner: DragHalo has no window of its
 /// own in front when a drop lands. Windows keeps the foreground from a process the user is not working
 /// in, so an empty input event right before the dialog opens lets it come up in front of Explorer.
 /// </summary>

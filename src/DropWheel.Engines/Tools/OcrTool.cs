@@ -1,4 +1,4 @@
-// PDFtoImage marks its API with the platforms it ships PDFium for. DropWheel runs on Windows, its tests on macOS and Linux.
+// PDFtoImage marks its API with the platforms it ships PDFium for. DragHalo runs on Windows, its tests on macOS and Linux.
 #pragma warning disable CA1416
 
 using System.Text;

@@ -5,7 +5,7 @@ namespace DropWheel.Engines.Tools;
 
 /// <summary>
 /// Runs a user tool's script the way the engines run ffmpeg: no shell, UTF-8 pipes, below normal priority, the
-/// process tree killed on cancellation; plus the manifest's timeout, and a kill-on-close job so nothing outlives DropWheel.
+/// process tree killed on cancellation; plus the manifest's timeout, and a kill-on-close job so nothing outlives DragHalo.
 /// </summary>
 public sealed class SidecarProcessRunner : IProcessRunner
 {

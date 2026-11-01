@@ -33,8 +33,8 @@ internal sealed class QueueWindow
     {
         _queue = queue;
         _ui = ui;
-        _window = new Window { Title = L.T("DropWheel 任务") };
-        _window.AppWindow.SetIcon("Assets/DropWheel.ico");
+        _window = new Window { Title = L.T("DragHalo 任务") };
+        _window.AppWindow.SetIcon("Assets/DragHalo.ico");
         _window.AppWindow.Closing += (window, e) =>
         {
             if (!Quitting)

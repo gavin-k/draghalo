@@ -17,7 +17,7 @@ public sealed class DocumentConverterTests : IDisposable
 
     private const string W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
-    private readonly string _dir = Directory.CreateTempSubdirectory("dropwheel-document-").FullName;
+    private readonly string _dir = Directory.CreateTempSubdirectory("draghalo-document-").FullName;
     private readonly DocumentConverter _converter = new();
 
     static DocumentConverterTests() => Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
@@ -354,7 +354,7 @@ public sealed class DocumentConverterTests : IDisposable
         var source = Path.Combine(_dir, "notes.txt");
         File.WriteAllText(source, Text, new UTF8Encoding(false));
         var docx = (await Run(source, "docx")).OutputPaths.Single();
-        var back = Directory.CreateTempSubdirectory("dropwheel-document-back-").FullName;
+        var back = Directory.CreateTempSubdirectory("draghalo-document-back-").FullName;
         try
         {
             var bytes = await Convert(docx, "txt", back);

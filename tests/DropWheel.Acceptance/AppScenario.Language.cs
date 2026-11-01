@@ -7,16 +7,16 @@ namespace DropWheel.Acceptance;
 internal static partial class AppScenario
 {
     /// <summary>The task window's title in English; it must match Strings.en.json in DropWheel.App.</summary>
-    private const string EnglishQueueTitle = "DropWheel Tasks";
+    private const string EnglishQueueTitle = "DragHalo Tasks";
 
     /// <summary>
-    /// With English picked in settings.json, DropWheel speaks English from its start even on a Chinese Windows:
+    /// With English picked in settings.json, DragHalo speaks English from its start even on a Chinese Windows:
     /// the log says so, and launching it again shows the task window under its English title, with a Settings
     /// button.
     /// </summary>
     private static void InEnglish(Checks checks, string exe)
     {
-        var profile = Path.Combine(Path.GetTempPath(), "DropWheelAcceptance", "english");
+        var profile = Path.Combine(Path.GetTempPath(), "DragHaloAcceptance", "english");
         if (Directory.Exists(profile))
         {
             Directory.Delete(profile, recursive: true);
@@ -31,7 +31,7 @@ internal static partial class AppScenario
         {
             var ready = log.WaitFor(30000, "ready:");
             var language = log.FindSinceStart("language: ");
-            if (!checks.Check("with English picked, DropWheel starts in English", ready is not null && language?.Contains("language: English (setting English, ", StringComparison.Ordinal) == true,
+            if (!checks.Check("with English picked, DragHalo starts in English", ready is not null && language?.Contains("language: English (setting English, ", StringComparison.Ordinal) == true,
                 $"{(ready is null ? "no 'ready:' line within 30 s" : language ?? "no 'language:' line")}"))
             {
                 return;

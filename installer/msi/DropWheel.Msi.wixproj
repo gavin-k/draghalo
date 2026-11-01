@@ -9,7 +9,7 @@
   <PropertyGroup>
     <ProductVersion Condition="'$(ProductVersion)' == ''">$(VersionPrefix)</ProductVersion>
     <InstallerPlatform Condition="'$(Platform)' == 'ARM64'">arm64</InstallerPlatform>
-    <OutputName>DropWheel-$(ProductVersion)-$(Platform)</OutputName>
+    <OutputName>DragHalo-$(ProductVersion)-$(Platform)</OutputName>
     <!--
       ICE03: WinUI's satellite files carry language ids newer than the validator's list (1152 ug-CN, 1153 mi-NZ,
       1169 gd-GB). ICE61: AllowSameVersionUpgrades lets a rebuild of the same version replace the last one.

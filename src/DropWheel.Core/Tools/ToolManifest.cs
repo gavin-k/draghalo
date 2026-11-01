@@ -64,7 +64,7 @@ public sealed record ScriptSpec(string Command, IReadOnlyList<string> Args, bool
     public static readonly IReadOnlySet<string> Placeholders = new HashSet<string>(StringComparer.Ordinal) { "input", "inputs", "output", "outputDir", "toolDir" };
 }
 
-/// <param name="Mode">"new-file": the script writes one file at {output}, which DropWheel moves into place; "none": no output.</param>
+/// <param name="Mode">"new-file": the script writes one file at {output}, which DragHalo moves into place; "none": no output.</param>
 /// <param name="Extension">The output's extension without the dot, or "same" for the source's.</param>
 /// <param name="Suffix">Appended to the source's stem, such as "-clean".</param>
 public sealed record OutputSpec(string Mode, string Extension, string Suffix)

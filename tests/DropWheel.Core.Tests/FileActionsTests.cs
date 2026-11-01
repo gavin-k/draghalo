@@ -10,7 +10,7 @@ namespace DropWheel.Core.Tests;
 
 public sealed class FileActionsTests : IDisposable
 {
-    private readonly string _dir = Directory.CreateTempSubdirectory("dropwheel-actions-").FullName;
+    private readonly string _dir = Directory.CreateTempSubdirectory("draghalo-actions-").FullName;
     private readonly FakeDesktop _desktop = new();
     private readonly RecordingFiles _files = new();
 

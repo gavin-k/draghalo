@@ -14,7 +14,7 @@ public sealed class ExtractArchiveToolTests : IDisposable
     /// <summary>Even seconds: zip stores times in two-second steps.</summary>
     private static readonly DateTime Modified = new(2024, 5, 6, 7, 8, 10, DateTimeKind.Local);
 
-    private readonly string _dir = Directory.CreateTempSubdirectory("dropwheel-extract-").FullName;
+    private readonly string _dir = Directory.CreateTempSubdirectory("draghalo-extract-").FullName;
     private readonly ExtractArchiveTool _tool = new(new SharpCompressArchiveConverter());
 
     public void Dispose() => Directory.Delete(_dir, recursive: true);

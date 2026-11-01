@@ -251,7 +251,7 @@ internal static partial class SubtitleFormats
     {
         var sb = new StringBuilder();
         sb.Append("[Script Info]").Append(Nl)
-            .Append("; Converted by DropWheel").Append(Nl)
+            .Append("; Converted by DragHalo").Append(Nl)
             .Append("ScriptType: ").Append(ssa ? "v4.00" : "v4.00+").Append(Nl)
             .Append("PlayResX: 384").Append(Nl)
             .Append("PlayResY: 288").Append(Nl);

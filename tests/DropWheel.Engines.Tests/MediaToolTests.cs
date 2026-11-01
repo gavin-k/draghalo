@@ -15,7 +15,7 @@ public sealed class MediaToolTests : IDisposable
 {
     private const string NoH264 = "系统缺少 H.264 编码器（Windows N 版需安装媒体功能包）";
 
-    private readonly string _dir = Directory.CreateTempSubdirectory("dropwheel-mediatools-").FullName;
+    private readonly string _dir = Directory.CreateTempSubdirectory("draghalo-mediatools-").FullName;
     private readonly FfmpegConverter _ffmpeg = new();
 
     private static FfmpegTools Tools => FfmpegLocator.Find() ?? throw new InvalidOperationException("ffmpeg and ffprobe must be on the PATH for these tests");

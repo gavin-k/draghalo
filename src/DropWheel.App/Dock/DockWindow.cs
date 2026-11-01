@@ -52,8 +52,8 @@ internal sealed class DockWindow
     {
         _ui = ui;
         _wheelOpen = wheelOpen;
-        _window = new Window { Title = L.T("DropWheel 停靠栏") };
-        _window.AppWindow.SetIcon("Assets/DropWheel.ico");
+        _window = new Window { Title = L.T("DragHalo 停靠栏") };
+        _window.AppWindow.SetIcon("Assets/DragHalo.ico");
         var presenter = OverlappedPresenter.Create();
         presenter.SetBorderAndTitleBar(true, false);
         presenter.IsAlwaysOnTop = true;

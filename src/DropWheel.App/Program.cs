@@ -13,9 +13,9 @@ namespace DropWheel.App;
 
 /// <summary>
 /// The entry point XAML would generate, with one thing in front of it: the tool command line
-/// (<see cref="ToolCommandLine"/>), which prints JSON to the console DropWheel was started from and exits before
+/// (<see cref="ToolCommandLine"/>), which prints JSON to the console DragHalo was started from and exits before
 /// anything of WinUI or <see cref="SingleInstance"/> starts, so an agent can check a tool it just wrote while
-/// DropWheel is running.
+/// DragHalo is running.
 /// </summary>
 internal static class Program
 {

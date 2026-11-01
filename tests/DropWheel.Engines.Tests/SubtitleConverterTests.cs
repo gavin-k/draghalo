@@ -10,7 +10,7 @@ public sealed class SubtitleConverterTests : IDisposable
 {
     private static readonly byte[] Bom = [0xEF, 0xBB, 0xBF];
 
-    private readonly string _dir = Directory.CreateTempSubdirectory("dropwheel-subtitle-").FullName;
+    private readonly string _dir = Directory.CreateTempSubdirectory("draghalo-subtitle-").FullName;
     private readonly SubtitleConverter _converter = new();
 
     static SubtitleConverterTests() => Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);

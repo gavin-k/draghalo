@@ -27,7 +27,7 @@ internal static partial class AppScenario
     /// </summary>
     private static void WhiteWheel(Checks checks, string exe)
     {
-        var profile = Path.Combine(Path.GetTempPath(), "DropWheelAcceptance", "profile");
+        var profile = Path.Combine(Path.GetTempPath(), "DragHaloAcceptance", "profile");
         var log = new AppLog();
         using var app = Process.Start(new ProcessStartInfo(exe, ["--data-dir", profile, "--wheel-preview", "--white-wheel"]) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe)! })
             ?? throw new InvalidOperationException($"could not start {exe}");

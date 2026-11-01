@@ -10,7 +10,7 @@ namespace DropWheel.Acceptance;
 
 internal static partial class AppScenario
 {
-    private const string SettingsTitle = "DropWheel 设置";
+    private const string SettingsTitle = "DragHalo 设置";
 
     /// <summary>
     /// Through the settings window, the way a screen reader would use it: the note that the wheel is solid is
@@ -95,7 +95,7 @@ internal static partial class AppScenario
             hidden && onDisk == "convert Ctrl, long press off, dock off, location Folder, naming {name}-dw",
             $"visible={(bool)PInvoke.IsWindowVisible(window)}; {onDisk}");
 
-        var dir = Path.Combine(Path.GetTempPath(), "DropWheelAcceptance", "settings");
+        var dir = Path.Combine(Path.GetTempPath(), "DragHaloAcceptance", "settings");
         Directory.CreateDirectory(dir);
         foreach (var old in Directory.GetFiles(dir))
         {
@@ -122,23 +122,23 @@ internal static partial class AppScenario
         checks.Check("the settings window counts no network request since start", none is not null && log.FindSinceStart("network: ") is null,
             $"{how}; {log.FindSinceStart("network: ") ?? "no 'network:' line"}");
 
-        var logs = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DropWheel", "logs");
+        var logs = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DragHalo", "logs");
         var pressed = Invoke(SettingsTitle, "打开日志文件夹", out how);
         var folder = pressed ? ExplorerSource.FolderWindow(logs, 5000) : default;
         checks.Check("打开日志文件夹 shows the log folder in Explorer", !folder.IsNull, folder.IsNull ? $"{how}; no Explorer window on {logs}" : how);
         ExplorerSource.CloseAndWait(folder);
 
-        var before = Directory.GetFiles(logs, "dropwheel-*.log").Length;
+        var before = Directory.GetFiles(logs, "draghalo-*.log").Length;
         var cleared = Invoke(SettingsTitle, "清除日志", out how) ? log.WaitFor(3000, "settings: cleared ") : null;
-        var after = Directory.GetFiles(logs, "dropwheel-*.log").Select(Path.GetFileName).ToList();
+        var after = Directory.GetFiles(logs, "draghalo-*.log").Select(Path.GetFileName).ToList();
         checks.Check("清除日志 deletes the logs and the app starts today's afresh",
-            cleared is not null && after.Count == 1 && after[0] == $"dropwheel-{DateTime.Now:yyyyMMdd}.log" && new FileInfo(Path.Combine(logs, after[0])).Length < 4096,
+            cleared is not null && after.Count == 1 && after[0] == $"draghalo-{DateTime.Now:yyyyMMdd}.log" && new FileInfo(Path.Combine(logs, after[0])).Length < 4096,
             $"{cleared ?? how}; {before} log(s) before, after: {string.Join(", ", after)}");
     }
 
     /// <summary>
     /// 登录 Windows 时启动, which without a package is a value under the user's Run key: switching it on writes
-    /// one that starts this DropWheel.exe with --at-sign-in, switching it off removes it. A value that was there
+    /// one that starts this DragHalo.exe with --at-sign-in, switching it off removes it. A value that was there
     /// before is put back.
     /// </summary>
     private static void StartAtSignIn(Checks checks, AppLog log, string exe)
@@ -149,7 +149,7 @@ internal static partial class AppScenario
             return;
         }
 
-        const string Name = "DropWheel";
+        const string Name = "DragHalo";
         using var run = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
         var before = run.GetValue(Name);
         try
@@ -171,7 +171,7 @@ internal static partial class AppScenario
             var off = Switch("removed");
             var gone = run.GetValue(Name) is null;
             var expected = $"\"{exe}\" --at-sign-in";
-            checks.Check("登录 Windows 时启动 writes the Run value that starts this DropWheel.exe in the tray, and removes it again",
+            checks.Check("登录 Windows 时启动 writes the Run value that starts this DragHalo.exe in the tray, and removes it again",
                 string.Equals(written, expected, StringComparison.OrdinalIgnoreCase) && gone,
                 $"{on}; value [{written ?? "none"}], expected [{expected}]; {off}; {(gone ? "value gone" : $"value still [{run.GetValue(Name)}]")}");
         }
@@ -195,7 +195,7 @@ internal static partial class AppScenario
     /// </summary>
     private static void StartupTaskAtSignIn(Checks checks, AppLog log)
     {
-        const string Name = "DropWheel";
+        const string Name = "DragHalo";
         using var run = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
         var before = run?.GetValue(Name) as string;
 

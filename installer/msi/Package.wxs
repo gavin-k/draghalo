@@ -1,22 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Per-machine install into Program Files\DropWheel with a Start menu shortcut. Every file of the publish
+  Per-machine install into Program Files\DragHalo with a Start menu shortcut. Every file of the publish
   folder is harvested, so the package follows whatever the app ships. Settings and logs under
-  %LOCALAPPDATA%\DropWheel are the user's and stay after an uninstall.
+  %LOCALAPPDATA%\DragHalo are the user's and stay after an uninstall.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
-  <Package Name="DropWheel" Manufacturer="Gavin Lee" Version="$(var.ProductVersion)" UpgradeCode="844E4C2C-7018-4368-A79A-002B046C41B8" Scope="perMachine" Language="2052" Codepage="936">
-    <SummaryInformation Description="DropWheel" />
-    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="已经装了更新版本的 DropWheel。" />
+  <Package Name="DragHalo" Manufacturer="Gavin Lee" Version="$(var.ProductVersion)" UpgradeCode="844E4C2C-7018-4368-A79A-002B046C41B8" Scope="perMachine" Language="2052" Codepage="936">
+    <SummaryInformation Description="DragHalo" />
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="已经装了更新版本的 DragHalo。" />
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
 
-    <Icon Id="DropWheel.ico" SourceFile="$(var.AppDir)\Assets\DropWheel.ico" />
-    <Property Id="ARPPRODUCTICON" Value="DropWheel.ico" />
-    <Property Id="ARPURLINFOABOUT" Value="https://github.com/gavin-k/dropwheel" />
+    <Icon Id="DragHalo.ico" SourceFile="$(var.AppDir)\Assets\DragHalo.ico" />
+    <Property Id="ARPPRODUCTICON" Value="DragHalo.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/gavin-k/draghalo" />
     <Property Id="ARPNOMODIFY" Value="1" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
-      <Directory Id="INSTALLFOLDER" Name="DropWheel" />
+      <Directory Id="INSTALLFOLDER" Name="DragHalo" />
     </StandardDirectory>
 
     <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
@@ -26,28 +26,28 @@
     <!-- Windows Installer counts the Start menu as the user's profile, so the shortcut's key path is under HKCU (ICE38, ICE43). -->
     <StandardDirectory Id="ProgramMenuFolder">
       <Component Id="StartMenuShortcut">
-        <Shortcut Id="StartMenuShortcut" Name="DropWheel" Target="[INSTALLFOLDER]DropWheel.exe" WorkingDirectory="INSTALLFOLDER" />
-        <RegistryValue Root="HKCU" Key="Software\DropWheel" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
+        <Shortcut Id="StartMenuShortcut" Name="DragHalo" Target="[INSTALLFOLDER]DragHalo.exe" WorkingDirectory="INSTALLFOLDER" />
+        <RegistryValue Root="HKCU" Key="Software\DragHalo" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </StandardDirectory>
 
     <!--
-      An upgrade or uninstall first asks the running DropWheel to quit the way the tray's 退出 does; one
+      An upgrade or uninstall first asks the running DragHalo to quit the way the tray's 退出 does; one
       that has not gone five seconds later is ended, so no file stays in use and no restart is needed.
     -->
-    <CustomAction Id="QuitDropWheel" Directory="INSTALLFOLDER" ExeCommand="&quot;[INSTALLFOLDER]DropWheel.exe&quot; --quit" Execute="immediate" Return="ignore" />
-    <util:CloseApplication Id="CloseDropWheel" Target="DropWheel.exe" RebootPrompt="no" Timeout="5" TerminateProcess="1" Condition="Installed OR WIX_UPGRADE_DETECTED" />
+    <CustomAction Id="QuitDragHalo" Directory="INSTALLFOLDER" ExeCommand="&quot;[INSTALLFOLDER]DragHalo.exe&quot; --quit" Execute="immediate" Return="ignore" />
+    <util:CloseApplication Id="CloseDragHalo" Target="DragHalo.exe" RebootPrompt="no" Timeout="5" TerminateProcess="1" Condition="Installed OR WIX_UPGRADE_DETECTED" />
 
     <!--
       登录 Windows 时启动 without a package is a Run value the app writes for the user who switched it on;
-      removing DropWheel for good removes the installing user's, so Windows does not try to start a file that
+      removing DragHalo for good removes the installing user's, so Windows does not try to start a file that
       is gone. An upgrade keeps it: the path stays the same.
     -->
-    <SetProperty Id="RemoveSignInRun" Value="&quot;[System64Folder]reg.exe&quot; delete HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v DropWheel /f" Before="RemoveSignInRun" Sequence="execute" />
+    <SetProperty Id="RemoveSignInRun" Value="&quot;[System64Folder]reg.exe&quot; delete HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v DragHalo /f" Before="RemoveSignInRun" Sequence="execute" />
     <CustomAction Id="RemoveSignInRun" BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)" DllEntry="WixQuietExec" Execute="deferred" Impersonate="yes" Return="ignore" />
 
     <InstallExecuteSequence>
-      <Custom Action="QuitDropWheel" Before="InstallValidate" Condition="Installed OR WIX_UPGRADE_DETECTED" />
+      <Custom Action="QuitDragHalo" Before="InstallValidate" Condition="Installed OR WIX_UPGRADE_DETECTED" />
       <Custom Action="RemoveSignInRun" Before="InstallFinalize" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
     </InstallExecuteSequence>
 

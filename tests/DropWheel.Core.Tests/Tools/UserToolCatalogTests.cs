@@ -98,7 +98,7 @@ public sealed class UserToolCatalogTests : IDisposable
 
         snapshot.Tools.Should().BeEmpty();
         snapshot.Problems.Should().ContainSingle().Which.Folder.Should().Be(empty);
-        File.Exists(Path.Combine(empty, UserToolCatalog.ProblemsFile)).Should().BeFalse("DropWheel does not write into a folder that was never a tool");
+        File.Exists(Path.Combine(empty, UserToolCatalog.ProblemsFile)).Should().BeFalse("DragHalo does not write into a folder that was never a tool");
     }
 
     [Fact]
@@ -155,7 +155,7 @@ public sealed class UserToolCatalogTests : IDisposable
     {
         UserToolCatalog.IsOwnFile(Path.Combine(_dir, "t", UserToolCatalog.ProblemsFile)).Should().BeTrue();
         UserToolCatalog.IsOwnFile(Path.Combine(_dir, "t", ".problems.json.123.tmp")).Should().BeTrue();
-        UserToolCatalog.IsOwnFile(Path.Combine(_dir, "t", ".abc.dropwheel-tmp")).Should().BeTrue();
+        UserToolCatalog.IsOwnFile(Path.Combine(_dir, "t", ".abc.draghalo-tmp")).Should().BeTrue();
         UserToolCatalog.IsOwnFile(Path.Combine(_dir, "t", "tool.json")).Should().BeFalse();
         UserToolCatalog.IsOwnFile(Path.Combine(_dir, "t")).Should().BeFalse();
     }

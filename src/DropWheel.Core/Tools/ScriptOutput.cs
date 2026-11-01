@@ -18,7 +18,7 @@ public enum ScriptLineKind
 public readonly record struct ScriptLine(ScriptLineKind Kind, string Text = "", double Progress = 0);
 
 /// <summary>
-/// The stdout protocol a script may speak to DropWheel: one keyword, a space, the rest of the line. Everything
+/// The stdout protocol a script may speak to DragHalo: one keyword, a space, the rest of the line. Everything
 /// else is ignored, so a script that prints nothing special still works.
 /// </summary>
 public static class ScriptOutput

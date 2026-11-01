@@ -215,7 +215,7 @@ publish/
 # Note: Comment the next line if you want to checkin your web deploy settings,
 # but database connection strings (with potential passwords) will be unencrypted
 *.pubxml
-# DropWheel: the WinUI publish profiles are part of the build (referenced by the csproj)
+# DragHalo: the WinUI publish profiles are part of the build (referenced by the csproj)
 !src/DropWheel.App/Properties/PublishProfiles/*.pubxml
 *.publishproj
 
@@ -429,7 +429,7 @@ FodyWeavers.xsd
 # Official VS Code C# Dev Kit Extension exclusion
 #*.lscache
 
-# DropWheel
+# DragHalo
 /installer/**/*.pfx
 /installer/**/*.msix
 /installer/**/*.msixbundle

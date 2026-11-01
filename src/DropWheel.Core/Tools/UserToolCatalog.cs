@@ -65,7 +65,7 @@ public sealed class UserToolCatalog : IDisposable
         return snapshot;
     }
 
-    /// <summary>Creates the folder if needed and reloads 300 ms after the last change in it; DropWheel's own files do not count.</summary>
+    /// <summary>Creates the folder if needed and reloads 300 ms after the last change in it; DragHalo's own files do not count.</summary>
     public void Watch()
     {
         if (_watcher is not null)
@@ -94,7 +94,7 @@ public sealed class UserToolCatalog : IDisposable
         _debounce?.Dispose();
     }
 
-    /// <summary>Whether a change to this path is one DropWheel made itself, which must not reload the catalog.</summary>
+    /// <summary>Whether a change to this path is one DragHalo made itself, which must not reload the catalog.</summary>
     public static bool IsOwnFile(string path) =>
         path.EndsWith(ProblemsFile, StringComparison.OrdinalIgnoreCase)
         || path.EndsWith(OutputFiles.TempSuffix, StringComparison.OrdinalIgnoreCase)

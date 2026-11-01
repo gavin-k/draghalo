@@ -31,7 +31,7 @@ public interface IWheelOperation : IJobRunner
     bool AppliesTo(MediaKind kind) => true;
 
     /// <summary>
-    /// For an item that runs code the user did not get from DropWheel: what Settings › 我的工具 must have recorded
+    /// For an item that runs code the user did not get from DragHalo: what Settings › 我的工具 must have recorded
     /// as trusted before it runs, which changes when the code it runs does. Null for a built-in item.
     /// </summary>
     string? TrustKey => null;

@@ -18,7 +18,7 @@ internal static partial class AppScenario
     /// </summary>
     private static void FileActions(Checks checks, AppLog log, int app, bool explorer)
     {
-        var dir = Path.Combine(Path.GetTempPath(), "DropWheelAcceptance", "actions");
+        var dir = Path.Combine(Path.GetTempPath(), "DragHaloAcceptance", "actions");
         Directory.CreateDirectory(dir);
         foreach (var old in Directory.GetFiles(dir))
         {

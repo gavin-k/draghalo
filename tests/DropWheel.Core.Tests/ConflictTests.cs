@@ -9,7 +9,7 @@ namespace DropWheel.Core.Tests;
 public sealed class ConflictTests : IDisposable
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 25, 9, 0, 0, TimeSpan.FromHours(8));
-    private readonly string _dir = Directory.CreateTempSubdirectory("dropwheel-conflicts-").FullName;
+    private readonly string _dir = Directory.CreateTempSubdirectory("draghalo-conflicts-").FullName;
     private readonly Bin _files = new();
     private readonly ScriptedPrompt _prompt = new();
 

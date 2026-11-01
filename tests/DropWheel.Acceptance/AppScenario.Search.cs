@@ -5,7 +5,7 @@ namespace DropWheel.Acceptance;
 
 internal static partial class AppScenario
 {
-    private const string WheelTitle = "DropWheel 轮盘";
+    private const string WheelTitle = "DragHalo 轮盘";
     private const string HeicReason = "还不能写出 HEIC，体积差不多的可以选 AVIF";
 
     /// <summary>

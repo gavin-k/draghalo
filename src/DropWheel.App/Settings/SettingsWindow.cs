@@ -37,7 +37,7 @@ namespace DropWheel.App.Settings;
 /// </remarks>
 internal sealed class SettingsWindow
 {
-    private const string StartupTaskId = "DropWheelStartup"; // the TaskId in Package.appxmanifest
+    private const string StartupTaskId = "DragHaloStartup"; // the TaskId in Package.appxmanifest
     private static readonly Modifiers[] KeyOrder = [Modifiers.Shift, Modifiers.Ctrl, Modifiers.Alt, Modifiers.Win];
     private readonly Window _window;
     private readonly SettingsStore _settings;
@@ -101,7 +101,7 @@ internal sealed class SettingsWindow
     private readonly DispatcherQueueTimer _namingPause;
     private StartupTask? _startupTask;
 
-    /// <summary>With a package the startup task starts DropWheel at sign-in, without one <see cref="SignInRun"/>.</summary>
+    /// <summary>With a package the startup task starts DragHalo at sign-in, without one <see cref="SignInRun"/>.</summary>
     private readonly bool _packaged = HasPackageIdentity();
     private bool _placed;
     private bool _loading;
@@ -124,8 +124,8 @@ internal sealed class SettingsWindow
         layout.Changed += _ => ui.TryEnqueue(ShowTools);
         layout.Changed += _ => ui.TryEnqueue(ShowLayout);
         catalog.Changed += _ => ui.TryEnqueue(ShowLayout);
-        _window = new Window { Title = L.T("DropWheel 设置") };
-        _window.AppWindow.SetIcon("Assets/DropWheel.ico");
+        _window = new Window { Title = L.T("DragHalo 设置") };
+        _window.AppWindow.SetIcon("Assets/DragHalo.ico");
         _window.AppWindow.Closing += (window, e) =>
         {
             SaveNaming();
@@ -248,14 +248,14 @@ internal sealed class SettingsWindow
         page.Children.Add(Section(L.T("唤出轮盘"), L.T("拖动文件时，把一行里选中的键一起按下再松开，那个轮盘就会在鼠标处弹出。转换轮盘把文件转成别的格式；工具轮盘压缩、缩小、拆分或提取音频；动作轮盘复制路径、重命名、压缩或删除。工具和动作轮盘一个键都不选就不会弹出。"), keys, _keyProblem, _tapWindow, _longPress, _longPressNote, _solidWheel));
         page.Children.Add(Section(L.T("停靠栏"), L.T("拖动文件时把鼠标推到屏幕左边或右边，那里会弹出停靠栏。文件先放进去，可以从几个文件夹陆续收集，回头一起或一个个拖走。放进去和拖出来都不会移动原文件，拖到文件夹里是复制。"), _edgeDock));
         page.Children.Add(Section(L.T("文件动作"), L.T("动作轮盘上哪几项能用。没勾选的仍然显示，只是灰色。删除默认不勾选，免得手一滑把文件扔进回收站。"), actions));
-        page.Children.Add(Section(L.T("我的工具"), L.T("把 SKILL.md 所在的文件夹交给你的 AI 助手（Claude Code、Codex、Cursor 都行），说一句想要什么工具，它会把工具写进下面的文件夹，DropWheel 自动加载。配方型的工具只用内置功能，装上就能用；脚本型的先是灰的，在这里看过脚本、打开开关才会跑。"),
+        page.Children.Add(Section(L.T("我的工具"), L.T("把 SKILL.md 所在的文件夹交给你的 AI 助手（Claude Code、Codex、Cursor 都行），说一句想要什么工具，它会把工具写进下面的文件夹，DragHalo 自动加载。配方型的工具只用内置功能，装上就能用；脚本型的先是灰的，在这里看过脚本、打开开关才会跑。"),
             _toolsFolder,
             toolButtons,
             _tools,
             _unplaced,
             new TextBlock
             {
-                Text = L.T("工具是 DropWheel 之外的另一个进程，用你电脑上的 pwsh 或 python 跑。它读了什么、上不上网，DropWheel 看不见，下面的网络请求计数也不包括它。"),
+                Text = L.T("工具是 DragHalo 之外的另一个进程，用你电脑上的 pwsh 或 python 跑。它读了什么、上不上网，DragHalo 看不见，下面的网络请求计数也不包括它。"),
                 TextWrapping = TextWrapping.Wrap,
                 FontSize = 12,
                 Opacity = 0.75,
@@ -316,10 +316,10 @@ internal sealed class SettingsWindow
                 Opacity = 0.75,
             }));
 
-        page.Children.Add(Section(L.T("隐私与离线"), L.T("读取、转换和写入都在这台电脑上完成，文件不会上传。DropWheel 没有账号，不收集使用数据，也不自己联网检查更新。"),
+        page.Children.Add(Section(L.T("隐私与离线"), L.T("读取、转换和写入都在这台电脑上完成，文件不会上传。DragHalo 没有账号，不收集使用数据，也不自己联网检查更新。"),
             _network, _logNote, logButtons));
 
-        page.Children.Add(Section(L.T("语言"), L.T("跟随 Windows 时，Windows 的显示语言是中文就用简体中文，是其他语言就用英文。换了语言要退出 DropWheel 再打开才生效。"), _language));
+        page.Children.Add(Section(L.T("语言"), L.T("跟随 Windows 时，Windows 的显示语言是中文就用简体中文，是其他语言就用英文。换了语言要退出 DragHalo 再打开才生效。"), _language));
 
         _startupSection = Section(L.T("启动"), null, _startup, _startupNote);
         page.Children.Add(_startupSection);
@@ -685,7 +685,7 @@ internal sealed class SettingsWindow
 
         if (tool is not ScriptTool asScript)
         {
-            row.Children.Add(Small(L.T("只用 DropWheel 内置的功能，不跑外部程序，装上就能用。")));
+            row.Children.Add(Small(L.T("只用 DragHalo 内置的功能，不跑外部程序，装上就能用。")));
             var openRecipe = new HyperlinkButton { Content = L.T("查看清单"), Padding = new Thickness(0, 4, 0, 4) };
             openRecipe.Click += (_, _) => OpenTool(tool);
             row.Children.Add(openRecipe);
@@ -753,7 +753,7 @@ internal sealed class SettingsWindow
         if (!File.Exists(_skillPath))
         {
             FileLog.Error($"settings: SKILL.md is not at {_skillPath}");
-            _toolsFolder.Text = L.T("工具文件夹：{0}", _catalog.Directory) + "\n" + L.T("这份安装里没有 SKILL.md，在 DropWheel 的源码仓库 skills/dropwheel-tool 下能找到。");
+            _toolsFolder.Text = L.T("工具文件夹：{0}", _catalog.Directory) + "\n" + L.T("这份安装里没有 SKILL.md，在 DragHalo 的源码仓库 skills/draghalo-tool 下能找到。");
             return;
         }
 

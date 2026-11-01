@@ -6,7 +6,7 @@ namespace DropWheel.Core.Wheel;
 
 /// <summary>
 /// layout.json on disk; every change is written at once. The file is also the agent's: it may be edited by hand or by
-/// an agent while DropWheel runs, so a change is applied to what is on disk now, not to what was loaded, and
+/// an agent while DragHalo runs, so a change is applied to what is on disk now, not to what was loaded, and
 /// <see cref="Watch"/> picks up outside edits. See <see cref="WheelLayout"/>.
 /// </summary>
 public sealed class LayoutStore : IDisposable

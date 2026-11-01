@@ -14,7 +14,7 @@ namespace DropWheel.Shell;
 /// </summary>
 public static class ConflictDialog
 {
-    public static string Title => L.T("DropWheel 同名文件");
+    public static string Title => L.T("DragHalo 同名文件");
 
     // Button ids, which TDM_CLICK_BUTTON presses from outside.
     public const int Replace = 101;

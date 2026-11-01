@@ -11,7 +11,7 @@ internal static partial class AppScenario
     /// </summary>
     private static void QueueButtons(Checks checks, AppLog log, string exe, bool explorer)
     {
-        var dir = Path.Combine(Path.GetTempPath(), "DropWheelAcceptance", "queue");
+        var dir = Path.Combine(Path.GetTempPath(), "DragHaloAcceptance", "queue");
         Directory.CreateDirectory(dir);
         foreach (var old in Directory.GetFiles(dir))
         {

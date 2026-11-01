@@ -46,7 +46,7 @@ public static class ImagePdf
         IProgress<double> progress,
         CancellationToken cancellationToken)
     {
-        var metadata = SKDocumentPdfMetadata.Default with { Title = FormatRegistry.StemOf(sources[0]), Creator = "DropWheel" };
+        var metadata = SKDocumentPdfMetadata.Default with { Title = FormatRegistry.StemOf(sources[0]), Creator = "DragHalo" };
 
         // The first image is loaded up front: its size can be part of the name.
         var first = Load(sources[0]);

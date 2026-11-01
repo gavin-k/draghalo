@@ -19,7 +19,7 @@ public sealed partial class CatalogTests
     {
         // The language picker names Chinese in Chinese, so someone who reads only it can find it.
         ["Settings/SettingsWindow.cs"] = ["简体中文"],
-        // A group's name is the user's data in layout.json; the one DropWheel makes up carries both languages.
+        // A group's name is the user's data in layout.json; the one DragHalo makes up carries both languages.
         ["Wheel/WheelLayout.cs"] = ["更多"],
     };
 

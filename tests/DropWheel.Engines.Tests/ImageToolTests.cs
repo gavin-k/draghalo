@@ -10,7 +10,7 @@ namespace DropWheel.Engines.Tests;
 
 public sealed class ImageToolTests : IDisposable
 {
-    private readonly string _dir = Directory.CreateTempSubdirectory("dropwheel-tools-").FullName;
+    private readonly string _dir = Directory.CreateTempSubdirectory("draghalo-tools-").FullName;
 
     public void Dispose() => Directory.Delete(_dir, recursive: true);
 

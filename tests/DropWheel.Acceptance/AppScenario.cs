@@ -37,7 +37,7 @@ namespace DropWheel.Acceptance;
 /// </summary>
 internal static partial class AppScenario
 {
-    private const string QueueTitle = "DropWheel 任务";
+    private const string QueueTitle = "DragHalo 任务";
     private const int BudgetMs = 150;
 
     /// <summary>
@@ -63,7 +63,7 @@ internal static partial class AppScenario
             return shipped;
         }
 
-        var copy = Path.Combine(Path.GetTempPath(), "DropWheelAcceptance", "ffmpeg");
+        var copy = Path.Combine(Path.GetTempPath(), "DragHaloAcceptance", "ffmpeg");
         if (!File.Exists(Path.Combine(copy, "ffmpeg.exe")))
         {
             Directory.CreateDirectory(copy);
@@ -82,7 +82,7 @@ internal static partial class AppScenario
     {
         s_packageRoot = packageRoot is null ? null : Path.GetFullPath(packageRoot);
         var checks = new Checks();
-        var dir = Path.Combine(Path.GetTempPath(), "DropWheelAcceptance", "m0");
+        var dir = Path.Combine(Path.GetTempPath(), "DragHaloAcceptance", "m0");
         Directory.CreateDirectory(dir);
 
         // Explorer's items view only realises the first screenful of items for UI Automation, so earlier
@@ -97,11 +97,11 @@ internal static partial class AppScenario
         var jpgLength = new FileInfo(jpg).Length;
         Log.Info($"app: exe {exe}, source {jpg} ({jpgLength} B)");
 
-        foreach (var stale in Process.GetProcessesByName("DropWheel"))
+        foreach (var stale in Process.GetProcessesByName("DragHalo"))
         {
             using (stale)
             {
-                Log.Info($"app: killing a DropWheel already running (pid {stale.Id})");
+                Log.Info($"app: killing a DragHalo already running (pid {stale.Id})");
                 stale.Kill();
                 stale.WaitForExit(3000);
             }
@@ -109,7 +109,7 @@ internal static partial class AppScenario
 
         // A fresh profile per run, so neither the developer's settings nor earlier runs' recent items
         // decide where the output goes or which sector PNG is on.
-        var profile = Path.Combine(Path.GetTempPath(), "DropWheelAcceptance", "profile");
+        var profile = Path.Combine(Path.GetTempPath(), "DragHaloAcceptance", "profile");
         if (Directory.Exists(profile))
         {
             Directory.Delete(profile, recursive: true);
@@ -118,7 +118,7 @@ internal static partial class AppScenario
         Directory.CreateDirectory(profile);
 
         // An output folder chosen earlier but not in use, and not there yet: the settings scenario switches to it.
-        var folder = Path.Combine(Path.GetTempPath(), "DropWheelAcceptance", "out");
+        var folder = Path.Combine(Path.GetTempPath(), "DragHaloAcceptance", "out");
         if (Directory.Exists(folder))
         {
             Directory.Delete(folder, recursive: true);
@@ -238,7 +238,7 @@ internal static partial class AppScenario
         checks.Check("PNG is a real 640x400 PNG", IsPng(output, 640, 400, out var what), what);
         checks.Check("source JPG untouched", File.Exists(jpg) && new FileInfo(jpg).Length == jpgLength, $"{jpg} {(File.Exists(jpg) ? new FileInfo(jpg).Length : -1)} B");
         var fgAfter = PInvoke.GetForegroundWindow();
-        checks.Check("focus stays off DropWheel after the drop", OwnerPid(fgAfter) != app.Id, $"foreground \"{Title(fgAfter)}\"");
+        checks.Check("focus stays off DragHalo after the drop", OwnerPid(fgAfter) != app.Id, $"foreground \"{Title(fgAfter)}\"");
 
         // Undo through the task window's button, the way a screen reader would press it.
         log.Mark();
@@ -435,7 +435,7 @@ internal static partial class AppScenario
     /// <summary>A PDF with a line of text → DOCX: proves the text survives as text in a document Word can open.</summary>
     private static void PdfToDocx(Checks checks, AppLog log, string dir, bool explorer)
     {
-        const string Text = "Hello DropWheel";
+        const string Text = "Hello DragHalo";
         var pdf = Path.Combine(dir, $"m1d-{DateTime.Now:HHmmss}.pdf");
         WritePdf(pdf, Text);
         var docx = ConvertThroughWheel(checks, log, pdf, "docx", explorer);
@@ -737,7 +737,7 @@ internal static partial class AppScenario
             var quitExited = quit?.WaitForExit(10000) == true;
             exited = app.WaitForExit(10000);
             log.Poll();
-            checks.Check("DropWheel.exe --quit ends the running instance", exited && log.Find("shutting down") is not null,
+            checks.Check("DragHalo.exe --quit ends the running instance", exited && log.Find("shutting down") is not null,
                 exited ? $"exit code {app.ExitCode}; --quit process exited={quitExited}; {log.Find("asked it to quit") ?? "no hand-over line"}" : "still running 10 s after --quit, killed");
         }
 

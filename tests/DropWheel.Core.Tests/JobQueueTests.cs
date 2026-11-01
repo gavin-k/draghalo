@@ -9,7 +9,7 @@ namespace DropWheel.Core.Tests;
 public sealed class JobQueueTests : IDisposable
 {
     private readonly RecordingFiles _files = new();
-    private readonly string _dir = Directory.CreateTempSubdirectory("dropwheel-queue-").FullName;
+    private readonly string _dir = Directory.CreateTempSubdirectory("draghalo-queue-").FullName;
 
     public void Dispose() => Directory.Delete(_dir, recursive: true);
 

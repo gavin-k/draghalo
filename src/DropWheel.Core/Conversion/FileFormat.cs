@@ -1,7 +1,7 @@
 namespace DropWheel.Core.Conversion;
 
 /// <summary>
-/// A file format known to DropWheel. <see cref="Id"/> is the canonical lower-case extension
+/// A file format known to DragHalo. <see cref="Id"/> is the canonical lower-case extension
 /// without the dot ("png", "docx"); <see cref="Aliases"/> lists other extensions that map to it.
 /// </summary>
 /// <param name="Id">Canonical extension, lower-case, no dot.</param>

@@ -16,7 +16,7 @@ internal static class Log
 
     public static void Open(string prefix)
     {
-        var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DropWheelAcceptance");
+        var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DragHaloAcceptance");
         Directory.CreateDirectory(directory);
         FilePath = Path.Combine(directory, $"{prefix}-{DateTime.Now:yyyyMMdd-HHmmss}.log");
         _file = new StreamWriter(FilePath, append: false, new UTF8Encoding(false)) { AutoFlush = true };

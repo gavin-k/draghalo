@@ -16,7 +16,7 @@ public sealed class PresentationTests : IDisposable
     private const string Dgm = "http://schemas.openxmlformats.org/drawingml/2006/diagram";
     private const string RelTypes = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/";
 
-    private readonly string _dir = Directory.CreateTempSubdirectory("dropwheel-slides-").FullName;
+    private readonly string _dir = Directory.CreateTempSubdirectory("draghalo-slides-").FullName;
     private readonly DocumentConverter _converter = new();
 
     public void Dispose() => Directory.Delete(_dir, recursive: true);

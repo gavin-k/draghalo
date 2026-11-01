@@ -13,7 +13,7 @@ namespace DropWheel.Engines.Tests;
 
 public sealed class OcrToolTests : IDisposable
 {
-    private readonly string _dir = Directory.CreateTempSubdirectory("dropwheel-ocr-").FullName;
+    private readonly string _dir = Directory.CreateTempSubdirectory("draghalo-ocr-").FullName;
     private readonly FakeRecognizer _recognizer = new();
     private readonly OcrTool _tool;
 
@@ -43,19 +43,19 @@ public sealed class OcrToolTests : IDisposable
     public async Task The_text_of_an_image_goes_into_a_txt_next_to_it()
     {
         var png = Image("note.png", 64, 48, MagickFormat.Png);
-        _recognizer.Pages.Enqueue([["DropWheel", "2026"], ["第", "二", "行"]]);
+        _recognizer.Pages.Enqueue([["DragHalo", "2026"], ["第", "二", "行"]]);
 
         var result = await Run(png);
 
         result.Succeeded.Should().BeTrue(result.Error);
         result.OutputPaths.Should().Equal(Path.Combine(_dir, "note.txt"));
-        Text(result.OutputPaths[0]).Should().Be("DropWheel 2026\r\n第二行\r\n");
+        Text(result.OutputPaths[0]).Should().Be("DragHalo 2026\r\n第二行\r\n");
         result.Detail.Should().Be("认出 2 行，识别语言 测试语言");
         _recognizer.Seen.Should().Equal((64, 48));
     }
 
     [Theory]
-    [InlineData(new[] { "使用", "DropWheel", "转换" }, "使用 DropWheel 转换")]
+    [InlineData(new[] { "使用", "DragHalo", "转换" }, "使用 DragHalo 转换")]
     [InlineData(new[] { "你", "好", "，", "世", "界", "。" }, "你好，世界。")]
     [InlineData(new[] { "2026", "年" }, "2026 年")]
     [InlineData(new[] { "こん", "にちは", "안녕" }, "こんにちは안녕")]

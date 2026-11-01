@@ -17,11 +17,11 @@ public class LogRetentionTests
 
     [Theory]
     [InlineData("notes.txt")]
-    [InlineData("dropwheel-old.log")]
-    [InlineData("dropwheel-20200101.txt")]
+    [InlineData("draghalo-old.log")]
+    [InlineData("draghalo-20200101.txt")]
     [InlineData("other-20200101.log")]
     public void Files_that_are_not_daily_logs_are_left_alone(string name)
         => LogRetention.Expired([name], Today).Should().BeEmpty();
 
-    private static string Log(string day) => Path.Combine("logs", $"dropwheel-{day}.log");
+    private static string Log(string day) => Path.Combine("logs", $"draghalo-{day}.log");
 }

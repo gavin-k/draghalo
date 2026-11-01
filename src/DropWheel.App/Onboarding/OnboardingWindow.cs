@@ -23,7 +23,7 @@ namespace DropWheel.App.Onboarding;
 /// </summary>
 internal sealed class OnboardingWindow
 {
-    private static string SampleFolderName => L.T("DropWheel 示例");
+    private static string SampleFolderName => L.T("DragHalo 示例");
     private static string SampleName => L.T("示例照片.jpg");
     private readonly Window _window;
     private readonly SettingsStore _settings;
@@ -37,8 +37,8 @@ internal sealed class OnboardingWindow
     {
         _settings = settings;
         _ui = ui;
-        _window = new Window { Title = L.T("DropWheel 入门") };
-        _window.AppWindow.SetIcon("Assets/DropWheel.ico");
+        _window = new Window { Title = L.T("DragHalo 入门") };
+        _window.AppWindow.SetIcon("Assets/DragHalo.ico");
         _window.AppWindow.Closing += (window, e) =>
         {
             if (!Quitting)
@@ -74,7 +74,7 @@ internal sealed class OnboardingWindow
         page.Children.Add(_outcome);
         page.Children.Add(new TextBlock
         {
-            Text = L.T("关掉这个窗口后，DropWheel 留在任务栏右侧的通知区域里（新图标可能先收在 ^ 形的隐藏图标里），随时可以用。点它的图标打开任务窗口，那里能看到进度、撤销转换、打开设置。"),
+            Text = L.T("关掉这个窗口后，DragHalo 留在任务栏右侧的通知区域里（新图标可能先收在 ^ 形的隐藏图标里），随时可以用。点它的图标打开任务窗口，那里能看到进度、撤销转换、打开设置。"),
             TextWrapping = TextWrapping.Wrap,
         });
         page.Children.Add(new Grid

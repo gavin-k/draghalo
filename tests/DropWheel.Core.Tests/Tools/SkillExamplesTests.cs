@@ -9,7 +9,7 @@ namespace DropWheel.Core.Tests.Tools;
 /// <summary>The skill ships examples agents copy and a schema they validate against; both must agree with the reader.</summary>
 public sealed class SkillExamplesTests
 {
-    private static readonly string Skill = Path.Combine(Root(), "skills", "dropwheel-tool");
+    private static readonly string Skill = Path.Combine(Root(), "skills", "draghalo-tool");
 
     [Fact]
     public void Every_example_reads_without_an_error()

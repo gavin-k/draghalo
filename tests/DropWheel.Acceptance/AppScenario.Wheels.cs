@@ -82,13 +82,13 @@ internal static partial class AppScenario
     /// </summary>
     private static void Recipe(Checks checks, AppLog log, string exe, string profile, bool explorer)
     {
-        var examples = Path.Combine(InstallRoot(exe), "skills", "dropwheel-tool", "examples");
+        var examples = Path.Combine(InstallRoot(exe), "skills", "draghalo-tool", "examples");
         var tools = Path.Combine(profile, "tools");
-        var dir = Path.Combine(Path.GetTempPath(), "DropWheelAcceptance", "usertools");
+        var dir = Path.Combine(Path.GetTempPath(), "DragHaloAcceptance", "usertools");
         Directory.CreateDirectory(dir);
         var recipe = Path.Combine(examples, "recipe-web-jpg");
         var (code, json) = ToolCommand(exe, "--validate-tool", recipe);
-        checks.Check("DropWheel.exe --validate-tool accepts the shipped recipe example", code == 0 && Problems(json) == "", $"exit {code}; {Shorten(json)}");
+        checks.Check("DragHalo.exe --validate-tool accepts the shipped recipe example", code == 0 && Problems(json) == "", $"exit {code}; {Shorten(json)}");
 
         log.Mark();
         CopyTree(recipe, Path.Combine(tools, "recipe-web-jpg"));
@@ -127,7 +127,7 @@ internal static partial class AppScenario
         var output = done is null ? null : OutputsRegex().Match(done) is { Success: true } m ? m.Groups[1].Value : null;
         var stem = Path.GetFileNameWithoutExtension(png);
         var named = output is not null && Regex.IsMatch(Path.GetFileName(output), $"^{Regex.Escape(stem)}-320x200(-压缩)?\\.jpg$", RegexOptions.IgnoreCase);
-        var scratch = Directory.GetFileSystemEntries(dir, "*.dropwheel-tmp");
+        var scratch = Directory.GetFileSystemEntries(dir, "*.draghalo-tmp");
         checks.Check("发网上 through the ring writes a 320x200 JPG named by its steps next to the source and leaves no scratch folder",
             named && File.Exists(output!) && Path.GetDirectoryName(output) == dir && scratch.Length == 0,
             $"{enqueued ?? "nothing enqueued within 3 s"}; {done ?? "no queue outcome within 60 s"}; scratch [{string.Join(", ", scratch.Select(f => Path.GetFileName(f)))}]");
@@ -140,8 +140,8 @@ internal static partial class AppScenario
     /// </summary>
     private static void HardKill(Checks checks, string exe, bool explorer)
     {
-        var profile = Path.Combine(Path.GetTempPath(), "DropWheelAcceptance", "profile");
-        var dir = Path.Combine(Path.GetTempPath(), "DropWheelAcceptance", "usertools");
+        var profile = Path.Combine(Path.GetTempPath(), "DragHaloAcceptance", "profile");
+        var dir = Path.Combine(Path.GetTempPath(), "DragHaloAcceptance", "usertools");
         Directory.CreateDirectory(dir);
         var jpg = Path.Combine(dir, $"hk-{DateTime.Now:HHmmss}.jpg");
         WriteJpeg(jpg, 640, 400);

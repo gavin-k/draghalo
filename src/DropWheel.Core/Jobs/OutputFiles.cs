@@ -6,13 +6,13 @@ namespace DropWheel.Core.Jobs;
 /// How every engine writes its outputs. Each output is rendered into a temporary file (or folder) next to its
 /// target and moved into place without overwriting. Failed batches remove only unchanged outputs.
 ///
-/// The temporary name ends in ".dropwheel-tmp" rather than the real extension, so Explorer does not start
+/// The temporary name ends in ".draghalo-tmp" rather than the real extension, so Explorer does not start
 /// a thumbnail handler on a half-written file and lock it before the move. Writers therefore have to name
 /// the format explicitly (a Magick format, ffmpeg's -f) instead of letting a library guess it from the name.
 /// </summary>
 public static class OutputFiles
 {
-    public const string TempSuffix = ".dropwheel-tmp";
+    public const string TempSuffix = ".draghalo-tmp";
 
     /// <summary>
     /// Converts each source in turn with <paramref name="convert"/> (source, index, progress within that

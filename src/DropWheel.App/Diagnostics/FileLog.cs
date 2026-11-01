@@ -4,7 +4,7 @@ using DropWheel.Core.Privacy;
 namespace DropWheel.App.Diagnostics;
 
 /// <summary>
-/// Append-only text log under %LOCALAPPDATA%\DropWheel\logs, one file per day, kept for
+/// Append-only text log under %LOCALAPPDATA%\DragHalo\logs, one file per day, kept for
 /// <see cref="LogRetention.KeepDays"/> days because it names the files converted. Writing only queues the
 /// line: callers include the hook thread, where a blocking file write could get the hook removed.
 /// </summary>
@@ -14,9 +14,9 @@ internal static class FileLog
     private static readonly Task Writer = Task.Run(WriteAsync);
 
     public static string Directory { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DropWheel", "logs");
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DragHalo", "logs");
 
-    public static string CurrentFile => Path.Combine(Directory, $"dropwheel-{DateTime.Now:yyyyMMdd}.log");
+    public static string CurrentFile => Path.Combine(Directory, $"draghalo-{DateTime.Now:yyyyMMdd}.log");
 
     public static void Info(string message) => Write("INFO ", message);
 
@@ -55,7 +55,7 @@ internal static class FileLog
         Writer.Wait(timeout);
     }
 
-    private static string[] Files() => System.IO.Directory.Exists(Directory) ? System.IO.Directory.GetFiles(Directory, "dropwheel-*.log") : [];
+    private static string[] Files() => System.IO.Directory.Exists(Directory) ? System.IO.Directory.GetFiles(Directory, "draghalo-*.log") : [];
 
     private static int Delete(IEnumerable<string> files)
     {
