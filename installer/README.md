@@ -28,7 +28,7 @@ makeappx bundle /o /d <只放这两个 .msix 的文件夹> /p DropWheel.App_<ver
 ```powershell
 dotnet publish src/DropWheel.App -c Release -r win-x64 -p:Platform=x64 -p:WindowsPackageType=None -p:WindowsAppSDKSelfContained=true -p:SelfContained=true -p:PublishProfile= -o publish/msi-x64
 dotnet build installer/msi/DropWheel.Msi.wixproj -c Release -p:Platform=x64 -p:PublishDir=$PWD\publish\msi-x64\ -o artifacts/msi
-msiexec /i artifacts\msi\DragHalo-0.1.0-x64.msi /qn    # 静默安装；/x 静默卸载
+msiexec /i artifacts\msi\DragHalo-0.1.1-x64.msi /qn    # 静默安装；/x 静默卸载
 ```
 
 - 按机器装到 `Program Files\DragHalo`，开始菜单有快捷方式。publish 文件夹里的文件全部收进去，不用逐个列。
