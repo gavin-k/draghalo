@@ -1,6 +1,6 @@
 # DropHalo
 
-当前源码与构建产物统一使用 **DropHalo**。这次更名尚未发布；GitHub 远程仍为 `gavin-k/draghalo`，已有发布包保留原名。
+当前源码与构建产物统一使用 **DropHalo**，从 `v0.1.2` 开始采用此名称。GitHub 远程仍为 `gavin-k/draghalo`，更早的发布包保留原名。
 
 > 拖一下，松手，转好了。
 > A local, offline, drag-to-convert file converter for Windows 11.

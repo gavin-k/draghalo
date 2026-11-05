@@ -331,7 +331,7 @@ jobs:
           cp "$(one '*/bundle/*.msixbundle')" "release/DropHalo-$v.msixbundle"
           cp "$(one '*/DropHalo-*-x64.msi')"   "release/DropHalo-$v-x64.msi"
           cp "$(one '*/DropHalo-*-ARM64.msi')" "release/DropHalo-$v-arm64.msi"
-          (cd release && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          (cd release && sha256sum -- * > SHA256SUMS.txt && cat SHA256SUMS.txt)
           ls -l release
 
       - name: Create or update the release
