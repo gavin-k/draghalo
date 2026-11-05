@@ -11,7 +11,7 @@
 
   <application xmlns="urn:schemas-microsoft-com:asm.v3">
     <windowsSettings>
-      <!-- Same as src/DropWheel.App: the screen-capture maths below assume physical pixels. -->
+      <!-- Same as src/DropHalo.App: the screen-capture maths below assume physical pixels. -->
       <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
     </windowsSettings>
   </application>

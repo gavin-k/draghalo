@@ -1,9 +1,9 @@
 <#
 .SYNOPSIS
-    One-shot, idempotent Windows developer setup for DragHalo.
+    One-shot, idempotent Windows developer setup for DropHalo.
 
 .DESCRIPTION
-    Installs / verifies everything needed to build DropWheel.slnx and package the WinUI 3 app:
+    Installs / verifies everything needed to build DropHalo.slnx and package the WinUI 3 app:
 
       1. .NET 10 SDK                       winget Microsoft.DotNet.SDK.10      (fallback: dotnet-install.ps1)
       2. winapp CLI                        winget Microsoft.winappcli          (fallback: GitHub release zip)
@@ -50,7 +50,7 @@ function Get-WinappVersion([string]$exe) {
 }
 
 $Arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
-$Temp = Join-Path $env:TEMP 'draghalo-setup'
+$Temp = Join-Path $env:TEMP 'drophalo-setup'
 New-Item -ItemType Directory -Force -Path $Temp | Out-Null
 $Summary = New-Object System.Collections.Generic.List[string]
 
@@ -110,7 +110,7 @@ function Invoke-Winget([string]$id, [string]$override) {
     return $p.ExitCode -in @(0, 3010, -1978335189, -1978335215)
 }
 
-Write-Step "DragHalo Windows setup  ·  arch=$Arch  ·  repo=$RepoRoot"
+Write-Step "DropHalo Windows setup  ·  arch=$Arch  ·  repo=$RepoRoot"
 $wingetOk = Test-Winget
 if ($wingetOk) { Write-Host "    winget: $script:Winget" } else { Write-Host '    winget: unavailable in this session, using direct downloads' -ForegroundColor Yellow }
 
@@ -198,7 +198,7 @@ Write-Step 'Development certificate'
 if ($SkipCert) {
     Write-Host '    skipped (-SkipCert)'
 } else {
-    $manifest = Join-Path $RepoRoot 'src\DropWheel.App\Package.appxmanifest'
+    $manifest = Join-Path $RepoRoot 'src\DropHalo.App\Package.appxmanifest'
     $pfx = Join-Path $RepoRoot 'devcert.pfx'
     if (-not (Test-Path $manifest)) { throw "manifest not found: $manifest (pass -RepoRoot)" }
     Push-Location $RepoRoot

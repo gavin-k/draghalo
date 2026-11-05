@@ -3,11 +3,11 @@
 # dependencies = ["pillow>=10"]
 # ///
 """
-Draws the DragHalo logo and writes every size the app ships:
+Draws the DropHalo logo and writes every size the app ships:
 
-  docs/design/exports/draghalo-logo.svg       master (256 x 256)
-  src/DropWheel.App/Assets/DragHalo.ico       windows, tray, exe, MSI (16 ... 256 px)
-  src/DropWheel.App/Assets/*.png               MSIX visual assets, unqualified plus scale-* / targetsize-* variants
+  docs/design/exports/drophalo-logo.svg       master (256 x 256)
+  src/DropHalo.App/Assets/DropHalo.ico       windows, tray, exe, MSI (16 ... 256 px)
+  src/DropHalo.App/Assets/*.png               MSIX visual assets, unqualified plus scale-* / targetsize-* variants
 
 The mark is the conversion wheel itself: an orange plate, a ring cut into the wheel's six 60-degree sectors (the
 first starting at -120 degrees, so one sits straight up), that top sector lit as the one under the pointer, and a
@@ -22,7 +22,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parent.parent
-ASSETS = ROOT / "src/DropWheel.App/Assets"
+ASSETS = ROOT / "src/DropHalo.App/Assets"
 EXPORTS = ROOT / "docs/design/exports"
 
 PLATE_TOP = (0xEA, 0x58, 0x0C)  # orange-600
@@ -120,7 +120,7 @@ def svg() -> str:
     top, bottom = ("#%02X%02X%02X" % PLATE_TOP), ("#%02X%02X%02X" % PLATE_BOTTOM)
     return "\n".join([
         '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">',
-        "  <title>DragHalo</title>",
+        "  <title>DropHalo</title>",
         f'  <defs><linearGradient id="plate" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{top}"/><stop offset="1" stop-color="{bottom}"/></linearGradient></defs>',
         f'  <rect x="{inset}" y="{inset}" width="{side}" height="{side}" rx="{g["radius"]}" fill="url(#plate)"/>',
         *paths,
@@ -173,10 +173,10 @@ def save(img: Image.Image, name: str):
 
 def main():
     EXPORTS.mkdir(parents=True, exist_ok=True)
-    (EXPORTS / "draghalo-logo.svg").write_text(svg(), encoding="utf-8")
-    icon(1024).save(EXPORTS / "draghalo-logo-1024.png", "PNG", optimize=True)
+    (EXPORTS / "drophalo-logo.svg").write_text(svg(), encoding="utf-8")
+    icon(1024).save(EXPORTS / "drophalo-logo-1024.png", "PNG", optimize=True)
 
-    write_ico(ASSETS / "DragHalo.ico", [16, 20, 24, 28, 32, 36, 40, 48, 64, 96, 128, 256])
+    write_ico(ASSETS / "DropHalo.ico", [16, 20, 24, 28, 32, 36, 40, 48, 64, 96, 128, 256])
 
     scales = [100, 125, 150, 200, 400]
     # Square44x44Logo: app list, taskbar, Alt+Tab. The plate is the icon, so plated and unplated are the same picture.

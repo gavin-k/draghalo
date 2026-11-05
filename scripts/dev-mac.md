@@ -1,17 +1,17 @@
-# 在 macOS 上开发 DragHalo
+# 在 macOS 上开发 DropHalo
 
-DragHalo 是 Windows 11 应用，但仓库被切成两半：一半是纯 .NET，可以在 Mac 上日常开发；另一半依赖 WinUI 3 / Windows App SDK，只能在 Windows 上构建。本页说明 Mac 上能做什么、不能做什么，以及如何用 Parallels 里的 Windows 11 虚拟机补上另一半。
+DropHalo 是 Windows 11 应用，但仓库被切成两半：一半是纯 .NET，可以在 Mac 上日常开发；另一半依赖 WinUI 3 / Windows App SDK，只能在 Windows 上构建。本页说明 Mac 上能做什么、不能做什么，以及如何用 Parallels 里的 Windows 11 虚拟机补上另一半。
 
 ## Mac 上能做什么
 
 | 项目 | TFM | Mac 可构建 | 说明 |
 |---|---|---|---|
-| `src/DropWheel.Core` | `net10.0` | ✅ | 领域模型：转换图、轮盘、任务队列、命名模板、设置。无 Windows 依赖 |
-| `tests/DropWheel.Core.Tests` | `net10.0` | ✅ | xUnit，`dotnet test` 直接跑 |
-| `src/DropWheel.Shell` | `net10.0-windows10.0.26100.0` | ❌ | CsWin32 生成的 Win32 互操作 |
-| `src/DropWheel.Engines` | `net10.0-windows10.0.26100.0` | ✅ | Magick.NET 等引擎适配器。`build.sh` 加 `-p:EnableWindowsTargeting=true` 构建；Magick.NET 自带 macOS 原生库 |
-| `tests/DropWheel.Engines.Tests` | `net10.0-windows10.0.26100.0` | ✅ | 真实编解码的转换测试；平台要和本机 CPU 一致（Apple 芯片用 `ARM64`），`build.sh` 自动选 |
-| `src/DropWheel.App` | `net10.0-windows10.0.26100.0` | ❌ | WinUI 3 主程序 + MSIX 打包 |
+| `src/DropHalo.Core` | `net10.0` | ✅ | 领域模型：转换图、轮盘、任务队列、命名模板、设置。无 Windows 依赖 |
+| `tests/DropHalo.Core.Tests` | `net10.0` | ✅ | xUnit，`dotnet test` 直接跑 |
+| `src/DropHalo.Shell` | `net10.0-windows10.0.26100.0` | ❌ | CsWin32 生成的 Win32 互操作 |
+| `src/DropHalo.Engines` | `net10.0-windows10.0.26100.0` | ✅ | Magick.NET 等引擎适配器。`build.sh` 加 `-p:EnableWindowsTargeting=true` 构建；Magick.NET 自带 macOS 原生库 |
+| `tests/DropHalo.Engines.Tests` | `net10.0-windows10.0.26100.0` | ✅ | 真实编解码的转换测试；平台要和本机 CPU 一致（Apple 芯片用 `ARM64`），`build.sh` 自动选 |
+| `src/DropHalo.App` | `net10.0-windows10.0.26100.0` | ❌ | WinUI 3 主程序 + MSIX 打包 |
 
 能做：写 Core 的业务逻辑和单测、写图片引擎并跑它的测试、改文档、改 CI、改脚本。
 不能做：编译 / 运行 WinUI 应用、生成 MSIX、调试钩子与拖拽。这些放到 Windows 里做。
@@ -37,7 +37,7 @@ DragHalo 是 Windows 11 应用，但仓库被切成两半：一半是纯 .NET，
 ./build.sh --no-test    # 只构建
 ```
 
-`build.sh` 在 macOS / Linux 上只处理 Core、Engines 与测试项目；在 Windows 的 Git Bash 里运行时会改为构建整个 `DropWheel.slnx`（VM 里没有装 Git for Windows，这个分支还没实测；Windows 上以 `scripts/build-windows.ps1` 为准）。
+`build.sh` 在 macOS / Linux 上只处理 Core、Engines 与测试项目；在 Windows 的 Git Bash 里运行时会改为构建整个 `DropHalo.slnx`（VM 里没有装 Git for Windows，这个分支还没实测；Windows 上以 `scripts/build-windows.ps1` 为准）。
 
 ## 用 Parallels 里的 Windows 构建另一半
 
@@ -74,18 +74,18 @@ Parallels 已开启「共享用户主目录」，Mac 上的 `~/Projects/dropwhee
 
 ```powershell
 # 在 Windows 里（PowerShell）
-robocopy \\Mac\Home\Projects\dropwheel C:\src\dropwheel /MIR /XD .git bin obj artifacts .vs /NFL /NDL /NJH /NJS
-cd C:\src\dropwheel
+robocopy \\Mac\Home\Projects\dropwheel C:\src\drophalo /MIR /XD .git bin obj artifacts .vs /NFL /NDL /NJH /NJS
+cd C:\src\drophalo
 pwsh .\scripts\build-windows.ps1          # 或 powershell -File .\scripts\build-windows.ps1
 ```
 
 或者从 Mac 一键触发：
 
 ```bash
-prlctl exec "Windows 11" cmd /c "robocopy \\Mac\Home\Projects\dropwheel C:\src\dropwheel /MIR /XD .git bin obj artifacts .vs /NFL /NDL /NJH /NJS & powershell -NoProfile -ExecutionPolicy Bypass -File C:\src\dropwheel\scripts\build-windows.ps1"
+prlctl exec "Windows 11" cmd /c "robocopy \\Mac\Home\Projects\dropwheel C:\src\drophalo /MIR /XD .git bin obj artifacts .vs /NFL /NDL /NJH /NJS & powershell -NoProfile -ExecutionPolicy Bypass -File C:\src\drophalo\scripts\build-windows.ps1"
 ```
 
-产物在 `C:\src\dropwheel\artifacts\`（未签名 x64 `.msix`）。
+产物在 `C:\src\drophalo\artifacts\`（未签名 x64 `.msix`）。
 
 ### Windows 侧工具链
 

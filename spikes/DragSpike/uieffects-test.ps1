@@ -2,8 +2,8 @@
 # Turns off "Show window contents while dragging", "Use visual effects/animations" (SPI_SETUIEFFECTS),
 # "Show shadows under windows" and "Show shadows under mouse pointer" for the duration of one
 # `DragSpike --selftest --explorer` run, then restores them. Not persisted (no SPIF_UPDATEINIFILE).
-# Run inside the interactive Windows session after building the spike to C:\src\dropwheel (see README).
-param([string]$Exe = 'C:\src\dropwheel\spikes\DragSpike\bin\Release\net10.0-windows10.0.26100.0\DragSpike.exe')
+# Run inside the interactive Windows session after building the spike to C:\src\drophalo (see README).
+param([string]$Exe = 'C:\src\drophalo\spikes\DragSpike\bin\Release\net10.0-windows10.0.26100.0\DragSpike.exe')
 [Console]::OutputEncoding=[Text.Encoding]::UTF8
 $ProgressPreference='SilentlyContinue'
 Add-Type -Namespace Spi -Name Native -MemberDefinition @'

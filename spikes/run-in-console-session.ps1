@@ -6,8 +6,8 @@
 param(
     [Parameter(Mandatory)][string]$Command,
     [int]$TimeoutSeconds = 1800,
-    [string]$TaskName = 'DropWheelSpike',
-    [string]$OutFile = (Join-Path $env:TEMP 'dropwheel-spike-session.txt')
+    [string]$TaskName = 'DropHaloSpike',
+    [string]$OutFile = (Join-Path $env:TEMP 'drophalo-spike-session.txt')
 )
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8

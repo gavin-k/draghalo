@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>DropHalo.Core</RootNamespace>
+    <Description>DropHalo domain model: conversion graph, wheel ranking, job queue, undo, naming, settings. No Windows dependency.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../Shared/L.cs" Link="Localization/L.cs" />
+    <EmbeddedResource Include="Strings.en.json" LogicalName="Strings.en.json" WithCulture="false" />
+  </ItemGroup>
+
+</Project>

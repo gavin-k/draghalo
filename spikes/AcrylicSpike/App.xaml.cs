@@ -20,7 +20,7 @@ public partial class App : Application
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         var options = Options.Parse(Environment.GetCommandLineArgs().Skip(1).ToArray());
-        Log.Open(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DropWheelSpike"), $"acrylic-{options.Variant.ToString().ToLowerInvariant()}{(options.DefaultConfig ? "-defaultconfig" : "")}");
+        Log.Open(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DropHaloSpike"), $"acrylic-{options.Variant.ToString().ToLowerInvariant()}{(options.DefaultConfig ? "-defaultconfig" : "")}");
         _runner = new Runner(options);
         _ = _runner.RunAsync();
     }

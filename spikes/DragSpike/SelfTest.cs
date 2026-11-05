@@ -29,7 +29,7 @@ internal sealed class SelfTest(HookThread hooks, WheelForm wheel, bool explorer,
         var results = new List<(string Name, bool Ok, string Detail)>();
         void Check(string name, bool ok, string detail) { results.Add((name, ok, detail)); Log.Info($"{(ok ? "PASS" : "FAIL")}  {name}: {detail}"); }
 
-        var dir = Path.Combine(Path.GetTempPath(), "DropWheelSpike");
+        var dir = Path.Combine(Path.GetTempPath(), "DropHaloSpike");
         Directory.CreateDirectory(dir);
         var file = Path.Combine(dir, "sample-drop.jpg");
         File.WriteAllBytes(file, new byte[1024]);

@@ -7,7 +7,7 @@
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
     <Authors>Gavin Lee</Authors>
-    <Product>DragHalo</Product>
+    <Product>DropHalo</Product>
     <Copyright>Copyright © 2026 Gavin Lee</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/gavin-k/draghalo</RepositoryUrl>

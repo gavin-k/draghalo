@@ -35,7 +35,7 @@ jobs:
         shell: pwsh
         run: |
           $tag = '${{ github.ref_name }}'.TrimStart('v')
-          [xml]$manifest = Get-Content src/DropWheel.App/Package.appxmanifest
+          [xml]$manifest = Get-Content src/DropHalo.App/Package.appxmanifest
           $msix = $manifest.GetElementsByTagName('Identity')[0].GetAttribute('Version')
           [xml]$props = Get-Content Directory.Build.props
           $prefix = @($props.Project.PropertyGroup.VersionPrefix | Where-Object { $_ })[0]
@@ -78,15 +78,15 @@ jobs:
           path: tools/sidecars/.download
           key: sidecars-${{ hashFiles('scripts/sidecars.lock') }}
 
-      # ffmpeg (LGPL) ships beside DragHalo.exe as sidecars/ffmpeg, see ADR-0003 and docs/05-licenses.md.
+      # ffmpeg (LGPL) ships beside DropHalo.exe as sidecars/ffmpeg, see ADR-0003 and docs/05-licenses.md.
       - name: Fetch sidecars (x64 + arm64)
         shell: pwsh
         run: ./scripts/fetch-sidecars.ps1
 
       - name: Core tests
         run: |
-          dotnet restore tests/DropWheel.Core.Tests/DropWheel.Core.Tests.csproj
-          dotnet test tests/DropWheel.Core.Tests/DropWheel.Core.Tests.csproj -c Release --no-restore
+          dotnet restore tests/DropHalo.Core.Tests/DropHalo.Core.Tests.csproj
+          dotnet test tests/DropHalo.Core.Tests/DropHalo.Core.Tests.csproj -c Release --no-restore
 
       # 签名的 MSIX 的 Publisher 必须和证书主题逐字相同。源文件里保留 CN=Gavin Lee 给本地 devcert 用，
       # 只在签名的构建里改；所以发布包的包家族名和本地开发包不同，两者可以并存、不会互相升级。
@@ -97,7 +97,7 @@ jobs:
           PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
         run: |
           if (-not $env:PUBLISHER) { throw 'The signing environment has no MSIX_PUBLISHER variable (the certificate subject the package identity must match).' }
-          $path = (Resolve-Path src/DropWheel.App/Package.appxmanifest).Path
+          $path = (Resolve-Path src/DropHalo.App/Package.appxmanifest).Path
           $xml = New-Object System.Xml.XmlDocument
           $xml.PreserveWhitespace = $true
           $xml.Load($path)
@@ -111,7 +111,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path artifacts/x64 | Out-Null
           Push-Location artifacts/x64
-          winapp pack ../../src/DropWheel.App/DropWheel.App.csproj -c Release --arch x64 --no-sign
+          winapp pack ../../src/DropHalo.App/DropHalo.App.csproj -c Release --arch x64 --no-sign
           Pop-Location
 
       - name: Pack arm64
@@ -119,7 +119,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path artifacts/arm64 | Out-Null
           Push-Location artifacts/arm64
-          winapp pack ../../src/DropWheel.App/DropWheel.App.csproj -c Release --arch arm64 --no-sign
+          winapp pack ../../src/DropHalo.App/DropHalo.App.csproj -c Release --arch arm64 --no-sign
           Pop-Location
 
       # 每个 .msix 都要带上本架构的原生代码：x64 包里放了 ARM64 的 ffmpeg 或 PDFium 会直接跑不起来。
@@ -152,7 +152,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path artifacts/bundle | Out-Null
           Push-Location artifacts/bundle
-          winapp pack ../../src/DropWheel.App/DropWheel.App.csproj -c Release --arch x64 --arch arm64 --no-sign
+          winapp pack ../../src/DropHalo.App/DropHalo.App.csproj -c Release --arch x64 --arch arm64 --no-sign
           Pop-Location
           Get-ChildItem -Recurse artifacts -Include *.msix,*.msixbundle | Format-Table Name, @{n='MB';e={[math]::Round($_.Length/1MB,1)}}
 
@@ -192,7 +192,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: DragHalo-msix-${{ github.ref_name }}
+          name: DropHalo-msix-${{ github.ref_name }}
           path: |
             artifacts/x64/*.msix
             artifacts/arm64/*.msix
@@ -200,7 +200,7 @@ jobs:
           if-no-files-found: error
 
   # MSI（WiX v5）：未打包、自包含的 publish 文件夹，按架构各一个 .msi。
-  # 签名顺序和 shhield-ai 一样：先签 publish 里的 DragHalo.exe，再编 MSI，最后签 .msi；ffmpeg 是第三方二进制，不用我们的证书签。
+  # 签名顺序和 shhield-ai 一样：先签 publish 里的 DropHalo.exe，再编 MSI，最后签 .msi；ffmpeg 是第三方二进制，不用我们的证书签。
   msi:
     name: MSI (x64 + arm64)
     needs: check
@@ -232,10 +232,10 @@ jobs:
         shell: pwsh
         run: |
           $machines = @{ x64 = 0x8664; ARM64 = 0xAA64 }
-          $natives = 'DragHalo.exe', 'sidecars/ffmpeg/ffmpeg.exe', 'pdfium.dll', 'libSkiaSharp.dll', 'coreclr.dll', 'hostfxr.dll'
+          $natives = 'DropHalo.exe', 'sidecars/ffmpeg/ffmpeg.exe', 'pdfium.dll', 'libSkiaSharp.dll', 'coreclr.dll', 'hostfxr.dll'
           foreach ($plat in 'x64', 'ARM64') {
             $publish = Join-Path $env:RUNNER_TEMP "publish-$plat"
-            dotnet publish src/DropWheel.App/DropWheel.App.csproj -c Release -r "win-$($plat.ToLowerInvariant())" "-p:Platform=$plat" -p:WindowsPackageType=None -p:WindowsAppSDKSelfContained=true -p:SelfContained=true -p:PublishProfile= -o $publish
+            dotnet publish src/DropHalo.App/DropHalo.App.csproj -c Release -r "win-$($plat.ToLowerInvariant())" "-p:Platform=$plat" -p:WindowsPackageType=None -p:WindowsAppSDKSelfContained=true -p:SelfContained=true -p:PublishProfile= -o $publish
             if ($LASTEXITCODE -ne 0) { throw "publish $plat failed" }
             foreach ($native in $natives) {
               $file = Join-Path $publish $native
@@ -254,7 +254,7 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Sign DragHalo.exe (x64 + ARM64)
+      - name: Sign DropHalo.exe (x64 + ARM64)
         if: env.SIGNING == 'true'
         uses: azure/trusted-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
         with:
@@ -262,15 +262,15 @@ jobs:
           trusted-signing-account-name: ${{ secrets.AZURE_SIGNING_ACCOUNT_NAME }}
           certificate-profile-name: ${{ secrets.AZURE_CERTIFICATE_PROFILE_NAME }}
           files: |
-            ${{ runner.temp }}\publish-x64\DragHalo.exe
-            ${{ runner.temp }}\publish-ARM64\DragHalo.exe
+            ${{ runner.temp }}\publish-x64\DropHalo.exe
+            ${{ runner.temp }}\publish-ARM64\DropHalo.exe
 
       - name: Build the MSIs
         shell: pwsh
         run: |
           foreach ($plat in 'x64', 'ARM64') {
             $publish = Join-Path $env:RUNNER_TEMP "publish-$plat"
-            dotnet build installer/msi/DropWheel.Msi.wixproj -c Release "-p:Platform=$plat" "-p:PublishDir=$publish\" -o artifacts/msi
+            dotnet build installer/msi/DropHalo.Msi.wixproj -c Release "-p:Platform=$plat" "-p:PublishDir=$publish\" -o artifacts/msi
             if ($LASTEXITCODE -ne 0) { throw "MSI $plat failed" }
           }
           Get-ChildItem artifacts/msi -Filter *.msi | Format-Table Name, @{n='MB';e={[math]::Round($_.Length/1MB,1)}}
@@ -289,8 +289,8 @@ jobs:
         if: env.SIGNING == 'true'
         shell: pwsh
         run: |
-          $files = @(Get-ChildItem artifacts/msi -Filter *.msi) + @(Get-Item "$env:RUNNER_TEMP/publish-x64/DragHalo.exe", "$env:RUNNER_TEMP/publish-ARM64/DragHalo.exe")
-          if ($files.Count -ne 4) { throw "expected two .msi and two DragHalo.exe, found $($files.Count) files" }
+          $files = @(Get-ChildItem artifacts/msi -Filter *.msi) + @(Get-Item "$env:RUNNER_TEMP/publish-x64/DropHalo.exe", "$env:RUNNER_TEMP/publish-ARM64/DropHalo.exe")
+          if ($files.Count -ne 4) { throw "expected two .msi and two DropHalo.exe, found $($files.Count) files" }
           foreach ($file in $files) {
             $signature = Get-AuthenticodeSignature $file.FullName
             if ($signature.Status -ne 'Valid') { throw "Signature invalid for $($file.Name): $($signature.Status) $($signature.StatusMessage)" }
@@ -299,7 +299,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: DragHalo-msi-${{ github.ref_name }}
+          name: DropHalo-msi-${{ github.ref_name }}
           path: artifacts/msi/*.msi
           if-no-files-found: error
 
@@ -326,11 +326,11 @@ jobs:
           mkdir -p release
           find downloads -type f | sort
           one() { local n; n=$(find downloads -type f -path "$1" | wc -l); [ "$n" -eq 1 ] || { echo "expected exactly one $1, found $n" >&2; exit 1; }; find downloads -type f -path "$1"; }
-          cp "$(one '*/x64/*.msix')"        "release/DragHalo-$v-x64.msix"
-          cp "$(one '*/arm64/*.msix')"      "release/DragHalo-$v-arm64.msix"
-          cp "$(one '*/bundle/*.msixbundle')" "release/DragHalo-$v.msixbundle"
-          cp "$(one '*/DragHalo-*-x64.msi')"   "release/DragHalo-$v-x64.msi"
-          cp "$(one '*/DragHalo-*-ARM64.msi')" "release/DragHalo-$v-arm64.msi"
+          cp "$(one '*/x64/*.msix')"        "release/DropHalo-$v-x64.msix"
+          cp "$(one '*/arm64/*.msix')"      "release/DropHalo-$v-arm64.msix"
+          cp "$(one '*/bundle/*.msixbundle')" "release/DropHalo-$v.msixbundle"
+          cp "$(one '*/DropHalo-*-x64.msi')"   "release/DropHalo-$v-x64.msi"
+          cp "$(one '*/DropHalo-*-ARM64.msi')" "release/DropHalo-$v-arm64.msi"
           (cd release && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt)
           ls -l release
 
@@ -348,16 +348,16 @@ jobs:
 
           | 文件 | 给谁 |
           |---|---|
-          | \`DragHalo-$v.msixbundle\` | 推荐：x64 和 ARM64 通用，双击安装（Windows 10 19041+，需要 Windows App Runtime 2.5） |
-          | \`DragHalo-$v-x64.msix\` / \`DragHalo-$v-arm64.msix\` | 单架构 MSIX，排错或 sideload 用 |
-          | \`DragHalo-$v-x64.msi\` / \`DragHalo-$v-arm64.msi\` | 传统安装包（Intel/AMD 64 位 / ARM64），不依赖 MSIX |
+          | \`DropHalo-$v.msixbundle\` | 推荐：x64 和 ARM64 通用，双击安装（Windows 10 19041+，需要 Windows App Runtime 2.5） |
+          | \`DropHalo-$v-x64.msix\` / \`DropHalo-$v-arm64.msix\` | 单架构 MSIX，排错或 sideload 用 |
+          | \`DropHalo-$v-x64.msi\` / \`DropHalo-$v-arm64.msi\` | 传统安装包（Intel/AMD 64 位 / ARM64），不依赖 MSIX |
           | \`SHA256SUMS.txt\` | 校验和：\`Get-FileHash <文件>\` 对照 |
 
-          MSIX、MSI 和里面的 DragHalo.exe 都用 Azure Trusted Signing 签名（签名者 \`$PUBLISHER\`）。
+          MSIX、MSIX bundle、MSI 安装包及 MSI 内的 DropHalo.exe 均用 Azure Trusted Signing 签名（签名者 \`$PUBLISHER\`）。
           NOTES
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" release/* --repo "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "$TAG" release/* --repo "$GITHUB_REPOSITORY" --title "DragHalo $v" --notes-file notes.md --generate-notes --prerelease
+            gh release create "$TAG" release/* --repo "$GITHUB_REPOSITORY" --title "DropHalo $v" --notes-file notes.md --generate-notes --prerelease
           fi
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,assets --jq '.url, (.assets[] | "\(.name) \(.size)")'

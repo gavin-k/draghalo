@@ -5,7 +5,7 @@ using ImageMagick.Drawing;
 
 // Generates a JPG in %TEMP%, converts it to PNG and WEBP (the M0 image engine's job), reads each back
 // and prints what loaded and how long it took.  Exit 0 only if every round trip succeeds.
-var dir = Path.Combine(Path.GetTempPath(), "DropWheelSpike");
+var dir = Path.Combine(Path.GetTempPath(), "DropHaloSpike");
 Directory.CreateDirectory(dir);
 Console.WriteLine($"MagickSpike on {RuntimeInformation.OSDescription}, OS {RuntimeInformation.OSArchitecture}, process {RuntimeInformation.ProcessArchitecture}, .NET {Environment.Version}");
 

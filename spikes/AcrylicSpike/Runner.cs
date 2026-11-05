@@ -137,7 +137,7 @@ internal sealed class Runner(Options options)
         root.Children.Add(disc);
         root.Children.Add(new TextBlock
         {
-            Text = "DropWheel acrylic spike",
+            Text = "DropHalo acrylic spike",
             Foreground = new SolidColorBrush(Colors.White),
             FontSize = 20,
             HorizontalAlignment = HorizontalAlignment.Center,

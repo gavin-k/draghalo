@@ -27,7 +27,7 @@
 
 - 目标框架：`net10.0-windows10.0.26100.0`（官方 winapp CLI 文档使用的 TFM）。
 - .NET 11 已到 RC2（2026-10），不作为初始目标。
-- `DropWheel.Core` 多目标 `net10.0`，保证非 Windows 环境可构建与测试。
+- `DropHalo.Core` 多目标 `net10.0`，保证非 Windows 环境可构建与测试。
 
 ### 1.3 备选方案（已否决）
 
@@ -62,7 +62,7 @@ Windows **没有**「全局拖拽开始」事件。Microsoft Q&A 上的讨论给
 ## 3. 资源管理器右键菜单
 
 - Win11 新式右键菜单只接受 **`IExplorerCommand`**，且应用必须有**包标识**；`IContextMenu` 只会出现在「显示更多选项」里。
-- 实现：原生 COM DLL（C++，`src/DropWheel.ContextMenu`），清单里注册 `com:SurrogateServer` + `desktop4:FileExplorerContextMenus`（`desktop5:ItemType Type="*"`）。DLL 架构必须与资源管理器一致 → x64 与 ARM64 各编译一份。
+- 实现：原生 COM DLL（C++，`src/DropHalo.ContextMenu`），清单里注册 `com:SurrogateServer` + `desktop4:FileExplorerContextMenus`（`desktop5:ItemType Type="*"`）。DLL 架构必须与资源管理器一致 → x64 与 ARM64 各编译一份。
 - 直装 MSI 用户：通过**稀疏包**（`uap10:AllowExternalContent`）获得包标识，`winapp pack ./sparse/appxmanifest.xml` 产出 identity-only msix，安装器用 `Add-AppxPackage -ExternalLocation` 注册。
 - `GetTitle / GetIcon / GetState` 必须极快；真正工作放在 `Invoke` 之后（启动主程序并传文件列表）。
 
@@ -142,7 +142,7 @@ Windows **没有**「全局拖拽开始」事件。Microsoft Q&A 上的讨论给
 ## 6. 许可证边界（MIT 主程序）
 
 ```
-DragHalo.exe (MIT)
+DropHalo.exe (MIT)
  ├─ 进程内：Magick.NET (Apache-2.0) · PdfPig (Apache-2.0) · PDFium (BSD-3 / Apache-2.0) · SkiaSharp (MIT) · SharpCompress (MIT)
  └─ 子进程：ffmpeg.exe (LGPL-2.1+) · soffice.exe (MPL-2.0，可选下载)
 ```
@@ -166,7 +166,7 @@ LGPL 组件以独立可执行文件随包分发并附带许可证文本与源码
 > PDFium 137 与 SkiaSharp 3.119 包内带 `win-arm64`，FFmpeg 有 BtbN 的 `winarm64-lgpl` 构建，7-Zip extra 包含 `arm64/7za.exe`；
 > 第 5 项由 [`spikes/AcrylicSpike`](../spikes/AcrylicSpike/README.md)（WinUI 3 非打包、自包含）验证：预先创建的透明置顶不激活窗口 + `SystemBackdropElement` 圆盘，热身后 `Show()`→像素上屏中位 54 ms、最大 75 ms，
 > 65 轮前台窗口均未改变，`DesktopAcrylicController` 状态 `Active`（VM 里也真的模糊）；但冷启动第 1 轮 48–219 ms 不稳定（acrylic 组总是构建后第一个进程，部分可能是进程冷启动，属推断），M0 必须启动时预热，长时间空闲后再显示未测；不激活窗口须把 `IsInputActive` 钉成 true 否则回退纯色；
-> WinUI 3 窗口透明要走 DWM 配方（`DwmExtendFrameIntoClientArea` + `DwmEnableBlurBehindWindow` + `WM_ERASEBKGND` 填黑）而不是 `WS_EX_LAYERED`，与 `DropWheel.Shell/DropTargetHost.cs` 的 TODO 不一致，已定为放置目标与轮盘分成两个窗口（[ADR-0004](adr/0004-drop-target-host.md)）；GPU 开销在 VM 里读不到 dwm 计数，待真机。详见三个 README。
+> WinUI 3 窗口透明要走 DWM 配方（`DwmExtendFrameIntoClientArea` + `DwmEnableBlurBehindWindow` + `WM_ERASEBKGND` 填黑）而不是 `WS_EX_LAYERED`，与 `DropHalo.Shell/DropTargetHost.cs` 的 TODO 不一致，已定为放置目标与轮盘分成两个窗口（[ADR-0004](adr/0004-drop-target-host.md)）；GPU 开销在 VM 里读不到 dwm 计数，待真机。详见三个 README。
 >
 > 2026-10-24（补充，x64 真机）：两个 spike 以 `win-x64` 自包含发布到一台 Windows 10 企业版 LTSC 21H2（19044）x64、Intel Iris Pro 5200、1920×1200 @125% 的笔记本上，机器未装 .NET，直接运行。DragSpike 真实 Explorer 自测 17 次 16 次通过（含之后补跑的 4 次）：`SysDragImage` +48…+67 ms、Shift 钩子延迟 0.2–0.4 ms、轮盘首帧 13–49 ms、投放 9–32 ms；第 1、3（单屏 125%）、4 项在 Win10 x64 上同样成立；第 2 项四项视觉效果全关 7 次里 1 次 `SysDragImage` 未出现且投放未到（原因不明，未复现；最初怀疑的「脚本先杀了 explorer」在补跑的 4 次里有 3 次同样杀了，全部通过），单项关闭各 1 次均通过，24H2 仍未测；Win10 上放行 Win 键时前台变成搜索窗口但投放仍到达，与 22H2 不同。AcrylicSpike：自包含 x64 能跑、`IsSupported=True`；`EnableTransparency` 值缺失 ⇒ `AdvancedEffectsEnabled=False` ⇒ `Fallback`，写 1 并广播 ⇒ 立即 `Active`（M0 要读 `UISettings` 而不是注册表）；但该机**所有经 D3D 硬件呈现的窗口（WPF 亦然）都显示为白块**，WPF 关硬件加速即正常，排除了抓屏与 DLL 注入，原因在 2016 年的 Intel 驱动与一块第三方虚拟显示适配器之间未判别，因此弹出耗时、GPU 开销、空闲后再显示在该机上无法测量，仍待一台渲染正常的真机；这同时说明 M0 的弹出验收与启动自检都必须看像素，`CompositionTarget.Rendered` 和控制器状态在白块故障下照样是「正常」的。
 >

@@ -8,17 +8,17 @@
 2. 出现时前台窗口（即拖拽源）是否被抢走？
 3. 窗口里的 `SystemBackdropElement` 圆盘是**真的亚克力**（模糊背后内容）还是回退成纯色？开销多大？
 
-**故意不加入 `DropWheel.slnx`**，也不会被移植进 `src/`；但下面「写给做 M0 的人」一节里的几个坑是 M0 实现必须处理的。
+**故意不加入 `DropHalo.slnx`**，也不会被移植进 `src/`；但下面「写给做 M0 的人」一节里的几个坑是 M0 实现必须处理的。
 
 ## 构建与运行
 
-- 只能在 Windows 上构建：Mac 上即使加 `-p:EnableWindowsTargeting=true` 也会在 XamlCompiler 处崩溃（`output.json was not created`），所以本 spike 在 Mac 上连编译检查都做不了。把仓库镜像到 `C:\src\dropwheel` 后
-  `dotnet build C:\src\dropwheel\spikes\AcrylicSpike\AcrylicSpike.csproj -c Release -r win-arm64`，
+- 只能在 Windows 上构建：Mac 上即使加 `-p:EnableWindowsTargeting=true` 也会在 XamlCompiler 处崩溃（`output.json was not created`），所以本 spike 在 Mac 上连编译检查都做不了。把仓库镜像到 `C:\src\drophalo` 后
+  `dotnet build C:\src\drophalo\spikes\AcrylicSpike\AcrylicSpike.csproj -c Release -r win-arm64`，
   可执行文件在 `bin\Release\net10.0-windows10.0.26100.0\win-arm64\AcrylicSpike.exe`（`-r win-x64` 生成 x64 版；给没有 .NET 的真机用 `dotnet publish -c Release -r win-x64 -p:SelfContained=true -o <目录>` 发布后整个目录拷过去即可运行，见「真机结果」）。
 - 必须在**有桌面的交互会话**里跑（`prlctl exec --current-user`，或直接在 VM 里双击）：它会真的显示窗口并 `BitBlt` 抓屏。
 - `run-acrylic.ps1`：在交互会话里按顺序跑下表四组，打印每个日志；若「透明效果」系统设置是关的会临时打开并在结束时恢复。幂等。可选：`-Exe` 指定可执行文件；`-Runs N`；`-IdleSeconds N` 多跑一组 acrylic 6 轮、第 1 和第 2 轮之间多隐藏 N 秒（「空闲后再显示」）；`-TransparencyOff` 多跑一组系统「透明效果」关闭下的 acrylic（预期 `Fallback`）；`-Counters` 每秒采样 `\GPU Engine(*)\Utilization Percentage` 与 `\Process(dwm)\% Processor Time`，按 dwm / spike 进程汇总 3D 与全部引擎的均值和最大值。
 - 通过 SSH 跑真机时 SSH 会话没有桌面，用 [`spikes/run-in-console-session.ps1`](../run-in-console-session.ps1) 把命令放进已登录用户的控制台会话（交互式计划任务）并等待输出。
-- 日志与截图在 `%LOCALAPPDATA%\DropWheelSpike\acrylic-<variant>-<时间>.log` / `*.bmp`。
+- 日志与截图在 `%LOCALAPPDATA%\DropHaloSpike\acrylic-<variant>-<时间>.log` / `*.bmp`。
 
 | 参数 | 作用 |
 | --- | --- |
@@ -56,7 +56,7 @@
 | `acrylic --default-config` | 5 | 33 / 2 / 3 / 10 ms | 78 / 25 / 29 / 47 ms | 0 | **Fallback** |
 
 - 窗口从 `new Window()` 到配置完隐藏待命：22–46 ms（四组）。M0 在启动时做一次即可，不在 150 ms 预算里。
-- **「热身后」只代表隐藏 300 ms 再显示。** DropWheel 的真实场景是覆盖层上次拖拽后隐藏了几分钟到几小时再显示，VM 上没测长时间隐藏；真机上隐藏 5 分钟后再显示 49 ms，见「真机结果」。
+- **「热身后」只代表隐藏 300 ms 再显示。** DropHalo 的真实场景是覆盖层上次拖拽后隐藏了几分钟到几小时再显示，VM 上没测长时间隐藏；真机上隐藏 5 分钟后再显示 49 ms，见「真机结果」。
 - `CompositionTarget.Rendered` 比像素真正变化早约 25–65 ms（四组热身后中位数之差）：它只说明 XAML 出了一帧，不代表 DWM 已经合成上屏。做「弹出耗时」的验收必须抓屏，不能只看这个事件。
 - 同一二进制、同一场景下圆盘统计值每轮完全一致（灰度均值 58、σ 24.9、梯度 1.30），说明亚克力每次显示都稳定地渲染，没有「先纯色再变模糊」的过渡被抓到（400 ms 后抓的；更早的中间态未抓）。
 - 抓屏用的是 `BitBlt(CAPTUREBLT)`，200×200 一次约 1–3 ms（推断：由轮询间隔与结果粒度估计，未单独计时），所以「上屏」时间的分辨率约 5 ms。
@@ -77,7 +77,7 @@
    + 子类化窗口在 `WM_ERASEBKGND` 用 `0x00000000` 黑刷填充（连接时也填一次）+ `WM_DWMCOMPOSITIONCHANGED` 时重做 DWM 调用。
    另外 Win11 会给这个「看不见的矩形」画 1 px 圆角描边，要 `DwmSetWindowAttribute(DWMWA_WINDOW_CORNER_PREFERENCE=DONOTROUND)` 和 `DWMWA_BORDER_COLOR=DWMWA_COLOR_NONE`。
    **M0 更正（2026-10-24）：上面两项去不掉白框。** 去掉标题栏的 `OverlappedPresenter` 仍保留 `WS_DLGFRAME`，窗口四周有 3 px 非客户区（200% 下 648 px 的窗口只有 642 px 客户区），DWM 把它画成不透明白框；`DWMWA_BORDER_COLOR` 改成红色，白框也不变。本 spike 的 `shots/02-acrylic-active.png` 左缘同样有 3 px 白边。
-   用 `SetWindowLong` 去掉 `WS_DLGFRAME` 会被 AppWindow 改回来；有效的做法是在子类里让 `WM_NCCALCSIZE`（wParam≠0）返回 0，再 `SetWindowPos(SWP_FRAMECHANGED)`，见 `src/DropWheel.App/Overlay/TransparentBackdrop.cs`。另外 `SystemBackdropElement` 放在 `Canvas` 里什么都不画，要放在 Grid 里居中（`WheelWindow.cs`）。
+   用 `SetWindowLong` 去掉 `WS_DLGFRAME` 会被 AppWindow 改回来；有效的做法是在子类里让 `WM_NCCALCSIZE`（wParam≠0）返回 0，再 `SetWindowPos(SWP_FRAMECHANGED)`，见 `src/DropHalo.App/Overlay/TransparentBackdrop.cs`。另外 `SystemBackdropElement` 放在 `Canvas` 里什么都不画，要放在 Grid 里居中（`WheelWindow.cs`）。
 2. **不抢焦点的窗口默认拿不到亚克力。** XAML 给的默认 `SystemBackdropConfiguration.IsInputActive` 对从未激活的窗口是 false，`DesktopAcrylicController` 对非活动窗口直接 `Fallback`
    （`--default-config` 5/5 轮 Fallback）。覆盖层永远不会激活，所以必须自己 `SetSystemBackdropConfiguration(new() { IsInputActive = true, Theme = …, IsHighContrast = 默认值 })`，
    并（未验证的建议）在 `OnDefaultSystemBackdropConfigurationChanged` 里重新应用以跟随主题/高对比度变化。这意味着系统的「非活动窗口不画亚克力」省电策略对我们失效，是有意为之。
@@ -85,7 +85,7 @@
    而 `Window.Compositor` 是 Microsoft.UI 的，类型不兼容。要用 `new Windows.UI.Composition.Compositor()`，而它要求线程上有 `Windows.System.DispatcherQueue`——WinUI 3 线程只有 Microsoft.UI 的那个，
    需要先 `CreateDispatcherQueueController`（CoreMessaging.dll）。见 `SystemCompositor`。
 4. **第一次显示要预热。** 冷启动第 1 轮 48–219 ms 波动（部分可能是进程冷启动而非亚克力，见上表 1a），最终二进制那次超了 150 ms；热身后稳定在 30–75 ms。M0 启动时把覆盖层在屏幕外（或 `Opacity=0`）显示一帧再隐藏。
-5. **Shell 的计划与此不一致。** `src/DropWheel.Shell/DropTargetHost.cs` 的 TODO 写的是 `WS_EX_LAYERED` 分层窗口；WinUI 3 窗口的透明走的是上面的 DWM 配方，`WS_EX_LAYERED` + `SetLayeredWindowAttributes` 会和合成器的呈现方式冲突（未测，是推断）。
+5. **Shell 的计划与此不一致。** `src/DropHalo.Shell/DropTargetHost.cs` 的 TODO 写的是 `WS_EX_LAYERED` 分层窗口；WinUI 3 窗口的透明走的是上面的 DWM 配方，`WS_EX_LAYERED` + `SetLayeredWindowAttributes` 会和合成器的呈现方式冲突（未测，是推断）。
    M0 要么让放置目标窗口（Shell，纯 Win32）与轮盘窗口（App，WinUI）是两个窗口，各用各的透明机制；要么统一到 WinUI 窗口上 `RegisterDragDrop`。已定为前者，见 [ADR-0004](../../docs/adr/0004-drop-target-host.md)。
 6. `WindowsAppSDKSelfContained=true` 的非打包 WinUI 3 应用在 ARM64 VM 上直接从输出目录运行，无需安装运行时；首帧 `CompositionTarget.Rendered` 在 `Show()` 后 20–47 ms。
 7. 在 VM 里 `DesktopAcrylicController.IsSupported()` 为 true 且状态 Active；之前担心的「VM / 远程桌面下亚克力一律回退」在 Parallels 22H2 ARM64 这台机器上**没有发生**。真机 Win10 21H2 x64 上 `IsSupported` 同样为 true，但状态由系统「透明效果」决定（见下一节）。
@@ -127,7 +127,7 @@
 | `opaque` | 17 | 3.1%（3.9） | 3.3%（4.4） | 1.2%（2.1） | 0.1%（0.1） | 11.5%（18.5） |
 | `acrylic --default-config` | 7 | 3.2%（4.2） | 3.5%（4.7） | 1.3%（2.2） | 0.1%（0.2） | 9.3%（17.0） |
 
-注意这是**每秒显示/隐藏一次**的负载（每轮显示约 0.4 s），不是长时间常亮。DropWheel 的轮盘只在拖拽中显示几秒，这个量级可以忽略。
+注意这是**每秒显示/隐藏一次**的负载（每轮显示约 0.4 s），不是长时间常亮。DropHalo 的轮盘只在拖拽中显示几秒，这个量级可以忽略。
 
 ### 第一次测时的白屏
 

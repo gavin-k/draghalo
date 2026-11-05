@@ -1,12 +1,12 @@
 <#
 .SYNOPSIS
-    Build, test and package DragHalo on Windows.
+    Build, test and package DropHalo on Windows.
 
 .DESCRIPTION
     0. scripts/fetch-sidecars.ps1 -Arch <x64|arm64>   (pinned ffmpeg LGPL build -> tools/sidecars)
-    1. dotnet build DropWheel.slnx -c Release -p:Platform=<x64|ARM64>
-    2. dotnet test  tests/DropWheel.Core.Tests and tests/DropWheel.Engines.Tests
-    3. winapp pack  src/DropWheel.App  -> ./artifacts/DragHalo_<version>_<arch>.msix   (unsigned)
+    1. dotnet build DropHalo.slnx -c Release -p:Platform=<x64|ARM64>
+    2. dotnet test  tests/DropHalo.Core.Tests and tests/DropHalo.Engines.Tests
+    3. winapp pack  src/DropHalo.App  -> ./artifacts/DropHalo_<version>_<arch>.msix   (unsigned)
 
     The package is deliberately unsigned (Store submission / external signing). To sideload a dev
     build sign it with the certificate from setup-windows.ps1:
@@ -58,28 +58,28 @@ function Invoke-Checked([string]$title, [scriptblock]$cmd) {
 
 $winappVersion = '?'
 if (((winapp --version 2>&1) | Out-String) -match '(\d+\.\d+[\d.]*)') { $winappVersion = $Matches[1] }
-Write-Host "DragHalo build  ·  $Configuration | $Platform  ·  dotnet $(dotnet --version)  ·  winapp $winappVersion"
+Write-Host "DropHalo build  ·  $Configuration | $Platform  ·  dotnet $(dotnet --version)  ·  winapp $winappVersion"
 
 # The app copies tools/sidecars/ffmpeg/<arch> next to itself, and the Engines tests run that ffmpeg from the PATH.
 Write-Host "`n==> fetch the ffmpeg sidecar ($Arch)" -ForegroundColor Cyan
 & (Join-Path $RepoRoot 'scripts\fetch-sidecars.ps1') -Arch $Arch
 $env:Path = (Join-Path $RepoRoot "tools\sidecars\ffmpeg\$Arch") + ';' + $env:Path
 
-Invoke-Checked "dotnet build DropWheel.slnx -c $Configuration -p:Platform=$Platform" {
-    dotnet build DropWheel.slnx -c $Configuration -p:Platform=$Platform
+Invoke-Checked "dotnet build DropHalo.slnx -c $Configuration -p:Platform=$Platform" {
+    dotnet build DropHalo.slnx -c $Configuration -p:Platform=$Platform
 }
 
 if ($SkipTests) {
     Write-Host "`n==> tests skipped (-SkipTests)"
 } else {
     # The test project is AnyCPU; test it directly instead of through the solution platform.
-    Invoke-Checked 'dotnet test tests/DropWheel.Core.Tests' {
-        dotnet test tests/DropWheel.Core.Tests/DropWheel.Core.Tests.csproj -c $Configuration `
+    Invoke-Checked 'dotnet test tests/DropHalo.Core.Tests' {
+        dotnet test tests/DropHalo.Core.Tests/DropHalo.Core.Tests.csproj -c $Configuration `
             --logger "trx;LogFileName=core.trx" --results-directory (Join-Path $Artifacts 'test-results')
     }
     # Engines tests are x64 | ARM64 like the engines, so they reuse the solution build above.
-    Invoke-Checked 'dotnet test tests/DropWheel.Engines.Tests' {
-        dotnet test tests/DropWheel.Engines.Tests/DropWheel.Engines.Tests.csproj -c $Configuration -p:Platform=$Platform --no-build `
+    Invoke-Checked 'dotnet test tests/DropHalo.Engines.Tests' {
+        dotnet test tests/DropHalo.Engines.Tests/DropHalo.Engines.Tests.csproj -c $Configuration -p:Platform=$Platform --no-build `
             --logger "trx;LogFileName=engines.trx" --results-directory (Join-Path $Artifacts 'test-results')
     }
 }
@@ -89,7 +89,7 @@ if ($SkipPack) {
 } else {
     # Project mode: winapp builds the app for the requested architecture and packs its output.
     # --no-sign -> unsigned .msix (what the Store / an external signing step wants).
-    $csproj = Join-Path $RepoRoot 'src\DropWheel.App\DropWheel.App.csproj'
+    $csproj = Join-Path $RepoRoot 'src\DropHalo.App\DropHalo.App.csproj'
     Push-Location $Artifacts
     try {
         Invoke-Checked "winapp pack ($Arch, unsigned) -> $Artifacts" {

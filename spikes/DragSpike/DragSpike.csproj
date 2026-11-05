@@ -3,7 +3,7 @@
   <!--
     M0 spike: can we detect a system-wide drag, catch a Shift tap during it, pop a drop-target
     wheel without killing the drag, and receive the dropped files?  Throwaway code: WinForms,
-    hand-rolled hooks, no analyzers.  Not part of DropWheel.slnx on purpose.
+    hand-rolled hooks, no analyzers.  Not part of DropHalo.slnx on purpose.
   -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>

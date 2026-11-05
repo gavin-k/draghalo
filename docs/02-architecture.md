@@ -4,21 +4,21 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ DropWheel.App (WinUI 3, 单实例, 常驻托盘)                         │
+│ DropHalo.App (WinUI 3, 单实例, 常驻托盘)                         │
 │  ├─ OverlayWindow     轮盘窗（DWM 透明 + 亚克力），不接收输入       │
 │  ├─ QueueWindow       任务队列 / 详情                              │
 │  ├─ SettingsWindow    键位 · 输出 · 命名 · 重名 · 动作 · 我的工具 · 隐私 │
 │  ├─ OnboardingWindow  20 秒引导                                    │
 │  └─ DockWindow        屏幕边缘停靠栏，WinUI 拖动源拖出（CanDrag）     │
 ├─────────────────────────────────────────────────────────────────┤
-│ DropWheel.Shell (Win32 互操作)                                    │
+│ DropHalo.Shell (Win32 互操作)                                    │
 │  ├─ DragMonitor       唯一的钩子线程：WH_MOUSE_LL + WH_KEYBOARD_LL │
 │  │                    + SysDragImage 轮询，按键交给 Core.Input     │
 │  ├─ DropTargetHost    全屏 alpha=1 分层窗 · RegisterDragDrop       │
 │  ├─ GlobalHotkey      RegisterHotKey                               │
 │  └─ ShellFileOperations IFileOperation（移动/回收站）              │
 ├─────────────────────────────────────────────────────────────────┤
-│ DropWheel.Core (纯 .NET, 可在任意平台测试)                          │
+│ DropHalo.Core (纯 .NET, 可在任意平台测试)                          │
 │  ├─ Conversion/   ConversionGraph · FormatRegistry · Availability  │
 │  ├─ Wheel/        WheelModel (6 槽: 3 最近 + 3 推荐) · Ranking     │
 │  │                WheelLayout / LayoutStore（layout.json，分组外环） │
@@ -29,14 +29,14 @@
 │  ├─ Quality/      QualityEstimator (高/中/低 + 原因)                │
 │  └─ Settings/     KeyBinding · ConflictChecker · Policies          │
 ├─────────────────────────────────────────────────────────────────┤
-│ DropWheel.Engines (IConverter 实现)                               │
+│ DropHalo.Engines (IConverter 实现)                               │
 │  Image(Magick.NET) · Media(ffmpeg sidecar) · Pdf(PDFium+PdfPig)   │
 │  Document(OpenXML / soffice sidecar) · Archive(SharpCompress)     │
 │  Subtitle(自写) · Ocr(Windows.Media.Ocr / TextRecognizer)          │
 └─────────────────────────────────────────────────────────────────┘
           │ COM (IExplorerCommand → 启动参数 / 命名管道)
 ┌─────────────────────────────────────────────────────────────────┐
-│ DropWheel.ContextMenu.dll (C++, 随 Explorer 进程加载, 必须极轻)     │
+│ DropHalo.ContextMenu.dll (C++, 随 Explorer 进程加载, 必须极轻)     │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -61,7 +61,7 @@ Dragging ──(推到屏幕左右外缘)──▶ DockWindow 显示 ──(松�
 - `NamingTemplate`：`{name} {fmt} {ext} {date} {time} {n} {w}x{h}`；`ConflictPolicy = AutoNumber | Overwrite(ToRecycleBin) | Skip | Ask`。
 - `QualityEstimator.Estimate(source, target) → (Level, reasons[])`，M0 仅覆盖 PDF→DOCX/TXT 与图片有损→无损。
 - `QuotaCounter`：本地计数；仅成功输出计次；失败/取消/撤销/文件动作不计次；本地 0 点重置。
-- `ToolManifest` / `UserToolCatalog` / `ScriptTool`（`Core.Tools`）：`%LOCALAPPDATA%\DragHalo\tools\<slug>\tool.json` 描述一个用户工具，目录热加载，脚本型工具装上后灰显、用户在设置里启用过的命令哈希才会跑。输出走 `OutputFiles`，撤销 / 重名策略沿用。见 ADR-0005 和 `skills/draghalo-tool/SKILL.md`。
+- `ToolManifest` / `UserToolCatalog` / `ScriptTool`（`Core.Tools`）：`%LOCALAPPDATA%\DropHalo\tools\<slug>\tool.json` 描述一个用户工具，目录热加载，脚本型工具装上后灰显、用户在设置里启用过的命令哈希才会跑。输出走 `OutputFiles`，撤销 / 重名策略沿用。见 ADR-0005 和 `skills/drophalo-tool/SKILL.md`。
 - `WheelLayout` / `LayoutStore`：`layout.json` 记工具轮盘（按文件类型）和动作轮盘每个扇区放什么；扇区可以是一个分组（≤ 6 项，不嵌套），指针停在分组上 200 ms 时在外环展开。没有布局的轮盘保持注册顺序。
 
 ## 引擎接口
@@ -82,8 +82,8 @@ sidecar 引擎（ffmpeg / soffice）通过 `SidecarProcess` 统一启动：低�
 ## 隐私与离线
 
 - 没有联网代码：不检查更新，不收集使用数据。许可证计划用离线密钥（M3），更新计划交给 Microsoft Store 和 winget（M2）。
-- `NetworkWatch`（`DropWheel.Core.Privacy`）是一个 `EventListener`，订阅运行时自带的 `System.Net.Sockets` 和 `System.Net.NameResolution` 事件，每次建立连接（ConnectStart）和每次解析域名（ResolutionStart）记一次，计的是本进程经 .NET 发出的请求。设置页「隐私与离线」显示次数，每次请求记一行 `network:` 日志。原生代码（PDFium、SkiaSharp、Windows 组件）自己开的套接字看不到；ffmpeg sidecar 是另一个进程，也不在内。
-- 日志在 `%LOCALAPPDATA%\DragHalo\logs`，每天一个文件，记着转换过的文件路径。启动时按 `LogRetention` 删掉 7 天前的；设置页能打开日志文件夹，也能全部清除。日志不会离开这台电脑。
+- `NetworkWatch`（`DropHalo.Core.Privacy`）是一个 `EventListener`，订阅运行时自带的 `System.Net.Sockets` 和 `System.Net.NameResolution` 事件，每次建立连接（ConnectStart）和每次解析域名（ResolutionStart）记一次，计的是本进程经 .NET 发出的请求。设置页「隐私与离线」显示次数，每次请求记一行 `network:` 日志。原生代码（PDFium、SkiaSharp、Windows 组件）自己开的套接字看不到；ffmpeg sidecar 是另一个进程，也不在内。
+- 日志在 `%LOCALAPPDATA%\DropHalo\logs`，每天一个文件，记着转换过的文件路径。启动时按 `LogRetention` 删掉 7 天前的；设置页能打开日志文件夹，也能全部清除。日志不会离开这台电脑。
 - `StrictOfflineMode` 等第一处联网功能（M2 的 LibreOffice 模块下载）出现时一起做：全局 `HttpClient` 工厂返回拒绝一切请求的 handler，下载入口灰显并说明原因。现在没有可阻断的请求，开关只会是摆设。
 
 ## 无障碍

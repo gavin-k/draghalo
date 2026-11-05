@@ -1,6 +1,6 @@
-using DropWheel.Core.Localization;
+using DropHalo.Core.Localization;
 
-namespace DropWheel;
+namespace DropHalo;
 
 /// <summary>This assembly's user-facing text, in the language the app speaks; see <see cref="Loc"/>.</summary>
 internal static class L

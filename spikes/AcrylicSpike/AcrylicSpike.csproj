@@ -4,7 +4,7 @@
     M0 spike for docs/01-tech-stack.md §7 item 5: does a transparent, top-most, no-activate WinUI 3
     window with a SystemBackdropElement acrylic disc show inside the 150 ms budget, and does the
     acrylic actually render?  Unpackaged + WindowsAppSDKSelfContained so it runs from a plain folder
-    on the VM.  Throwaway code, no analyzers.  Not part of DropWheel.slnx on purpose.
+    on the VM.  Throwaway code, no analyzers.  Not part of DropHalo.slnx on purpose.
 
       dotnet build spikes/AcrylicSpike/AcrylicSpike.csproj -c Release -r win-arm64
   -->

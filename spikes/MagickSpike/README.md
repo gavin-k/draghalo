@@ -1,7 +1,7 @@
 # MagickSpike — §7 #6：Magick.NET 在 Windows ARM64 上能不能真的跑
 
 一次性控制台程序，回答 `docs/01-tech-stack.md` §7 第 6 项的 Magick.NET 部分：原生库能否在 ARM64 进程内加载并完成 M0 需要的图片互转。
-**不加入 `DropWheel.slnx`**，也不会被移植进 `src/`。
+**不加入 `DropHalo.slnx`**，也不会被移植进 `src/`。
 
 ## 运行
 

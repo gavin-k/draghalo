@@ -6,7 +6,7 @@
 #   -TransparencyOff   extra set: acrylic with the system "Transparency effects" switched off (expected: Fallback, no black box)
 #   -Counters          sample GPU Engine utilization (per pid) and dwm % Processor Time about once a second during every set
 param(
-    [string]$Exe = "C:\src\dropwheel\spikes\AcrylicSpike\bin\Release\net10.0-windows10.0.26100.0\win-arm64\AcrylicSpike.exe",
+    [string]$Exe = "C:\src\drophalo\spikes\AcrylicSpike\bin\Release\net10.0-windows10.0.26100.0\win-arm64\AcrylicSpike.exe",
     [int]$Runs = 20,
     [int]$IdleSeconds = 0,
     [switch]$TransparencyOff,
@@ -62,7 +62,7 @@ try {
         Write-Output "EnableTransparency set to 1 for this run"
     }
     Get-Process AcrylicSpike -ErrorAction SilentlyContinue | Stop-Process -Force
-    $logDir = Join-Path $env:LOCALAPPDATA 'DropWheelSpike'
+    $logDir = Join-Path $env:LOCALAPPDATA 'DropHaloSpike'
     $sets = @(
         @{ args = @('--variant', 'acrylic', '--runs', "$Runs") },
         @{ args = @('--variant', 'none', '--runs', "$Runs") },

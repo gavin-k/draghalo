@@ -1,0 +1,86 @@
+// CsWin32 — Win32 APIs projected at build time. Add names here, not P/Invoke by hand.
+
+// Overlay window: transparent WinUI 3 host (spikes/AcrylicSpike, finding 1), never activated
+GetWindowLong
+SetWindowLong
+WINDOW_EX_STYLE
+SetWindowPos
+WM_NCCALCSIZE
+DwmExtendFrameIntoClientArea
+DwmEnableBlurBehindWindow
+DwmSetWindowAttribute
+DWMWINDOWATTRIBUTE
+DWM_WINDOW_CORNER_PREFERENCE
+CreateRectRgn
+GetClientRect
+FillRect
+CreateSolidBrush
+GetDC
+ReleaseDC
+SetWindowSubclass
+RemoveWindowSubclass
+DefSubclassProc
+WM_ERASEBKGND
+WM_DWMCOMPOSITIONCHANGED
+
+// Wheel placement and the hide watchdog
+MonitorFromPoint
+GetMonitorInfo
+MONITORINFO
+GetDpiForMonitor
+GetAsyncKeyState
+GetSystemMetrics
+VIRTUAL_KEY
+GetDpiForWindow
+
+// The wheel's frame check (Overlay/ScreenCopy.cs): copy its part of the screen with GDI
+CreateCompatibleDC
+DeleteDC
+CreateDIBSection
+SelectObject
+DeleteObject
+BitBlt
+GdiFlush
+BITMAPINFO
+BI_COMPRESSION
+
+// Tray icon (Tray/TrayIcon.cs) and single instance hand-over
+Shell_NotifyIcon
+NOTIFYICONDATAW
+NOTIFYICON_VERSION_4
+RegisterWindowMessage
+LoadImage
+DestroyIcon
+GetSystemMetricsForDpi
+CreatePopupMenu
+AppendMenu
+TrackPopupMenuEx
+TRACK_POPUP_MENU_FLAGS
+DestroyMenu
+SetForegroundWindow
+PostMessage
+WM_APP
+WM_USER
+WM_NULL
+WM_CONTEXTMENU
+AllowSetForegroundWindow
+ASFW_ANY
+
+// Task window 打开位置, the guide's 试一试 and the 重命名 action: select a file in Explorer
+ILCreateFromPath
+ILFindLastID
+ILFree
+SHOpenFolderAndSelectItems
+
+// Settings: the startup task needs package identity
+GetCurrentPackageFullName
+WIN32_ERROR
+
+// Diagnostics: whether mouse input comes as WM_POINTER, which a Win32 drag loop never reads
+IsMouseInPointerEnabled
+
+// Program.cs: --validate-tool and --list-tools print to the console DropHalo was started from
+AttachConsole
+ATTACH_PARENT_PROCESS
+GetStdHandle
+STD_HANDLE

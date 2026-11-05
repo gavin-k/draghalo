@@ -2,13 +2,13 @@
 
 一次性验证代码（WinForms + 手写钩子），回答 `docs/01-tech-stack.md` §7 里 M0 之前必须确认的问题：
 能否侦测系统级拖拽、在拖拽中捕获 Shift 轻点、在不打断拖拽的前提下弹出投放轮盘、并收到投放的文件。
-**故意不加入 `DropWheel.slnx`**（会重新引入 MSB4126 平台映射失败），也不会被移植进 `src/`。
+**故意不加入 `DropHalo.slnx`**（会重新引入 MSB4126 平台映射失败），也不会被移植进 `src/`。
 
 ## 构建与运行
 
 - Mac 上只做编译检查：`~/.dotnet/dotnet build spikes/DragSpike/DragSpike.csproj -c Release`
-- Windows（本项目的 Parallels VM）上构建并运行：把仓库镜像到 `C:\src\dropwheel` 后
-  `dotnet build C:\src\dropwheel\spikes\DragSpike\DragSpike.csproj -c Release`，
+- Windows（本项目的 Parallels VM）上构建并运行：把仓库镜像到 `C:\src\drophalo` 后
+  `dotnet build C:\src\drophalo\spikes\DragSpike\DragSpike.csproj -c Release`，
   可执行文件在 `bin\Release\net10.0-windows10.0.26100.0\DragSpike.exe`。
   给没有 .NET 的 x64 真机：`dotnet publish … -c Release -r win-x64 -p:SelfContained=true -o <目录>`，整个目录拷过去直接运行；
   通过 SSH 跑时用 [`spikes/run-in-console-session.ps1`](../run-in-console-session.ps1) 把命令放进控制台会话。
@@ -19,14 +19,14 @@
 | --- | --- |
 | `DragSpike` | 手动模式：装好钩子，从资源管理器拖任何文件，拖拽中轻点 Shift，投放到扇区；默认 300 s（`--duration N`） |
 | `DragSpike --selftest` | 自动：自带 WinForms 拖拽源 + SendInput 驱动，通过返回 0 |
-| `DragSpike --selftest --explorer` | 自动：从**真实资源管理器窗口**里拖 `%TEMP%\DropWheelSpike\sample-drop.jpg` |
+| `DragSpike --selftest --explorer` | 自动：从**真实资源管理器窗口**里拖 `%TEMP%\DropHaloSpike\sample-drop.jpg` |
 | `… --winkey` / `… --winkey-pass` | 自测附加步骤（§7 #4）：轮盘出现后、投放前轻点 **Win 键**。`--winkey` 让 LL 钩子在拖拽中吞掉 Win 键并断言开始菜单没弹出；`--winkey-pass` 是对照组，Win 键原样放行，只记录不判定 |
 | `uieffects-test.ps1 [-Exe path]` | 在交互会话里跑：关掉「拖动时显示窗口内容」「视觉效果/动画」「窗口阴影」「鼠标指针阴影」四项，再跑一次 `--selftest --explorer`，结束后恢复（§7 #2 后半）。运行前会杀掉无窗口的 explorer.exe（见发现 10） |
 | `uieffects-matrix.ps1 [-Exe path]` | 同上但更细：对照 → 四项全关 ×2 → 每项单独关 → 对照，每次一行打印侦测来源 / 轮盘首帧 / 投放耗时；不杀 explorer |
 | `DragSpike --uia-dump` | 诊断：旧版托管 UIA 客户端看到的资源管理器窗口树 |
 | `--dragsource` / `--locate` | 内部用：拖拽源窗口 / 无钩子的 UIA 定位子进程 |
 
-日志写到 `%LOCALAPPDATA%\DropWheelSpike\spike-<时间>.log`（定位子进程为 `locate-<时间>.log`），时间戳为进程启动后的毫秒数。
+日志写到 `%LOCALAPPDATA%\DropHaloSpike\spike-<时间>.log`（定位子进程为 `locate-<时间>.log`），时间戳为进程启动后的毫秒数。
 
 ## 验证环境
 
@@ -112,7 +112,7 @@ Windows 10 LTSC 21H2 x64，Intel Iris Pro 5200，1920×1200 @125%，同一 x64 �
    `Explorer\VisualEffects` 得到 19 个视觉效果，没有一项控制拖拽图像。最接近的四项（`SPI_SETDRAGFULLWINDOWS`、
    `SPI_SETUIEFFECTS`、`SPI_SETDROPSHADOW`、`SPI_SETCURSORSHADOW`）全部关掉后 `SysDragImage` 照样出现。
    视觉效果里需要注销才生效的项（`ListviewShadow`、`ThumbnailsOrIcon` 等）没有测。
-9. **Win10 21H2 上放行 Win 键的后果和 Win11 22H2 不同。** 真机 `--winkey-pass`：前台变成标题为「搜索」的窗口，但投放 11 ms 后仍到达轮盘；22H2 上则是开始菜单挡住投放。另外 spike 的 `StartMenuVisible()` 只找标题为 Start/开始 的 `CoreWindow`，在 Win10 上对这个「搜索」窗口返回 False——所以 `--winkey` 在 Win10 上的 PASS 依据是 `foreground="DropWheelSpike"` 和 `swallowed=2`，不是那个检测函数。结论不变（M0 直接吞键），但 Win10 下如果要检测开始菜单/搜索是否弹出，要把搜索窗口也算上。
+9. **Win10 21H2 上放行 Win 键的后果和 Win11 22H2 不同。** 真机 `--winkey-pass`：前台变成标题为「搜索」的窗口，但投放 11 ms 后仍到达轮盘；22H2 上则是开始菜单挡住投放。另外 spike 的 `StartMenuVisible()` 只找标题为 Start/开始 的 `CoreWindow`，在 Win10 上对这个「搜索」窗口返回 False——所以 `--winkey` 在 Win10 上的 PASS 依据是 `foreground="DropHaloSpike"` 和 `swallowed=2`，不是那个检测函数。结论不变（M0 直接吞键），但 Win10 下如果要检测开始菜单/搜索是否弹出，要把搜索窗口也算上。
 10. **关视觉效果的 7 次全关运行里有 1 次失败，没有复现，原因不明。** 失败的那次（`uieffects-test.ps1`）：LL 鼠标侦测到拖拽、Shift 轻点到达、轮盘 46 ms 画出，但 `SysDragImage` 没出现、左键抬起后 3 s 内没有 `DragDrop`——像是 Explorer 根本没开始 OLE 拖拽。它是唯一一次在运行前刚执行过「杀掉无窗口 explorer.exe」步骤的运行；随后 `uieffects-matrix.ps1`（不杀 explorer）全关 2 次与单项各 1 次都 PASS。当时推断是那一步杀掉了正要为新窗口服务的 explorer 进程，但之后又用 `uieffects-test.ps1` 连跑 4 次，其中 3 次运行前确实杀掉了一个无窗口 explorer，4 次全 PASS（`SysDragImage` +50…+53 ms），所以这个推断不成立，只能记为偶发。产品侧的提醒只有一条：拖拽侦测不能只等 `SysDragImage`，LL 鼠标越过阈值要作为独立来源（本 spike 已如此）。
 
 ## 还需要人工做的事

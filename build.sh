@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# DragHalo build entry point.
-#   macOS / Linux : restore + build + test DropWheel.Core, DropWheel.Engines and their tests. Engines targets
+# DropHalo build entry point.
+#   macOS / Linux : restore + build + test DropHalo.Core, DropHalo.Engines and their tests. Engines targets
 #                   net10.0-windows but only needs Windows APIs at run time for things the tests do not touch,
 #                   and Magick.NET ships macOS / Linux native libraries.
-#   Windows       : build the whole DropWheel.slnx (WinUI 3 app, Shell, Engines need net10.0-windows).
+#   Windows       : build the whole DropHalo.slnx (WinUI 3 app, Shell, Engines need net10.0-windows).
 # Usage: ./build.sh [-c Debug|Release] [--no-test]
 set -euo pipefail
 
@@ -37,16 +37,16 @@ is_windows() {
   [[ "${OS:-}" == "Windows_NT" ]]
 }
 
-CORE=src/DropWheel.Core/DropWheel.Core.csproj
-TESTS=tests/DropWheel.Core.Tests/DropWheel.Core.Tests.csproj
-ENGINE_TESTS=tests/DropWheel.Engines.Tests/DropWheel.Engines.Tests.csproj
+CORE=src/DropHalo.Core/DropHalo.Core.csproj
+TESTS=tests/DropHalo.Core.Tests/DropHalo.Core.Tests.csproj
+ENGINE_TESTS=tests/DropHalo.Engines.Tests/DropHalo.Engines.Tests.csproj
 
 echo "==> dotnet $(dotnet --version) · $(uname -s) · configuration=$CONFIG"
 
 if is_windows; then
-  echo "==> Windows: building DropWheel.slnx (x64)"
-  dotnet restore DropWheel.slnx -p:Platform=x64
-  dotnet build DropWheel.slnx -c "$CONFIG" -p:Platform=x64 --no-restore
+  echo "==> Windows: building DropHalo.slnx (x64)"
+  dotnet restore DropHalo.slnx -p:Platform=x64
+  dotnet build DropHalo.slnx -c "$CONFIG" -p:Platform=x64 --no-restore
   if [[ $RUN_TESTS -eq 1 ]]; then
     dotnet test "$TESTS" -c "$CONFIG" --no-restore
     dotnet test "$ENGINE_TESTS" -c "$CONFIG" -p:Platform=x64 --no-build

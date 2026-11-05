@@ -2,7 +2,7 @@
 
   <!--
     §7 item 6 spike: does Magick.NET's native library actually load and convert on Windows ARM64?
-    Throwaway console app, not part of DropWheel.slnx.  Build with -r win-arm64 (or win-x64).
+    Throwaway console app, not part of DropHalo.slnx.  Build with -r win-arm64 (or win-x64).
   -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>

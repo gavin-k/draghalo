@@ -5,7 +5,7 @@
 # Unlike uieffects-test.ps1 it does NOT kill window-less explorer.exe processes before the run.
 # Run inside the interactive session (double-click, `prlctl exec --current-user`, or
 # `spikes/run-in-console-session.ps1` over SSH).
-param([string]$Exe = 'C:\src\dropwheel\spikes\DragSpike\bin\Release\net10.0-windows10.0.26100.0\DragSpike.exe')
+param([string]$Exe = 'C:\src\drophalo\spikes\DragSpike\bin\Release\net10.0-windows10.0.26100.0\DragSpike.exe')
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $ProgressPreference = 'SilentlyContinue'
 Add-Type -Namespace Spi -Name Native -MemberDefinition @'
@@ -27,7 +27,7 @@ $before = @{}; foreach ($n in $items.Keys) { $before[$n] = Get-Spi $items[$n] }
 "before: " + (($items.Keys | Sort-Object | ForEach-Object { "$_=$($before[$_])" }) -join ' ')
 function Invoke-Run($tag) {
   Get-Process DragSpike -ErrorAction SilentlyContinue | Stop-Process -Force
-  $logDir = Join-Path $env:LOCALAPPDATA 'DropWheelSpike'
+  $logDir = Join-Path $env:LOCALAPPDATA 'DropHaloSpike'
   $prev = Get-ChildItem $logDir -Filter 'spike-*.log' -ErrorAction SilentlyContinue | ForEach-Object FullName
   $p = Start-Process -FilePath $Exe -ArgumentList '--selftest', '--explorer' -PassThru -NoNewWindow -RedirectStandardOutput "$env:TEMP\uifx-out.txt" -RedirectStandardError "$env:TEMP\uifx-err.txt"
   if (-not $p.WaitForExit(60000)) { Stop-Process -Id $p.Id -Force; Get-Process DragSpike -ErrorAction SilentlyContinue | Stop-Process -Force }

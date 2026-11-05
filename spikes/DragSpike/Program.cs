@@ -39,7 +39,7 @@ internal static class Program
 
         if (args.Contains("--uia-dump"))
         {
-            Log.Open(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DropWheelSpike"));
+            Log.Open(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DropHaloSpike"));
             LogEnvironment();
             ExplorerSource.Dump();
             return 0;
@@ -47,7 +47,7 @@ internal static class Program
 
         if (ArgValue(args, "--locate") is { } locate)
         {
-            Log.Open(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DropWheelSpike"), "locate");
+            Log.Open(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DropHaloSpike"), "locate");
             return ExplorerSource.LocateMain(locate);
         }
 
@@ -58,7 +58,7 @@ internal static class Program
             return 0;
         }
 
-        Log.Open(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DropWheelSpike"));
+        Log.Open(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DropHaloSpike"));
         LogEnvironment();
 
         using var hooks = new HookThread();
