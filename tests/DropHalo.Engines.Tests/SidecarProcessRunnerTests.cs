@@ -325,7 +325,16 @@ public sealed class SidecarProcessRunnerTests
             return Shell("sleep 30 & echo $$ $!; exit 0", timeout);
         }
 
-        var script = "$p = Start-Process -NoNewWindow -FilePath $env:ComSpec -ArgumentList '/c', 'ping -n 30 127.0.0.1 > \"%DW_CHILD_OUTPUT%\"' -PassThru; while (![IO.File]::Exists($env:DW_CHILD_OUTPUT)) { [Threading.Thread]::Sleep(10) }; Write-Output \"$PID $($p.Id)\"";
+        // Avoid loading PowerShell modules inside the tool's timeout while preparing the orphan.
+        var script = """
+            $start = [Diagnostics.ProcessStartInfo]::new($env:ComSpec, '/c ping -n 30 127.0.0.1 > "%DW_CHILD_OUTPUT%"')
+            $start.UseShellExecute = $false
+            $start.CreateNoWindow = $true
+            $p = [Diagnostics.Process]::Start($start)
+            while (![IO.File]::Exists($env:DW_CHILD_OUTPUT)) { [Threading.Thread]::Sleep(10) }
+            [Console]::WriteLine("$PID $($p.Id)")
+            [Console]::Out.Flush()
+            """;
         var shell = CommandResolver.FromEnvironment().Resolve("powershell", Path.GetTempPath())!.Path;
         return new(shell, ["-NoProfile", "-EncodedCommand", Convert.ToBase64String(Encoding.Unicode.GetBytes(script))],
             Path.GetTempPath(), new Dictionary<string, string> { ["DW_CHILD_OUTPUT"] = output }, timeout);
