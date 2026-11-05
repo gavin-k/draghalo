@@ -273,7 +273,7 @@ public sealed class SidecarProcessRunnerTests
                 $child = [DetachedChild]::Start($env:ComSpec, '/c ping -n 30 127.0.0.1 > nul')
                 [Console]::WriteLine("$PID $child")
                 [Console]::Out.Flush()
-                [Environment]::Exit(0)
+                exit 0
                 """;
             var shell = CommandResolver.FromEnvironment().Resolve("powershell", Path.GetTempPath())!.Path;
             var start = new ProcessStart(shell, ["-NoProfile", "-EncodedCommand", Convert.ToBase64String(Encoding.Unicode.GetBytes(script))],
