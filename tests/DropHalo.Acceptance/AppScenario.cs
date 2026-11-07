@@ -200,6 +200,7 @@ internal static partial class AppScenario
             $"foreground \"{Title(PInvoke.GetForegroundWindow())}\" (was \"{Title(foreground)}\")");
         if (png < 0)
         {
+            CaptureDragFailure(before, source);
             return;
         }
 
@@ -520,6 +521,7 @@ internal static partial class AppScenario
             entered ?? "no 'file(s) entered' line within 2 s");
         if (sector < 0)
         {
+            CaptureDragFailure(source: drag);
             Input.MoveSmooth(mid, new Point(w.X, w.Y), 4, 30);
             Input.LeftUp();
             return null;
@@ -571,6 +573,7 @@ internal static partial class AppScenario
         if (m is not { Success: true } || m.Groups["by"].Value != by)
         {
             checks.Check($"{what} shows the wheel", false, shown ?? "no 'wheel: shown' within 2 s");
+            CaptureDragFailure();
             return null;
         }
 

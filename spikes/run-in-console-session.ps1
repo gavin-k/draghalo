@@ -7,7 +7,8 @@ param(
     [Parameter(Mandatory)][string]$Command,
     [int]$TimeoutSeconds = 1800,
     [string]$TaskName = 'DropHaloSpike',
-    [string]$OutFile = (Join-Path $env:TEMP 'drophalo-spike-session.txt')
+    [string]$OutFile = (Join-Path $env:TEMP 'drophalo-spike-session.txt'),
+    [string]$UserId = $env:USERNAME
 )
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
@@ -15,7 +16,7 @@ if (-not (query user 2>$null | Select-String 'console')) { Write-Output "WARNING
 if (Test-Path $OutFile) { Remove-Item $OutFile -Force }
 # No quotes around $Command: cmd /c strips the first and last quote of an argument string that begins with one.
 $action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument "/c $Command > `"$OutFile`" 2>&1"
-$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
+$principal = New-ScheduledTaskPrincipal -UserId $UserId -LogonType Interactive -RunLevel Limited
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Seconds ($TimeoutSeconds + 60)) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
 Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
 Register-ScheduledTask -TaskName $TaskName -Action $action -Principal $principal -Settings $settings | Out-Null
@@ -29,4 +30,8 @@ $info = Get-ScheduledTaskInfo -TaskName $TaskName
 Write-Output "task state=$state lastResult=$($info.LastTaskResult) elapsed=$([int]$sw.Elapsed.TotalSeconds)s"
 if ($state -eq 'Running') { Write-Output "TIMEOUT: stopping task"; Stop-ScheduledTask -TaskName $TaskName }
 Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-if (Test-Path $OutFile) { Get-Content $OutFile -Encoding UTF8 } else { Write-Output "no output file" }
+$hasOutput = Test-Path $OutFile
+if ($hasOutput) { Get-Content $OutFile -Encoding UTF8 } else { Write-Output "no output file" }
+if ($state -eq 'Running') { exit 124 }
+if (-not $hasOutput -or $info.LastTaskResult -ne 0) { exit 1 }
+exit 0

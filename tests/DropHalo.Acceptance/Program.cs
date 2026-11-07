@@ -11,6 +11,7 @@ internal static class Program
                                                    on the centre, on a disabled sector
           DropHalo.Acceptance hooks [--explorer]  DragMonitor: drag phases, Shift / Ctrl+Alt / Win taps, long hold
           DropHalo.Acceptance fileops             ShellFileOperations: recycle, move with a collision
+          DropHalo.Acceptance source              verifies that an obscured Explorer source is never pressed
           DropHalo.Acceptance app --exe <DropHalo.exe> [--root <folder>] [--explorer]
                                                    the M0 flow against the real app: JPG to PNG, Undo,
                                                    then a release off the wheel. --root is the package's
@@ -18,6 +19,8 @@ internal static class Program
           DropHalo.Acceptance performance --exe <DropHalo.exe> [--iterations 30] [--reopen-explorer] [--grouped]
                                                    repeated real Explorer drags; every first frame must meet 150 ms
                                                    --grouped opens Tools with a real group and ring-sized footprint
+          DropHalo.Acceptance archives --exe <DropHalo.exe> [--iterations 30]
+                                                   repeated subtitle and ZIP conversions through real Explorer drags
           DropHalo.Acceptance --dragsource <file> --at X,Y   (internal) WinForms drag source
           DropHalo.Acceptance --locate <file>                (internal) hook-free Explorer item locator
         """;
@@ -53,6 +56,9 @@ internal static class Program
             case "fileops":
                 Log.Open("fileops");
                 return FileOpsScenario.Run();
+            case "source":
+                Log.Open("source");
+                return SourceScenario.Run();
             case "app" when ArgValue(args, "--exe") is { } exe:
                 Log.Open("app");
                 return AppScenario.Run(Path.GetFullPath(exe), explorer, ArgValue(args, "--root"));
@@ -65,6 +71,15 @@ internal static class Program
 
                 Log.Open("performance");
                 return AppScenario.RunPerformance(Path.GetFullPath(performanceExe), iterations, args.Contains("--reopen-explorer"), args.Contains("--grouped"));
+            case "archives" when ArgValue(args, "--exe") is { } archiveExe:
+                if (!int.TryParse(ArgValue(args, "--iterations") ?? "30", out var archiveIterations) || archiveIterations < 1)
+                {
+                    Console.Error.WriteLine("--iterations must be a positive integer.");
+                    return 2;
+                }
+
+                Log.Open("archives");
+                return AppScenario.RunArchives(Path.GetFullPath(archiveExe), archiveIterations);
             default:
                 Console.WriteLine(Usage);
                 return 2;

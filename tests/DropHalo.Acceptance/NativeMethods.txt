@@ -36,3 +36,7 @@ WM_SETTEXT
 WM_COMMAND
 GetDlgItem
 IsWindow
+GetCursorPos
+WindowFromPoint
+GetWindowRect
+GetAncestor

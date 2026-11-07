@@ -61,6 +61,8 @@ DropHalo 是 Windows 11 应用，但仓库被切成两半：一半是纯 .NET，
 
   注意：`prlctl exec` 对带反斜杠的参数转义很脆弱，长脚本请先复制进 VM 的 `C:\temp` 再执行，或用 `powershell -EncodedCommand`。
 
+真实鼠标验收期间，启动任务和读取日志都从默认的 SYSTEM 会话执行。调用 `spikes/run-in-console-session.ps1` 时显式传入 `-UserId <已登录用户>` 和该用户可写的 `-OutFile`；任务本身仍在普通用户的交互桌面运行。不要在验收中用 `prlctl exec --current-user` 查询进度：它会在桌面弹出终端，遮住资源管理器，可能让驱动按到终端而非文件。驱动会在按下前检查源窗口、前景窗口和指针命中，不符合时记为测试准备失败。所有已开始拖拽的响应和文件进入阈值保持不变。
+
 ### 共享文件夹：在 Windows 里打开同一份代码
 
 Parallels 已开启「共享用户主目录」，Mac 上的 `~/Projects/dropwheel` 在 Windows 里就是：

@@ -3,6 +3,7 @@ using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.Graphics.Gdi;
 using Windows.Win32.UI.HiDpi;
+using Windows.Win32.UI.WindowsAndMessaging;
 
 namespace DropHalo.Acceptance;
 
@@ -14,6 +15,9 @@ internal sealed class DragSource : IDisposable
 {
     private readonly Process? _child;
     private readonly HWND _explorerWindow;
+    private HWND _foregroundAtPress;
+    private HWND _windowAtPress;
+    private Point _pointerAtPress;
 
     private DragSource(Point grab, Process? child, HWND explorerWindow)
     {
@@ -59,6 +63,17 @@ internal sealed class DragSource : IDisposable
         Thread.Sleep(400);
         Input.MoveTo(Grab.X, Grab.Y);
         Thread.Sleep(150);
+        var hasPoint = (bool)PInvoke.GetCursorPos(out var actual);
+        _pointerAtPress = actual;
+        _foregroundAtPress = PInvoke.GetForegroundWindow();
+        _windowAtPress = PInvoke.GetAncestor(PInvoke.WindowFromPoint(actual), GET_ANCESTOR_FLAGS.GA_ROOT);
+        if (!_explorerWindow.IsNull && (!hasPoint || _pointerAtPress != Grab
+            || _windowAtPress != _explorerWindow || _foregroundAtPress != _explorerWindow))
+        {
+            throw new InvalidOperationException($"Explorer source is not ready before pressing the mouse: expected window {_explorerWindow} at {Grab}, "
+                + $"hit {_windowAtPress}, foreground {_foregroundAtPress}, pointer {_pointerAtPress}.");
+        }
+
         Input.LeftDown();
         Thread.Sleep(120);
         var area = Screen.FromPoint(Grab).WorkingArea;
@@ -68,6 +83,9 @@ internal sealed class DragSource : IDisposable
         Thread.Sleep(250);
         return mid;
     }
+
+    public void LogStartState() => Log.Info($"source press: expected window {_explorerWindow}, grab {Grab}, actual {_pointerAtPress}, "
+        + $"hit {_windowAtPress}, foreground {_foregroundAtPress}");
 
     public void Dispose()
     {
