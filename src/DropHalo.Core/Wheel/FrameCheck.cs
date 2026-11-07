@@ -23,7 +23,13 @@ public static class FrameCheck
     /// <summary>Half-width of the square excluded around the drag image, as a fraction of the frame.</summary>
     public const double DragImageHalfWidthRatio = 0.225;
 
+    /// <summary>Radius of the disc area searched for drawn detail, as a fraction of the frame.</summary>
+    public const double DiscDetailOuterRatio = 0.44;
+
     private const int Tolerance = 8;
+
+    /// <summary>Fewest detail pixels a quadrant needs to count as drawn, scaled with the frame's pixel area.</summary>
+    public static double MinimumDetailPixels(int size) => Math.Max(4, size * (double)size / 4096);
 
     /// <param name="bgra">The window's pixels, 4 bytes each (blue, green, red, unused), rows top-down.</param>
     public static FrameVerdict Judge(ReadOnlySpan<byte> bgra, int width, int height)
@@ -77,7 +83,7 @@ public static class FrameCheck
         var cy = height / 2.0;
         // A square exclusion keeps the drag thumbnail's corners from counting as drawn wheel details.
         var inner = size * DragImageHalfWidthRatio;
-        var outer = size * 0.44;
+        var outer = size * DiscDetailOuterRatio;
         Span<int> details = stackalloc int[4];
         details.Clear();
         for (var y = (int)(cy - outer); y <= (int)(cy + outer); y++)
@@ -101,7 +107,7 @@ public static class FrameCheck
         }
 
         // Require distributed detail, not a cursor or a few noisy pixels; scale the count with pixel area.
-        var minimum = Math.Max(4, size * (double)size / 4096);
+        var minimum = MinimumDetailPixels(size);
         var quadrants = 0;
         foreach (var count in details)
         {

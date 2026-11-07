@@ -807,7 +807,7 @@ internal static partial class AppScenario
         Span<int> changed = stackalloc int[4];
         changed.Clear();
         var inner = size * FrameCheck.DragImageHalfWidthRatio;
-        var outerSquared = Math.Pow(size * 0.44, 2);
+        var outerSquared = Math.Pow(size * FrameCheck.DiscDetailOuterRatio, 2);
         var (hx, hy) = WheelGeometry.SectorCenter(hovered);
         var hoveredDeg = Math.Atan2(hy, hx) * 180 / Math.PI;
         for (var y = 0; y < size; y++)
@@ -841,8 +841,8 @@ internal static partial class AppScenario
             }
         }
 
-        // Match FrameCheck's DPI-scaled noise floor, now requiring those pixels to be new as well.
-        var minimum = Math.Max(4, size * (double)size / 4096);
+        // FrameCheck's DPI-scaled noise floor, now requiring those pixels to be new as well.
+        var minimum = FrameCheck.MinimumDetailPixels(size);
         var quadrants = 0;
         foreach (var count in changed)
         {
