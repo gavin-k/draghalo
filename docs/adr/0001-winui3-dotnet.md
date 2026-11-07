@@ -20,4 +20,4 @@ Rust + Tauri 2、WPF、C++ / WinUI 3、Electron —— 见 `docs/01-tech-stack.m
 
 - 需要 Windows 开发机 / Windows CI runner 构建 App 项目。
 - Windows App SDK 的 Stable 大版本约每半年一次，依赖升级节奏需跟随。
-- `SystemBackdropElement`（2.0+）让「透明窗口 + 局部亚克力」成为可能，是选择 2.x 而非 1.x 的直接原因。
+- `SystemBackdropElement`（2.0+）让「透明窗口 + 局部亚克力」成为可能，是当时选择 2.x 而非 1.x 的直接原因。2026-11-07 起圆盘改为 Composition 纯色，`SystemBackdropElement` 已不再使用，见 [ADR-0006](0006-composition-disc.md)。

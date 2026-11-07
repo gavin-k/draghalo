@@ -13,7 +13,7 @@
 
 1. **两个窗口，各管一件事。**
    - **放置宿主**（`DropHalo.Shell.DropTargetHost`）：纯 Win32 弹出窗口，`WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`，`SetLayeredWindowAttributes(LWA_ALPHA, 1)`，覆盖整个虚拟屏。alpha=1 肉眼不可见，但参与命中测试。它跑在自己的 STA 线程上：`OleInitialize`，窗口创建一次并 `RegisterDragDrop` 一次，之后只 Show / Hide。
-   - **轮盘**（`DropHalo.App.OverlayWindow`）：WinUI 3 窗口，DWM 透明配方加 `SystemBackdropElement` 亚克力圆盘，`NOACTIVATE | TOOLWINDOW | TOPMOST`，只有轮盘大小。它在放置宿主下面，不接收输入，只负责画。
+   - **轮盘**（`DropHalo.App.OverlayWindow`）：WinUI 3 窗口，DWM 透明配方加 Composition 画的纯色圆盘（原为 `SystemBackdropElement` 亚克力，2026-11-07 改，见 ADR-0006），`NOACTIVATE | TOOLWINDOW | TOPMOST`，只有轮盘大小。它在放置宿主下面，不接收输入，只负责画。
 2. **扇区判定在宿主里做。** App 把轮盘中心（物理像素）和所在显示器的缩放交给宿主，宿主用 Core 的 `WheelGeometry`（DIP）算扇区。宿主在自己的线程上抛出 `Entered(paths)`、`Hovered(sector)`、`Dropped(paths, sector)`、`Canceled`，App 用 `DispatcherQueue` 转到 UI 线程。
 3. **两阶段填充。** 轻点修饰键时先显示轮盘，扇区为空、中心显示提示；宿主的 `DragEnter` 从 `IDataObject` 的 `CF_HDROP` 取到路径后，App 再构建 `WheelModel` 填扇区。`DragOver` 落在可用扇区返回 `DROPEFFECT_COPY`，其余返回 `DROPEFFECT_NONE`。返回 COPY 而不是 MOVE，资源管理器就不会删除源文件。
 4. **隐藏有三重保证。** `Drop` / `DragLeave`；LL 鼠标钩子看到左键抬起；看门狗（显示后一段时间内既没有 `DragOver` 左键也已抬起）。

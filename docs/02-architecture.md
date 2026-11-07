@@ -5,7 +5,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │ DropHalo.App (WinUI 3, 单实例, 常驻托盘)                         │
-│  ├─ OverlayWindow     轮盘窗（DWM 透明 + 亚克力），不接收输入       │
+│  ├─ OverlayWindow     轮盘窗（DWM 透明 + 纯色盘），不接收输入       │
 │  ├─ QueueWindow       任务队列 / 详情                              │
 │  ├─ SettingsWindow    键位 · 输出 · 命名 · 重名 · 动作 · 我的工具 · 隐私 │
 │  ├─ OnboardingWindow  20 秒引导                                    │
