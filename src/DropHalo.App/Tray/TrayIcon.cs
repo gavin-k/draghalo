@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using System.Runtime.InteropServices;
 using DropHalo.App.Diagnostics;
 using Windows.Win32;
 using Windows.Win32.Foundation;
@@ -33,18 +35,55 @@ internal sealed unsafe class TrayIcon : IDisposable
         _tip = tip;
         _menu = menu;
         _taskbarCreated = PInvoke.RegisterWindowMessage("TaskbarCreated");
-        var size = PInvoke.GetSystemMetricsForDpi(SYSTEM_METRICS_INDEX.SM_CXSMICON, PInvoke.GetDpiForWindow(hwnd));
-        fixed (char* path = iconPath)
+        if (_taskbarCreated == 0)
         {
-            _icon = new HICON(PInvoke.LoadImage(default, path, GDI_IMAGE_TYPE.IMAGE_ICON, size, size, IMAGE_FLAGS.LR_LOADFROMFILE).Value);
+            throw new Win32Exception(Marshal.GetLastPInvokeError(), "Could not register the tray restart message.");
+        }
+
+        var size = PInvoke.GetSystemMetricsForDpi(SYSTEM_METRICS_INDEX.SM_CXSMICON, PInvoke.GetDpiForWindow(hwnd));
+        _icon = LoadIcon(iconPath, size);
+        if (!PInvoke.SetWindowSubclass(hwnd, SubclassProc, 2, 0))
+        {
+            PInvoke.DestroyIcon(_icon);
+            _icon = default;
+            throw new InvalidOperationException("Could not attach the tray message handler.");
         }
 
         _current = this;
-        PInvoke.SetWindowSubclass(hwnd, SubclassProc, 2, 0);
         Add();
     }
 
     public event Action? Selected;
+
+    private static HICON LoadIcon(string iconPath, int size)
+    {
+        HICON icon;
+        fixed (char* path = iconPath)
+        {
+            icon = new HICON(PInvoke.LoadImage(default, path, GDI_IMAGE_TYPE.IMAGE_ICON, size, size, IMAGE_FLAGS.LR_LOADFROMFILE).Value);
+        }
+
+        if (!icon.IsNull)
+        {
+            FileLog.Info($"tray: loaded {size}px icon from {iconPath}");
+            return icon;
+        }
+
+        FileLog.Error($"tray: LoadImage failed ({Marshal.GetLastPInvokeError()}) for {iconPath}; using the embedded app icon");
+        // The EXE keeps the brand available even if a loose asset was not copied beside it.
+        fixed (char* executable = Environment.ProcessPath)
+        {
+            _ = PInvoke.ExtractIconEx(executable, 0, null, &icon, 1); // The returned handle below is the success check.
+        }
+
+        if (icon.IsNull)
+        {
+            throw new InvalidOperationException("Could not load either the tray icon or the embedded app icon.");
+        }
+
+        FileLog.Info("tray: loaded the embedded app icon");
+        return icon;
+    }
 
     public void Dispose()
     {

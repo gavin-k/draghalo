@@ -50,6 +50,7 @@ NOTIFYICONDATAW
 NOTIFYICON_VERSION_4
 RegisterWindowMessage
 LoadImage
+ExtractIconEx
 DestroyIcon
 GetSystemMetricsForDpi
 CreatePopupMenu

@@ -162,7 +162,7 @@ public partial class App : Application
 
             _host.Start();
             _monitor.Start();
-            _tray = new TrayIcon(queueWindow.Handle, "DropHalo", Path.Combine(AppContext.BaseDirectory, "Assets", "DropHalo.ico"),
+            _tray = new TrayIcon(queueWindow.Handle, "DropHalo", Path.Combine(AppContext.BaseDirectory, "Assets", "DropHalo.Tray.ico"),
             [
                 (L.T("打开任务窗口"), () => queueWindow.Show()),
                 (L.T("设置"), settingsWindow.Show),

@@ -1,12 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
   <title>DropHalo</title>
-  <defs><linearGradient id="plate" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#EA580C"/><stop offset="1" stop-color="#C2410C"/></linearGradient></defs>
+  <defs><linearGradient id="plate" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1684FF"/><stop offset="1" stop-color="#0067E8"/></linearGradient></defs>
   <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#plate)"/>
-  <path d="M89.92 46.46 A90 90 0 0 1 166.08 46.46 L153.39 73.64 A60 60 0 0 0 102.61 73.64 Z" fill="#fff"/>
-  <path d="M179.58 54.25 A90 90 0 0 1 217.66 120.21 L187.77 122.81 A60 60 0 0 0 162.39 78.83 Z" fill="#fff" fill-opacity="0.59"/>
-  <path d="M217.66 135.79 A90 90 0 0 1 179.58 201.75 L162.39 177.17 A60 60 0 0 0 187.77 133.19 Z" fill="#fff" fill-opacity="0.59"/>
-  <path d="M166.08 209.54 A90 90 0 0 1 89.92 209.54 L102.61 182.36 A60 60 0 0 0 153.39 182.36 Z" fill="#fff" fill-opacity="0.59"/>
-  <path d="M76.42 201.75 A90 90 0 0 1 38.34 135.79 L68.23 133.19 A60 60 0 0 0 93.61 177.17 Z" fill="#fff" fill-opacity="0.59"/>
-  <path d="M38.34 120.21 A90 90 0 0 1 76.42 54.25 L93.61 78.83 A60 60 0 0 0 68.23 122.81 Z" fill="#fff" fill-opacity="0.59"/>
-  <path d="M128.00 94.00 L147.77 127.24 A23 23 0 1 1 108.23 127.24 Z" fill="#fff"/>
+  <path d="M146.71 57.97 A90 90 0 0 1 204.32 193.69 L180.58 178.85 A62 62 0 0 0 140.89 85.35 Z" fill="#FFFFFF"/>
+  <path d="M51.68 193.69 A90 90 0 0 1 109.29 57.97 L115.11 85.35 A62 62 0 0 0 75.42 178.85 Z" fill="#FFFFFF"/>
+  <path d="M128.00 104.50 L151.65 147.48 A27 27 0 1 1 104.35 147.48 Z" fill="#FFFFFF"/>
 </svg>
