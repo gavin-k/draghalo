@@ -13,8 +13,7 @@ internal static partial class AppScenario
     private const string SettingsTitle = "DropHalo 设置";
 
     /// <summary>
-    /// Through the settings window, the way a screen reader would use it: the note that the wheel is solid is
-    /// there exactly when its acrylic fell back; unticking the only key is refused
+    /// Through the settings window, the way a screen reader would use it: the solid wheel retains its opacity setting; unticking the only key is refused
     /// with the reason and nothing is saved; Ctrl instead of Shift, touch long press off, the dock off, the
     /// output folder preset in settings.json and a file-name template are saved, and so are English and then
     /// 简体中文 picked as the language, the window staying Chinese; 隐私与离线 counts no network
@@ -39,14 +38,11 @@ internal static partial class AppScenario
         var layouts = log.WaitFor(2000, "keyboard layout has AltGr");
         checks.Check("the settings window reads the installed keyboard layouts for AltGr", layouts is not null, layouts ?? "no keyboard layout line");
 
-        // The Win10 test machine has transparency effects off and its wheel's acrylic falls back to a solid
-        // colour; the VM has them on. The note must be there exactly where the fallback happened.
-        var solid = log.FindSinceStart("acrylic connected, state Fallback") is not null;
-        var effects = log.WaitFor(2000, "settings: transparency effects");
-        var note = Element(SettingsTitle, "solid-wheel", out _, byId: true) is not null;
-        checks.Check("the settings window says the wheel is solid exactly when its acrylic fell back",
-            effects is not null && note == solid && effects.Contains("effects off", StringComparison.Ordinal) == solid,
-            $"acrylic {(solid ? "Fallback" : "Active")}; {effects ?? "no transparency line"}; note {(note ? "shown" : "not shown")}");
+        var opacity = Element(SettingsTitle, "wheel-background-opacity", out var opacityHow, byId: true);
+        var obsoleteNote = Element(SettingsTitle, "solid-wheel", out _, byId: true);
+        checks.Check("the solid wheel keeps its opacity setting without the old acrylic warning",
+            opacity is not null && obsoleteNote is null,
+            $"{opacityHow}; old acrylic note {(obsoleteNote is null ? "absent" : "present")}");
 
         var saved = File.ReadAllText(file);
         Toggle("转换 Shift");

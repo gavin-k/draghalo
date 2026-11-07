@@ -3,8 +3,8 @@ namespace DropHalo.Core.Wheel;
 /// <summary>
 /// Judges the wheel as it reached the screen. A graphics stack in a bad state presents every D3D window
 /// as one flat white block while XAML still reports frames (spikes/AcrylicSpike, finding 9); a wheel that
-/// drew is mostly its dark disc, acrylic or solid. A flat black block is not caught: over a dark desktop
-/// it would look like a solid disc.
+/// drew has a dark disc or visible details across its light disc. A flat black block is not caught:
+/// over a dark desktop it would look like a solid disc.
 /// </summary>
 public static class FrameCheck
 {
@@ -19,6 +19,9 @@ public static class FrameCheck
 
     /// <summary>Lowest red, green and blue of a colour that counts as light.</summary>
     public const int Light = 0xE0;
+
+    /// <summary>Half-width of the square excluded around the drag image, as a fraction of the frame.</summary>
+    public const double DragImageHalfWidthRatio = 0.225;
 
     private const int Tolerance = 8;
 
@@ -49,7 +52,7 @@ public static class FrameCheck
             var count = 0;
             foreach (var other in samples)
             {
-                if (Near(colour, other))
+                if (Near(colour, other, Tolerance))
                 {
                     count++;
                 }
@@ -63,13 +66,59 @@ public static class FrameCheck
         }
 
         var share = (double)most / samples.Length;
-        return new FrameVerdict(share >= FlatShare && IsLight(commonest), commonest, share, samples.Length);
+        var flat = share >= FlatShare && IsLight(commonest) && !HasDiscDetails(bgra, width, height, commonest);
+        return new FrameVerdict(flat, commonest, share, samples.Length);
     }
 
-    private static bool Near(int a, int b) =>
-        Math.Abs((a >> 16 & 0xFF) - (b >> 16 & 0xFF)) <= Tolerance
-        && Math.Abs((a >> 8 & 0xFF) - (b >> 8 & 0xFF)) <= Tolerance
-        && Math.Abs((a & 0xFF) - (b & 0xFF)) <= Tolerance;
+    private static bool HasDiscDetails(ReadOnlySpan<byte> bgra, int width, int height, int background)
+    {
+        var size = Math.Min(width, height);
+        var cx = width / 2.0;
+        var cy = height / 2.0;
+        // A square exclusion keeps the drag thumbnail's corners from counting as drawn wheel details.
+        var inner = size * DragImageHalfWidthRatio;
+        var outer = size * 0.44;
+        Span<int> details = stackalloc int[4];
+        details.Clear();
+        for (var y = (int)(cy - outer); y <= (int)(cy + outer); y++)
+        {
+            for (var x = (int)(cx - outer); x <= (int)(cx + outer); x++)
+            {
+                var dx = x - cx;
+                var dy = y - cy;
+                if ((Math.Abs(dx) < inner && Math.Abs(dy) < inner) || dx * dx + dy * dy > outer * outer)
+                {
+                    continue;
+                }
+
+                var i = (y * width + x) * 4;
+                var colour = bgra[i + 2] << 16 | bgra[i + 1] << 8 | bgra[i];
+                if (!Near(colour, background, Tolerance * 3))
+                {
+                    details[(x < cx ? 0 : 1) + (y < cy ? 0 : 2)]++;
+                }
+            }
+        }
+
+        // Require distributed detail, not a cursor or a few noisy pixels; scale the count with pixel area.
+        var minimum = Math.Max(4, size * (double)size / 4096);
+        var quadrants = 0;
+        foreach (var count in details)
+        {
+            if (count >= minimum)
+            {
+                quadrants++;
+            }
+        }
+
+        // shortcut: heavy occlusion can hide these details; use a render probe if that needs diagnosing.
+        return quadrants >= 3;
+    }
+
+    private static bool Near(int a, int b, int tolerance) =>
+        Math.Abs((a >> 16 & 0xFF) - (b >> 16 & 0xFF)) <= tolerance
+        && Math.Abs((a >> 8 & 0xFF) - (b >> 8 & 0xFF)) <= tolerance
+        && Math.Abs((a & 0xFF) - (b & 0xFF)) <= tolerance;
 
     private static bool IsLight(int colour) => (colour >> 16 & 0xFF) >= Light && (colour >> 8 & 0xFF) >= Light && (colour & 0xFF) >= Light;
 }

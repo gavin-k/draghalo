@@ -209,9 +209,9 @@ internal static partial class AppScenario
         using (var after = Capture(SystemInformation.VirtualScreen))
         {
             Screenshot(after, w);
-            var (changed, total) = RimChanged(before, after, w, png);
-            checks.Check("wheel disc is drawn (acrylic or its solid fallback)", total > 0 && changed >= total * 0.8,
-                $"{changed} of {total} rim samples differ from the screen before the tap");
+            var (frame, changedQuadrants) = WheelDrawing(before, after, w, png);
+            checks.Check("the wheel is drawn with new detail across the disc", frame is { Flat: false } && changedQuadrants >= 3,
+                $"{frame?.ToString() ?? "disc outside the capture"}; {changedQuadrants} quadrants contain new detail outside the drag image");
         }
 
         var t0 = Log.NowMs;
@@ -772,7 +772,7 @@ internal static partial class AppScenario
         return shot;
     }
 
-    /// <summary>Saves the wheel's part of a virtual-screen capture next to the log, for a human to look at (acrylic, labels, hover).</summary>
+    /// <summary>Saves the wheel's part of a virtual-screen capture next to the log, for a human to look at (surface, labels, hover).</summary>
     private static void Screenshot(Bitmap screen, Wheel w)
     {
         var vs = SystemInformation.VirtualScreen;
@@ -785,42 +785,71 @@ internal static partial class AppScenario
     }
 
     /// <summary>
-    /// Samples the disc's 6 DIP rim outside the sectors every 10° and counts the samples that changed since
-    /// before the tap: a disc that did not render leaves the screen as it was. Skips the hovered sector,
-    /// where the cursor and the drag image are. Both captures cover the virtual screen.
+    /// Checks the current disc and changes inside it, rather than expecting its white rim to darken Explorer.
+    /// Three quadrants must gain visible pixels since before the tap; the hub, desktop corners and hovered
+    /// sector are excluded so an unchanged Explorer view or a moved drag image cannot satisfy the check.
     /// </summary>
-    private static (int Changed, int Total) RimChanged(Bitmap before, Bitmap after, Wheel w, int hovered)
+    private static (FrameVerdict? Frame, int ChangedQuadrants) WheelDrawing(Bitmap before, Bitmap after, Wheel w, int hovered)
     {
-        const double RimRadius = WheelGeometry.OuterRadius + 3;
         var vs = SystemInformation.VirtualScreen;
+        var size = (int)Math.Ceiling(2 * (WheelGeometry.OuterRadius + 16) * w.Scale);
+        var left = w.X - size / 2 - vs.X;
+        var top = w.Y - size / 2 - vs.Y;
+        if (left < 0 || top < 0 || left + size > after.Width || top + size > after.Height || before.Size != after.Size)
+        {
+            return (null, 0);
+        }
+
+        var pixels = new byte[size * size * 4];
+        Span<int> changed = stackalloc int[4];
+        changed.Clear();
+        var inner = size * FrameCheck.DragImageHalfWidthRatio;
+        var outerSquared = Math.Pow(size * 0.44, 2);
         var (hx, hy) = WheelGeometry.SectorCenter(hovered);
         var hoveredDeg = Math.Atan2(hy, hx) * 180 / Math.PI;
-        int changed = 0, total = 0;
-        for (var deg = 0; deg < 360; deg += 10)
+        for (var y = 0; y < size; y++)
         {
-            if (Math.Abs(((deg - hoveredDeg + 540) % 360) - 180) < 45)
+            for (var x = 0; x < size; x++)
             {
-                continue;
-            }
+                var c = after.GetPixel(left + x, top + y);
+                var i = (y * size + x) * 4;
+                pixels[i] = c.B;
+                pixels[i + 1] = c.G;
+                pixels[i + 2] = c.R;
+                var dx = x - size / 2.0;
+                var dy = y - size / 2.0;
+                var radius = dx * dx + dy * dy;
+                if ((Math.Abs(dx) < inner && Math.Abs(dy) < inner) || radius > outerSquared)
+                {
+                    continue;
+                }
 
-            var a = deg * Math.PI / 180;
-            var x = w.X + (int)Math.Round(Math.Cos(a) * RimRadius * w.Scale) - vs.X;
-            var y = w.Y + (int)Math.Round(Math.Sin(a) * RimRadius * w.Scale) - vs.Y;
-            if (x < 0 || y < 0 || x >= after.Width || y >= after.Height)
-            {
-                continue;
-            }
+                var b = before.GetPixel(left + x, top + y);
+                if (Math.Max(Math.Abs(b.R - c.R), Math.Max(Math.Abs(b.G - c.G), Math.Abs(b.B - c.B))) <= 24)
+                {
+                    continue;
+                }
 
-            var b = before.GetPixel(x, y);
-            var c = after.GetPixel(x, y);
-            total++;
-            if (Math.Max(Math.Abs(b.R - c.R), Math.Max(Math.Abs(b.G - c.G), Math.Abs(b.B - c.B))) >= 16)
-            {
-                changed++;
+                var deg = Math.Atan2(dy, dx) * 180 / Math.PI;
+                if (Math.Abs(((deg - hoveredDeg + 540) % 360) - 180) >= 45)
+                {
+                    changed[(dx < 0 ? 0 : 1) + (dy < 0 ? 0 : 2)]++;
+                }
             }
         }
 
-        return (changed, total);
+        // Match FrameCheck's DPI-scaled noise floor, now requiring those pixels to be new as well.
+        var minimum = Math.Max(4, size * (double)size / 4096);
+        var quadrants = 0;
+        foreach (var count in changed)
+        {
+            if (count >= minimum)
+            {
+                quadrants++;
+            }
+        }
+
+        return (FrameCheck.Judge(pixels, size, size), quadrants);
     }
 
     private static void WriteJpeg(string path, int width, int height)

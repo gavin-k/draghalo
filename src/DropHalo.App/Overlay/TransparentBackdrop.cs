@@ -50,7 +50,13 @@ internal sealed unsafe class TransparentBackdrop : SystemBackdrop
         if (!_hwnd.IsNull)
         {
             PInvoke.RemoveWindowSubclass(_hwnd, SubclassProc, 1);
+            _hwnd = default;
         }
+    }
+
+    protected override void OnDefaultSystemBackdropConfigurationChanged(ICompositionSupportsSystemBackdrop target, XamlRoot xamlRoot)
+    {
+        // The fixed transparent brush needs no system configuration; the base callback rejects this custom target on HC changes.
     }
 
     private static void ConfigureDwm(HWND hwnd)
@@ -59,6 +65,7 @@ internal sealed unsafe class TransparentBackdrop : SystemBackdrop
         var extend = PInvoke.DwmExtendFrameIntoClientArea(hwnd, &margins);
         var blur = new DWM_BLURBEHIND { dwFlags = DwmBbEnable | DwmBbBlurRegion, fEnable = true, hRgnBlur = PInvoke.CreateRectRgn(-2, -2, -1, -1) };
         var blurBehind = PInvoke.DwmEnableBlurBehindWindow(hwnd, &blur);
+        PInvoke.DeleteObject(blur.hRgnBlur); // DWM copies the region; repeated configuration changes must not leak it.
 
         // Win11 otherwise draws a 1 px rounded border around the invisible window rectangle.
         var corner = DWM_WINDOW_CORNER_PREFERENCE.DWMWCP_DONOTROUND;

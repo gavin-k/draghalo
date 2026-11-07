@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Numerics;
 using DropHalo.App.Diagnostics;
+using DropHalo.App.Styles;
 using DropHalo.Core.Wheel;
 using Microsoft.UI;
 using Microsoft.UI.Composition;
@@ -25,7 +26,7 @@ using Path = Microsoft.UI.Xaml.Shapes.Path;
 namespace DropHalo.App.Overlay;
 
 /// <summary>
-/// The wheel the user sees: a transparent, top-most, never-activated WinUI window with an acrylic disc
+/// The wheel the user sees: a transparent, top-most, never-activated WinUI window with a solid disc
 /// and six sectors drawn from <see cref="WheelGeometry"/>, the same numbers the drop target hit-tests
 /// with, and, when a group sector opens, its items on a ring around the disc (<see cref="SetRing"/>).
 /// It never receives the drag itself; the Shell's DropTargetHost sits above it. Created once,
@@ -34,17 +35,14 @@ namespace DropHalo.App.Overlay;
 /// </summary>
 /// <remarks>
 /// Motion runs on the compositor (see docs/design/README.md): the wheel scales in from .92 over
-/// <c>DwMotionWheelIn</c>, fades out over <c>DwMotionSelect</c>, a hovered sector lifts to 1.08, and ring items
-/// fan out 20 ms apart. With system animations off (<see cref="UISettings.AnimationsEnabled"/>) every one of
+/// <c>DwMotionWheelIn</c>, fades out over <c>DwMotionSelect</c>, a hovered sector lifts slightly, and ring items
+/// appear together. With system animations off (<see cref="UISettings.AnimationsEnabled"/>) every one of
 /// those is a plain property set: nothing moves, nothing is delayed.
 /// </remarks>
 internal sealed class WheelWindow
 {
     /// <summary>How much a hovered sector or ring item grows.</summary>
-    private const float Lift = 1.08f;
-
-    /// <summary>Ring items appear one after another, this far apart.</summary>
-    private static readonly TimeSpan Stagger = TimeSpan.FromMilliseconds(20);
+    private const float Lift = 1.025f;
 
     /// <summary>Room around the rim, in DIPs.</summary>
     private const double Margin = 10;
@@ -68,17 +66,11 @@ internal sealed class WheelWindow
     /// </summary>
     private const int FrameRecheckMs = 500;
 
-    private static readonly Color Text = Color.FromArgb(255, 0xF2, 0xF2, 0xF2);
-    private static readonly Color Text3 = Color.FromArgb(255, 0xA3, 0xA3, 0xA3);
-    private static readonly Color Accent = Color.FromArgb(255, 0xFB, 0x92, 0x3C);
-    private static readonly Color OnAccent = Color.FromArgb(255, 0x1A, 0x0D, 0x04);
-    private static readonly Color SectorFill = Color.FromArgb(0x1F, 0xFF, 0xFF, 0xFF);
-    private static readonly Color SectorStroke = Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF);
-    private static readonly Color SectorOpen = Color.FromArgb(0x59, 0xFB, 0x92, 0x3C);
-
-    /// <summary>The ring has no acrylic of its own: a dark, nearly solid fill keeps its text readable over any desktop.</summary>
-    private static readonly Color ChildFill = Color.FromArgb(0xE0, 0x20, 0x20, 0x20);
-    private static readonly Color ChildOff = Color.FromArgb(0xA0, 0x20, 0x20, 0x20);
+    private Color _text;
+    private Color _secondary;
+    private Color _selected;
+    private Color _selectedText;
+    private Color _surface;
 
     private readonly Window _window;
     private readonly AppWindow _appWindow;
@@ -100,15 +92,21 @@ internal sealed class WheelWindow
     private readonly SolidColorBrush[] _childInks = new SolidColorBrush[LayoutGroup.Capacity];
     private readonly SolidColorBrush[] _childSubInks = new SolidColorBrush[LayoutGroup.Capacity];
     private readonly Canvas _canvas;
-    private readonly SystemBackdropElement _disc;
+    private readonly CompositionColorBrush _discFill;
+    private readonly CompositionColorBrush _discStroke;
+    private readonly ShapeVisual _discFillVisual;
     private double _backgroundOpacity = 1;
     private int _backgroundRevision;
+    private bool _highContrast;
     private readonly UISettings _system = new();
+    private readonly AccessibilitySettings _accessibility = new();
     private readonly Visual _root;
     private readonly Compositor _compositor;
     private readonly CompositionEasingFunction _ease;
-    private readonly TimeSpan _wheelIn = Motion("DwMotionWheelIn", 150);
-    private readonly TimeSpan _select = Motion("DwMotionSelect", 100);
+    private readonly Vector3KeyFrameAnimation _growIn;
+    private readonly ScalarKeyFrameAnimation _fadeIn;
+    private readonly TimeSpan _wheelIn = Motion("DwMotionWheelIn", 100);
+    private readonly TimeSpan _select = Motion("DwMotionSelect", 70);
     private readonly Visual[] _sectorVisuals = new Visual[WheelModel.SlotCount];
     private readonly Visual[] _childVisuals = new Visual[LayoutGroup.Capacity];
     private readonly Visual[] _childPanelVisuals = new Visual[LayoutGroup.Capacity];
@@ -152,14 +150,10 @@ internal sealed class WheelWindow
         var canvas = _canvas = new Canvas { Width = RingSize, Height = RingSize };
         var frame = new Canvas { Children = { canvas } };
         var discSize = 2 * (WheelGeometry.OuterRadius + DiscPadding);
-        var disc = _disc = new SystemBackdropElement
+        var disc = new Grid
         {
             Width = discSize,
             Height = discSize,
-            CornerRadius = new CornerRadius(discSize / 2),
-            SystemBackdrop = new AcrylicBackdrop(),
-
-            // Inside the Canvas a SystemBackdropElement renders nothing; centred in the root Grid it does.
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
@@ -168,9 +162,9 @@ internal sealed class WheelWindow
         for (var i = 0; i < WheelModel.SlotCount; i++)
         {
             _fills[i] = new SolidColorBrush(Colors.Transparent);
-            _inks[i] = new SolidColorBrush(Text);
-            _subInks[i] = new SolidColorBrush(Text3);
-            _sectors[i] = new Path { Data = Wedge(i), StrokeThickness = 1, Stroke = new SolidColorBrush(SectorStroke), Fill = _fills[i] };
+            _inks[i] = new SolidColorBrush();
+            _subInks[i] = new SolidColorBrush();
+            _sectors[i] = new Path { Data = Wedge(i), StrokeThickness = 0.75, Stroke = AppStyles.Brush("DwBorderBrush"), Fill = _fills[i] };
             AutomationProperties.SetAutomationId(_sectors[i], $"Sector{i}");
             canvas.Children.Add(_sectors[i]);
 
@@ -187,10 +181,10 @@ internal sealed class WheelWindow
 
         for (var i = 0; i < LayoutGroup.Capacity; i++)
         {
-            _childFills[i] = new SolidColorBrush(ChildOff);
-            _childInks[i] = new SolidColorBrush(Text);
-            _childSubInks[i] = new SolidColorBrush(Text3);
-            _children[i] = new Path { StrokeThickness = 1, Stroke = new SolidColorBrush(SectorStroke), Fill = _childFills[i], Visibility = Visibility.Collapsed };
+            _childFills[i] = new SolidColorBrush();
+            _childInks[i] = new SolidColorBrush();
+            _childSubInks[i] = new SolidColorBrush();
+            _children[i] = new Path { StrokeThickness = 0.75, Stroke = AppStyles.Brush("DwBorderBrush"), Fill = _childFills[i], Visibility = Visibility.Collapsed };
             AutomationProperties.SetAutomationId(_children[i], $"Child{i}");
             canvas.Children.Add(_children[i]);
 
@@ -210,7 +204,7 @@ internal sealed class WheelWindow
         {
             FontSize = 12,
             FontWeight = FontWeights.SemiBold,
-            Foreground = new SolidColorBrush(Text),
+            Foreground = AppStyles.Brush("DwTextBrush"),
             TextTrimming = TextTrimming.CharacterEllipsis,
             TextAlignment = TextAlignment.Center,
             MaxWidth = 2 * WheelGeometry.InnerRadius - 14,
@@ -218,14 +212,14 @@ internal sealed class WheelWindow
         _subtitle = new TextBlock
         {
             FontSize = 11,
-            Foreground = new SolidColorBrush(Text3),
+            Foreground = AppStyles.Brush("DwText2Brush"),
             TextAlignment = TextAlignment.Center,
             TextWrapping = TextWrapping.Wrap,
             TextTrimming = TextTrimming.CharacterEllipsis,
             MaxLines = 3,
             MaxWidth = 2 * WheelGeometry.InnerRadius - 18,
         };
-        _hint = new TextBlock { FontSize = 10, Foreground = new SolidColorBrush(Text3), TextAlignment = TextAlignment.Center };
+        _hint = new TextBlock { FontSize = 10, Foreground = AppStyles.Brush("DwText3Brush"), TextAlignment = TextAlignment.Center };
         AutomationProperties.SetAutomationId(_title, "WheelTitle");
         AutomationProperties.SetAutomationId(_subtitle, "WheelSubtitle");
         var hub = new StackPanel { Width = 2 * WheelGeometry.InnerRadius, Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
@@ -240,6 +234,7 @@ internal sealed class WheelWindow
 
         var content = new Grid { Children = { disc, frame } };
         _window.Content = content;
+        AppStyles.PaletteChanged += ApplyPalette;
         if (white)
         {
             content.Children.Add(new Border { Background = new SolidColorBrush(Colors.White) });
@@ -247,8 +242,50 @@ internal sealed class WheelWindow
 
         _root = ElementCompositionPreview.GetElementVisual(content);
         _compositor = _root.Compositor;
-        _ease = _compositor.CreateCubicBezierEasingFunction(new Vector2(0.1f, 0.9f), new Vector2(0.2f, 1f));
 
+        // Keep the Border's inner-edge background and one-DIP inside stroke without its software shape mask.
+        var radius = (float)(discSize / 2);
+        var visualSize = new Vector2((float)discSize);
+        var fillGeometry = _compositor.CreateEllipseGeometry();
+        fillGeometry.Center = new Vector2(radius);
+        fillGeometry.Radius = new Vector2(radius - 1);
+        _discFill = _compositor.CreateColorBrush();
+        var fillShape = _compositor.CreateSpriteShape(fillGeometry);
+        fillShape.FillBrush = _discFill;
+        _discFillVisual = _compositor.CreateShapeVisual();
+        _discFillVisual.Size = visualSize;
+        _discFillVisual.Shapes.Add(fillShape);
+
+        var strokeGeometry = _compositor.CreateEllipseGeometry();
+        strokeGeometry.Center = new Vector2(radius);
+        strokeGeometry.Radius = new Vector2(radius - 0.5f);
+        _discStroke = _compositor.CreateColorBrush();
+        var strokeShape = _compositor.CreateSpriteShape(strokeGeometry);
+        strokeShape.StrokeBrush = _discStroke;
+        strokeShape.StrokeThickness = 1;
+        strokeShape.IsStrokeNonScaling = false;
+        var strokeVisual = _compositor.CreateShapeVisual();
+        strokeVisual.Size = visualSize;
+        strokeVisual.Opacity = 1;
+        strokeVisual.Shapes.Add(strokeShape);
+
+        var discVisual = _compositor.CreateContainerVisual();
+        discVisual.Size = visualSize;
+        discVisual.Children.InsertAtBottom(_discFillVisual);
+        discVisual.Children.InsertAtTop(strokeVisual);
+        ElementCompositionPreview.SetElementChildVisual(disc, discVisual);
+
+        _ease = _compositor.CreateCubicBezierEasingFunction(new Vector2(0.1f, 0.9f), new Vector2(0.2f, 1f));
+        _growIn = _compositor.CreateVector3KeyFrameAnimation();
+        _growIn.InsertKeyFrame(0f, new Vector3(0.92f, 0.92f, 1f));
+        _growIn.InsertKeyFrame(1f, Vector3.One, _ease);
+        _growIn.Duration = _wheelIn;
+        _fadeIn = _compositor.CreateScalarKeyFrameAnimation();
+        _fadeIn.InsertKeyFrame(0f, 0f);
+        _fadeIn.InsertKeyFrame(1f, 1f, _ease);
+        _fadeIn.Duration = _wheelIn;
+
+        ApplyPalette();
         SetModel(null);
         SetHubHint(false);
     }
@@ -275,7 +312,8 @@ internal sealed class WheelWindow
             return;
         }
 
-        _backgroundOpacity = _disc.Opacity = opacity;
+        _backgroundOpacity = opacity;
+        _discFillVisual.Opacity = (float)EffectiveBackgroundOpacity;
         _backgroundRevision++;
         for (var i = 0; i < WheelModel.SlotCount; i++)
         {
@@ -296,11 +334,18 @@ internal sealed class WheelWindow
     /// z-order, so the drop target host can be raised above it afterwards.
     /// </summary>
     public void ShowAt(int centerX, int centerY, double scale, bool ring = false)
+        => ShowAt(centerX, centerY, scale, ring, reportFirstFrame: true);
+
+    private void ShowAt(int centerX, int centerY, double scale, bool ring, bool reportFirstFrame)
     {
         var dip = Fit(centerX, centerY, scale, ring);
         _generation++;
-        _shownAt = Stopwatch.GetTimestamp();
-        CompositionTarget.Rendered += OnFirstFrame;
+        CompositionTarget.Rendered -= OnFirstFrame;
+        if (reportFirstFrame)
+        {
+            _shownAt = Stopwatch.GetTimestamp();
+            CompositionTarget.Rendered += OnFirstFrame;
+        }
 
         // A fade still running from the last close is cut short: this show owns the window now.
         _root.StopAnimation("Opacity");
@@ -309,16 +354,8 @@ internal sealed class WheelWindow
         if (animated)
         {
             _root.CenterPoint = new Vector3((float)(dip / 2), (float)(dip / 2), 0);
-            var grow = _compositor.CreateVector3KeyFrameAnimation();
-            grow.InsertKeyFrame(0f, new Vector3(0.92f, 0.92f, 1f));
-            grow.InsertKeyFrame(1f, Vector3.One, _ease);
-            grow.Duration = _wheelIn;
-            var fadeIn = _compositor.CreateScalarKeyFrameAnimation();
-            fadeIn.InsertKeyFrame(0f, 0f);
-            fadeIn.InsertKeyFrame(1f, 1f, _ease);
-            fadeIn.Duration = _wheelIn;
-            _root.StartAnimation("Scale", grow);
-            _root.StartAnimation("Opacity", fadeIn);
+            _root.StartAnimation("Scale", _growIn);
+            _root.StartAnimation("Opacity", _fadeIn);
         }
         else
         {
@@ -406,7 +443,34 @@ internal sealed class WheelWindow
     public void Close()
     {
         _generation++;
+        CompositionTarget.Rendered -= OnFirstFrame;
+        AppStyles.PaletteChanged -= ApplyPalette;
         _window.Close();
+    }
+
+    private double EffectiveBackgroundOpacity => _highContrast ? 1 : _backgroundOpacity;
+
+    private void ApplyPalette()
+    {
+        _highContrast = _accessibility.HighContrast;
+        _text = ((SolidColorBrush)AppStyles.Brush("DwTextBrush")).Color;
+        _secondary = ((SolidColorBrush)AppStyles.Brush("DwText2Brush")).Color;
+        _surface = ((SolidColorBrush)AppStyles.Brush("DwSurface2Brush")).Color;
+        _selected = ((SolidColorBrush)AppStyles.Brush("DwAccentSoftBrush")).Color;
+        _selectedText = ((SolidColorBrush)AppStyles.Brush(_highContrast ? "DwOnAccentBrush" : "DwAccentBrush")).Color;
+        _discFill.Color = ((SolidColorBrush)AppStyles.Brush("DwSurfaceBrush")).Color;
+        _discStroke.Color = ((SolidColorBrush)AppStyles.Brush("DwBorderBrush")).Color;
+        _discFillVisual.Opacity = (float)EffectiveBackgroundOpacity;
+        _backgroundRevision++;
+        for (var i = 0; i < WheelModel.SlotCount; i++)
+        {
+            Paint(i);
+        }
+
+        for (var i = 0; i < LayoutGroup.Capacity; i++)
+        {
+            PaintChild(i);
+        }
     }
 
     /// <summary>
@@ -415,16 +479,30 @@ internal sealed class WheelWindow
     /// </summary>
     public async Task PrewarmAsync()
     {
-        var frame = new TaskCompletionSource();
+        var frame = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         void OnRendered(object? sender, RenderedEventArgs e) => frame.TrySetResult();
         CompositionTarget.Rendered += OnRendered;
-        var px = (int)Math.Ceiling(Size * 2);
-        _appWindow.MoveAndResize(new RectInt32(-32000, -32000, px, px));
-        _appWindow.Show(false);
+        var generation = _generation + 1; // ShowAt owns the next generation, even if its native Show throws.
         var started = Stopwatch.GetTimestamp();
-        await Task.WhenAny(frame.Task, Task.Delay(2000)).ConfigureAwait(true);
-        CompositionTarget.Rendered -= OnRendered;
-        _appWindow.Hide();
+        try
+        {
+            // Cover the grouped wheel's first layout at the window's actual DPI.
+            var hwnd = new HWND(WinRT.Interop.WindowNative.GetWindowHandle(_window));
+            ShowAt(-32000, -32000, PInvoke.GetDpiForWindow(hwnd) / 96.0, ring: true, reportFirstFrame: false);
+            generation = _generation;
+            await Task.WhenAny(frame.Task, Task.Delay(2000)).ConfigureAwait(true);
+        }
+        finally
+        {
+            CompositionTarget.Rendered -= OnRendered;
+            // Hooks are already active: a real show or hide during the await owns its own cleanup.
+            if (generation == _generation)
+            {
+                _generation++;
+                HideNow();
+            }
+        }
+
         FileLog.Info($"overlay: prewarm {(frame.Task.IsCompleted ? "rendered" : "timed out")} after {Stopwatch.GetElapsedTime(started).TotalMilliseconds:F0} ms");
     }
 
@@ -445,8 +523,8 @@ internal sealed class WheelWindow
         {
             var slot = Slot(i);
             SetGlyph(_glyphs[i], slot?.Glyph);
-            _labels[i].Text = slot?.Label ?? "";
-            _subLabels[i].Text = slot?.SubLabel ?? "";
+            SetText(_labels[i], slot?.Label ?? "");
+            SetText(_subLabels[i], slot?.SubLabel ?? "");
             AutomationProperties.SetName(_sectors[i], slot?.AccessibleName ?? L.T("扇区 {0}（空）", i + 1));
             Paint(i);
         }
@@ -502,15 +580,15 @@ internal sealed class WheelWindow
             var child = _ringChildren![i];
             _children[i].Data = RingWedge(_ringParent, count, i);
             SetGlyph(_childGlyphs[i], child.Glyph);
-            _childLabels[i].Text = child.Label;
-            _childSubLabels[i].Text = child.SubLabel ?? "";
+            SetText(_childLabels[i], child.Label);
+            SetText(_childSubLabels[i], child.SubLabel ?? "");
             AutomationProperties.SetName(_children[i], child.AccessibleName);
             var (x, y) = WheelGeometry.ChildCenter(_ringParent, count, i);
             Place(_childPanels[i], Center + x - ChildLabelWidth / 2, Center + y - ChildLabelHeight / 2);
             PaintChild(i);
             _childVisuals[i].CenterPoint = new Vector3((float)(Center + x), (float)(Center + y), 0);
-            FanOut(i, _childVisuals[i]);
-            FanOut(i, _childPanelVisuals[i]);
+            FanOut(_childVisuals[i]);
+            FanOut(_childPanelVisuals[i]);
         }
 
         for (var i = count; i < LayoutGroup.Capacity; i++)
@@ -559,9 +637,9 @@ internal sealed class WheelWindow
     private void ShowHub()
     {
         var detail = Under(_hovered)?.Detail;
-        _title.Text = detail?.Head ?? _model?.CenterTitle ?? "";
-        _subtitle.Text = detail?.Body ?? _model?.CenterSubtitle ?? L.T("读取文件…");
-        _hint.Text = _hubFirst ? L.T("先移到圆心") : _model?.HasMore == true ? L.T("打字搜索 · Esc 取消") : L.T("Esc 取消");
+        SetText(_title, detail?.Head ?? _model?.CenterTitle ?? "");
+        SetText(_subtitle, detail?.Body ?? _model?.CenterSubtitle ?? L.T("读取文件…"));
+        SetText(_hint, _hubFirst ? L.T("先移到圆心") : _model?.HasMore == true ? L.T("打字搜索 · Esc 取消") : L.T("Esc 取消"));
         _hint.Visibility = detail is null ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -571,10 +649,11 @@ internal sealed class WheelWindow
         var enabled = slot?.Availability.IsAvailable == true;
         var hovered = enabled && _hovered == WheelHit.Sector(i);
         var open = i == _ringParent;
-        _fills[i].Color = hovered ? Accent : open ? SectorOpen : enabled ? SectorFill : Colors.Transparent;
-        _fills[i].Opacity = hovered ? 1 : _backgroundOpacity;
-        _inks[i].Color = hovered ? OnAccent : Text;
-        _subInks[i].Color = hovered ? OnAccent : Text3;
+        // Only the disc carries background opacity; stacking two translucent fills would darken sectors.
+        _fills[i].Color = hovered || open ? _selected : Colors.Transparent;
+        _fills[i].Opacity = 1;
+        _inks[i].Color = hovered || open ? _selectedText : _text;
+        _subInks[i].Color = hovered || open ? _selectedText : _secondary;
         _glyphs[i].Opacity = _labels[i].Opacity = _subLabels[i].Opacity = enabled || open ? 1 : 0.45;
     }
 
@@ -583,10 +662,10 @@ internal sealed class WheelWindow
         var child = Child(i);
         var enabled = child?.Availability.IsAvailable == true;
         var hovered = enabled && _hovered == WheelHit.Child(i);
-        _childFills[i].Color = hovered ? Accent : enabled ? ChildFill : ChildOff;
-        _childFills[i].Opacity = hovered ? 1 : _backgroundOpacity;
-        _childInks[i].Color = hovered ? OnAccent : Text;
-        _childSubInks[i].Color = hovered ? OnAccent : Text3;
+        _childFills[i].Color = hovered ? _selected : _surface;
+        _childFills[i].Opacity = hovered ? 1 : EffectiveBackgroundOpacity;
+        _childInks[i].Color = hovered ? _selectedText : _text;
+        _childSubInks[i].Color = hovered ? _selectedText : _secondary;
         _childGlyphs[i].Opacity = _childLabels[i].Opacity = _childSubLabels[i].Opacity = enabled ? 1 : 0.45;
     }
 
@@ -620,8 +699,8 @@ internal sealed class WheelWindow
         visual.StartAnimation("Scale", scale);
     }
 
-    /// <summary>A ring item appears in its turn: the <paramref name="index"/>th waits that many staggers, then grows in.</summary>
-    private void FanOut(int index, Visual visual)
+    /// <summary>Ring items appear together, so the last item is just as ready as the first.</summary>
+    private void FanOut(Visual visual)
     {
         if (!Animated)
         {
@@ -636,14 +715,10 @@ internal sealed class WheelWindow
         fade.InsertKeyFrame(0f, 0f);
         fade.InsertKeyFrame(1f, 1f, _ease);
         fade.Duration = _select;
-        fade.DelayTime = Stagger * index;
-        fade.DelayBehavior = AnimationDelayBehavior.SetInitialValueBeforeDelay;
         var grow = _compositor.CreateVector3KeyFrameAnimation();
         grow.InsertKeyFrame(0f, new Vector3(0.9f, 0.9f, 1f));
         grow.InsertKeyFrame(1f, Vector3.One, _ease);
         grow.Duration = _select;
-        grow.DelayTime = Stagger * index;
-        grow.DelayBehavior = AnimationDelayBehavior.SetInitialValueBeforeDelay;
         visual.StartAnimation("Opacity", fade);
         visual.StartAnimation("Scale", grow);
     }
@@ -681,7 +756,7 @@ internal sealed class WheelWindow
         CompositionTarget.Rendered -= OnFirstFrame;
         FileLog.Info($"overlay: first frame {Stopwatch.GetElapsedTime(_shownAt).TotalMilliseconds:F0} ms after show");
         // shortcut: faded backgrounds can reveal white desktops; use a render probe before checking those.
-        if (_backgroundOpacity == 1 && _frames.Due)
+        if (EffectiveBackgroundOpacity == 1 && _frames.Due)
         {
             _ = CheckFrameAsync(_generation, _bounds);
         }
@@ -751,10 +826,19 @@ internal sealed class WheelWindow
         return new FontFamily("Segoe Fluent Icons,Segoe MDL2 Assets");
     }
 
+    /// <summary>WinUI invalidates text layout even when the assigned text is unchanged.</summary>
+    private static void SetText(TextBlock block, string text)
+    {
+        if (block.Text != text)
+        {
+            block.Text = text;
+        }
+    }
+
     /// <summary>A glyph block shows its one character, or takes no room, so a label without one sits centred.</summary>
     private static void SetGlyph(TextBlock block, string? glyph)
     {
-        block.Text = glyph ?? "";
+        SetText(block, glyph ?? "");
         block.Visibility = glyph is null ? Visibility.Collapsed : Visibility.Visible;
     }
 
