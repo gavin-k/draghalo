@@ -1,125 +1,169 @@
 # DropHalo
 
-当前源码与构建产物统一使用 **DropHalo**，从 `v0.1.2` 开始采用此名称。GitHub 远程仍为 `gavin-k/draghalo`，更早的发布包保留原名。
+**English** · [简体中文](README_zh.md)
 
-> 拖一下，松手，转好了。
-> A local, offline, drag-to-convert file converter for Windows 11.
+An offline file converter for Windows 11. Drag a file, tap a key, and drop it onto a format.
 
 [![Build](https://github.com/gavin-k/draghalo/actions/workflows/build.yml/badge.svg)](https://github.com/gavin-k/draghalo/actions/workflows/build.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-orange.svg)](LICENSE)
-![Status: pre-alpha](https://img.shields.io/badge/status-pre--alpha-lightgrey)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Status: preview](https://img.shields.io/badge/status-preview-lightgrey)
 
-> **状态：pre-alpha，M1 开发中。** 已能在资源管理器里拖拽转换图片、字幕、压缩包、音视频和 PDF；x64 / ARM64 的 MSIX 和 MSI 由 `release.yml` 产出、用 Azure Trusted Signing 签名，发布在 GitHub Releases。设置窗口能改唤出键、输出位置、文件名和重名策略（自动编号、跳过、替换或每次询问），能看到网络请求次数，打开或清除日志；第一次启动有入门指南。界面有简体中文和英文，默认跟随 Windows 的显示语言，也能在设置里指定，重启后生效。工具轮盘（Ctrl+Alt）有压缩图片、缩小、合成 / 合并 / 拆分 PDF、识别文字、压缩视频、提取音频、解压等十二项；动作轮盘（Win）有复制路径、移动到、重命名、压缩等六项。转换轮盘上直接打字，可以搜索全部可转格式；指针停在扇区上，圆心会显示预期质量，灰掉的格式会说明原因。触屏或笔拖动时停住不动，也能唤出转换轮盘（只用模拟输入测过）。拖动时把鼠标推到屏幕左右边缘会弹出停靠栏，文件可以先放着，从几个文件夹收齐了再一起拖走。产品名「DropHalo」为工作代号，随时可能更改。
+[Download](https://github.com/gavin-k/draghalo/releases) · [Supported conversions](#supported-conversions) · [Build from source](#build-from-source) · [Contributing](CONTRIBUTING.md)
 
-## 它是什么
+DropHalo is an early preview for **Windows 11, x64 and ARM64**. This README describes the current source; published builds may have fewer features. The app and packages have used the name **DropHalo** since v0.1.2. The repository URL remains `gavin-k/draghalo`.
 
-拖动任意文件，在拖动过程中**轻点一下修饰键**（默认 `Shift`），屏幕上弹出一个 6 扇区的**转换轮盘**；移到目标格式上松手，文件就在本机转换完成，输出到同一文件夹。
+## Get started
 
-- **本地离线**：读取、转换、写入全部在本机完成，文件不上传，也不联网检查更新；设置页显示这次启动以来的网络请求次数。你自己装的脚本工具是另一个进程，它上不上网 DropHalo 看不见，也不在这个计数里。
-- **多种唤出方式**：修饰键轻点 / 资源管理器右键 / 触屏长按 / 拖到屏幕边缘停靠栏 / 全局快捷键。
-- **三种轮盘**：`Shift` 转换 · `Ctrl+Alt` 工具（压缩、缩放、OCR、拆分…）· `Win` 动作（复制路径、移动…）。转换轮盘上直接打字，搜索全部格式。
-- **一等公民**：任务队列、撤销（输出移入回收站）、命名规则模板、重名策略。
-- **松手前看到预期质量**：PDF → DOCX 等复杂转换先告诉你结果大概会怎样、为什么。
-- **不抢资源管理器的键**：默认「轻点唤出」，按住 Ctrl / Shift / Alt 松手仍是系统原生的复制 / 移动 / 快捷方式。全部键位可自定义。
-- **Fluent**：WinUI 3，Mica / 亚克力，浅色 + 深色，WCAG AA，支持 `prefers-reduced-motion`，所有轮盘操作均有键盘等价操作。
+1. Download a package for your architecture from [GitHub Releases](https://github.com/gavin-k/draghalo/releases). See the [packaging guide](installer/README.md) for MSI and MSIX requirements, including the Windows App SDK runtime needed for MSIX sideloading.
+2. Open DropHalo and follow the first-run guide. You can try it with a sample image.
+3. Start dragging a file in File Explorer. While holding the mouse button, briefly press and release **Shift**. Move onto a format in the wheel and release the mouse button to convert.
 
-## 用你自己的 AI 造工具
+By default, results are saved beside the source file. Click the notification-area icon to open the task queue, check progress, undo supported operations, or open Settings. Closing the task window leaves DropHalo running in the notification area; its icon may be inside Windows' hidden-icons menu.
 
-DropHalo 不内置模型。把 [`skills/drophalo-tool`](skills/drophalo-tool/SKILL.md) 交给你在用的 agent（Claude Code、Codex、Cursor 都行），说一句「做个去 EXIF 再复制一份的工具」，它会把 `tool.json` 和脚本写进 `%LOCALAPPDATA%\DropHalo\tools\<slug>\`，再用 `DropHalo.exe --validate-tool` 自检；DropHalo 正在运行时会自动加载。新工具先是灰的，在 设置 › 我的工具 里看过命令行、打开开关才会跑；命令一改又会灰掉。工具轮盘和动作轮盘每个扇区放什么都记在 `layout.json` 里，扇区可以是一个分组，指针停上去在外环展开；想换位置可以让 agent 改这个文件。清单格式见 [`docs/tool-manifest.schema.json`](docs/tool-manifest.schema.json)，取舍见 [ADR-0005](docs/adr/0005-user-tools-manifest-and-trust.md)。这部分还没有在 Windows 上实测，见路线图 M1.5。
-
-## 轮盘外观
-
-在「设置 › 轮盘外观」调整背景不透明度（0–100%），保存后立即生效。100% 保留默认背景，数值越低越透明；文字、图标和悬停高亮保持清晰。该值保存为 `settings.json` 中的 `wheel.backgroundOpacity`，旧配置保持默认效果。
-
-## 设计稿
-
-落地页（桌面 + 手机）、转换轮盘覆盖层、任务队列、设置页的高保真设计稿见 [`docs/design/`](docs/design/README.md)。
-
-## 技术栈（摘要）
-
-| 层 | 选型 | 说明 |
+| Default gesture during a file drag | Wheel | Examples |
 |---|---|---|
-| UI | **C# / WinUI 3** (Windows App SDK 2.x, .NET 10) | 原生 Fluent：Mica / Acrylic / `SystemBackdropElement`；x64 + ARM64 |
-| 全局拖拽侦测 | Win32：`SetWindowsHookEx(WH_MOUSE_LL / WH_KEYBOARD_LL)` + UIA 侦测 `SysDragImage` + 透明 `RegisterDragDrop` 覆盖窗 | Windows 没有「全局拖拽事件」API，需要组合方案，见 [ADR-0002](docs/adr/0002-global-drag-detection.md) |
-| 资源管理器右键 | `IExplorerCommand`（C++ COM DLL）+ MSIX 清单 / 稀疏包 | Win11 新式右键菜单只接受 `IExplorerCommand` 且要求包标识 |
-| 图片 | Magick.NET (ImageMagick) 或 SkiaSharp + libheif/libavif | 许可证友好；HEIC 编码依赖系统 HEVC 扩展时需灰显说明 |
-| 音视频 | **FFmpeg LGPL 构建，独立进程（sidecar）** | MIT 主程序 + LGPL 进程边界；H.264 编码走 `h264_mf`（Media Foundation），WebM 编成 AV1 + Opus |
-| PDF | PDFium（渲染 / 转图）+ PdfPig（文本提取）+ SkiaSharp（图片→PDF） | PDF → DOCX 用 PdfPig 提取后按段落重建；LibreOffice sidecar 留作以后的可选模块 |
-| Office 文档 | 手写 OOXML 读写 + LibreOffice headless（可选下载模块，还没做） | Open XML SDK 只在测试里校验输出；旧版 DOC / PPT / XLS 要等 LibreOffice 模块 |
-| OCR | `Windows.Media.Ocr`（系统内置，25 语种）→ Windows AI `TextRecognizer`（Copilot+ PC）→ RapidOCR / Tesseract 回退 | 全部离线 |
-| 压缩包 | SharpCompress（读 ZIP / 7z / TAR / TAR.GZ / RAR，写 ZIP / 7z / TAR / TAR.GZ） | RAR 仅输入 |
-| 打包分发 | MSIX（Store + winget）· WiX v5 MSI（企业直装，稀疏包未做） | `winapp` CLI 产出 x64 / ARM64 msixbundle，WiX 产出各架构的 .msi |
+| Tap `Shift` | Convert | Images, documents, audio, video, subtitles, archives |
+| Tap `Ctrl+Alt` | Tools | Compress or resize images, combine or split PDFs, OCR, extract audio |
+| Tap `Win` | Actions | Copy paths, copy or move files, rename, create ZIP archives, send to the Recycle Bin |
 
-完整调研与替代方案对比见 [`docs/01-tech-stack.md`](docs/01-tech-stack.md)。
+Change these bindings in Settings. The default tap gesture is separate from holding a modifier while dropping a file in Explorer. Type a format name while the Convert wheel is open to search; hover over an item to see conversion limitations or why it is unavailable. Sending files to the Recycle Bin is disabled by default in the Actions wheel.
 
-## 目前能转换
+## Features
 
-| 类别 | 输入 | 输出 |
+- **Local processing.** Built-in conversions read and write files on your computer. No upload or online account is required.
+- **A temporary file dock.** A dock appears at the opposite screen edge when you start dragging files. Collect files from different folders, then drag them out individually or together. The dock stores paths without moving the originals; dragging them into a folder copies them. You can turn the dock off in Settings.
+- **A task queue.** View progress, cancel, retry, reveal output files, and undo supported operations. Undoing a conversion sends its output to the Recycle Bin.
+- **Output control.** Choose an output folder, a naming template, and what happens when a name already exists: number the new file, skip, replace, or ask.
+- **A native interface.** WinUI 3 windows use light, dark, and Windows high-contrast colors. The wheel uses a solid-color surface with adjustable opacity; its animations follow the Windows animation setting.
+- **English and Simplified Chinese.** The interface follows the Windows display language, or you can choose a language in Settings and restart.
+
+Under **Settings → Wheel appearance**, background opacity ranges from 0 to 100% and updates immediately. Labels, icons, outlines, and selection states remain visible. High-contrast mode keeps the background opaque; leaving high contrast restores your chosen opacity. The setting is stored as `wheel.backgroundOpacity` in `settings.json`.
+
+Touch and pen drags also have an optional stationary long-press gesture. It has been exercised with simulated input; physical touch and pen validation is still needed. Explorer context-menu integration, a standalone global hotkey, and a complete keyboard-only wheel workflow are not implemented.
+
+## Supported conversions
+
+These are the implemented conversion routes, rather than every format named in the catalog. Available targets depend on the source file and the required engine.
+
+| Category | Input | Output and limits |
 |---|---|---|
-| 图片 | JPG、PNG、WebP、AVIF、GIF、BMP、TIFF，另可读 HEIC、PSD（取合成后的图像）、ICO（取最大的一张）、SVG（按标明的尺寸画成位图，引用了外部文件的不转） | JPG、PNG、WebP、AVIF、GIF、BMP、TIFF（转 JPG、BMP 时透明部分填白），另有 ICO（最大 256×256，不是正方形时补透明边）和 PDF（一张图一页，多页 TIFF 每页一页）。HEIC 还不能输出，轮盘上灰显 |
-| PDF | PDF | DOCX（按段落重建文字和图片，保留字号、粗斜体、颜色）、PNG、JPG（150 DPI，每页一张，多页放进同名文件夹）、TXT（只取文字层） |
-| Word 文档 | DOCX | TXT（只留文字，表格的单元格用 Tab 隔开）、Markdown 和 HTML（保留标题、列表、粗体、斜体、链接和表格）。修订按全部接受，图片、页眉页脚和脚注不保留 |
-| 演示文稿 | PPTX | TXT（只留文字）、Markdown 和 HTML（每张幻灯片的标题成一级标题，保留项目符号、编号、粗体、斜体、链接和表格，SmartArt 只取文字，备注放在每张幻灯片最后）。隐藏的幻灯片、图片、图表、动画和版式不保留 |
-| 纯文本 | TXT（UTF-8、GBK，或带 BOM 的 UTF-16） | DOCX（每行一段） |
-| 表格 | XLSX（只取看得见的工作表里的值）、CSV（逗号或分号分隔，认 Excel 的 `sep=` 行）、TSV；CSV 和 TSV 认 UTF-8、GBK 和带 BOM 的 UTF-16 | CSV、TSV（XLSX 每个工作表一个文件，有几个就放进同名文件夹；公式取上次算好的结果，日期写成 2026-10-25，小数位数照格式）、XLSX（一个工作表；数字写成数字，小数位数照原样显示，以 0 开头的编号、超过 15 位的数字和日期按文字保留） |
-| 视频 | MP4、MOV、MKV、WebM、AVI、RMVB | MP4、MOV、MKV、WebM、AVI、GIF，以及下面的音频格式 |
-| 音频 | MP3、AAC、M4A、WAV、FLAC、OGG、Opus、AIFF、AMR | MP3、AAC、M4A、WAV、FLAC、OGG、Opus、AIFF |
-| 字幕 | SRT、VTT、ASS、SSA、LRC | 同左 |
-| 压缩包 | ZIP、7z、TAR、TAR.GZ、RAR | ZIP、7z、TAR、TAR.GZ |
+| Images | JPG, PNG, WebP, AVIF, GIF, BMP, TIFF; also HEIC, PSD, ICO, SVG | JPG, PNG, WebP, AVIF, GIF, BMP, TIFF, ICO. Raster conversion uses the first frame; PSD uses its merged image, ICO its largest image, and SVG its declared size. SVG references to external files are rejected. JPG and BMP flatten transparency onto white. ICO output is at most 256×256, with transparent padding for non-square images. HEIC output is unavailable. |
+| Images → PDF | JPG, PNG, WebP, AVIF, GIF, BMP, TIFF | One PDF per input image; multi-page TIFF keeps its pages. Use the Tools wheel to combine multiple images into one PDF. |
+| PDF | PDF | DOCX rebuilt from paragraphs and images, preserving basic text styling but not the original layout; PNG or JPG at 150 DPI per page; TXT from the text layer. Multi-page image output goes into a folder. Scanned pages need the separate OCR tool for text recognition. |
+| Word documents | DOCX | TXT, Markdown, HTML. Markdown and HTML retain headings, lists, bold, italic, links, and tables. Revisions are treated as accepted; images, headers, footers, and footnotes are omitted. TXT uses tabs between table cells. |
+| Presentations | PPTX | TXT, Markdown, HTML. Exports visible slides, text, tables, SmartArt text, and notes. Markdown and HTML retain basic text formatting and lists. Images, charts, animations, and slide layout are omitted. |
+| Plain text | TXT | DOCX, with one paragraph per line. |
+| Spreadsheets | XLSX, CSV, TSV | XLSX → CSV or TSV for each visible, nonempty worksheet; CSV ↔ TSV; CSV or TSV → a single-sheet XLSX. Formulas use cached results; styles and charts are omitted. Dates are exported as text. Leading-zero identifiers and numbers longer than 15 digits remain text when creating XLSX. |
+| Video | MP4, MOV, MKV, WebM, AVI, RMVB | MP4, MOV, MKV, WebM, AVI, GIF, or any audio output below. Requires FFmpeg. Embedded subtitle, data, and attachment streams are not retained. |
+| Audio | MP3, AAC, M4A, WAV, FLAC, OGG, Opus, AIFF, AMR | MP3, AAC, M4A, WAV, FLAC, OGG, Opus, AIFF. Requires FFmpeg; AMR is input-only. |
+| Subtitles | SRT, VTT, ASS, SSA, LRC | Conversion between these formats. |
+| Archives | ZIP, 7z, TAR, TAR.GZ, RAR | ZIP, 7z, TAR, TAR.GZ. RAR is input-only. Encrypted archives are unsupported; symbolic links, Unix permissions, and comments are not preserved. |
 
-## 仓库结构
+Text input supports UTF-8, BOM-marked UTF-16, and a GB18030 fallback that includes GBK. CSV accepts comma or semicolon delimiters and Excel's `sep=` line.
 
-```
-drophalo/
-├─ docs/                  调研、架构、ADR、设计稿索引
-├─ src/
-│  ├─ DropHalo.App/         WinUI 3 主程序（轮盘覆盖层、队列、设置、引导）
-│  ├─ DropHalo.Core/        领域模型：转换图、任务队列、命名规则、键位、质量预估
-│  ├─ DropHalo.Shell/       Win32 集成：钩子、拖拽侦测、OLE 放置目标、托盘、全局快捷键
-│  ├─ DropHalo.Engines/     各类转换引擎适配器（图片 / 媒体 / PDF / 文档 / 压缩 / 字幕 / OCR）
-│  └─ DropHalo.ContextMenu/ IExplorerCommand COM DLL（C++）
-├─ skills/drophalo-tool/  给 agent 的 skill：清单字段、脚本协议、两个样例工具
-├─ tests/
-├─ installer/             MSIX 清单、winget 清单模板、WiX MSI
-└─ .github/workflows/     CI
+OCR uses **Windows.Media.Ocr** and the recognition languages installed in Windows. Windows AI TextRecognizer, RapidOCR, and Tesseract fallbacks are not included. The optional LibreOffice module and legacy DOC/PPT/XLS conversion are also not implemented. See the [engine notes](src/DropHalo.Engines/README.md) for detailed behavior.
+
+## Create your own tools
+
+DropHalo does not include an AI model. Give the [`drophalo-tool` skill](skills/drophalo-tool/SKILL.md) to your coding agent, such as Claude Code, Codex, or Cursor, and describe the operation you want. Tools live in:
+
+```text
+%LOCALAPPDATA%\DropHalo\tools\<slug>\
 ```
 
-## 开发环境
+A tool contains a `tool.json` manifest and, when needed, a script. Recipes combine built-in operations and need no script permission. Script tools stay disabled until you review their command in **Settings → My tools** and enable them; changing the command requires approval again. DropHalo reloads tools when their files change.
 
-日常在 macOS 上写 Core 与测试，WinUI 部分在 Windows（Parallels 虚拟机或物理机）里构建与打包。详细说明见 [`scripts/dev-mac.md`](scripts/dev-mac.md)。
+Validate a tool without interrupting a running app:
 
-### macOS
+```powershell
+DropHalo.exe --validate-tool "C:\path\to\tool-folder"
+DropHalo.exe --list-tools
+```
 
-- .NET 10 SDK（`~/.dotnet`，`dotnet-install.sh --channel 10.0`），`.zshrc` 里加入 PATH 与 `DOTNET_CLI_TELEMETRY_OPTOUT=1`
-- `./build.sh` 构建并测试 Core 与 Engines；Shell / App 依赖 Windows SDK
-- 音视频测试要 PATH 上有 ffmpeg 和 ffprobe：`brew install ffmpeg`
+The Tools and Actions wheel layouts are stored in `%LOCALAPPDATA%\DropHalo\layout.json`. Items can be rearranged or placed in groups that expand into an outer ring on hover. The skill explains how an agent can edit these layouts. See the [manifest schema](docs/tool-manifest.schema.json) and [tool design decisions](docs/adr/0005-user-tools-manifest-and-trust.md).
+
+## Privacy and local data
+
+Built-in processing stays offline, and DropHalo currently makes no automatic update checks or optional-module downloads. User-installed scripts run as separate processes and can make their own network requests. The counter in Settings observes the app's .NET network activity; it does not cover separate processes or native libraries' own connections.
+
+Settings, tools, wheel layouts, recent choices, and logs are stored under `%LOCALAPPDATA%\DropHalo`. Logs include processed file paths, are retained for seven days, and can be opened or cleared from Settings. Configurations from the older DropWheel and DragHalo names are not migrated automatically.
+
+## Build from source
+
+The Windows app uses **C# / .NET 10 / WinUI 3** with Windows App SDK 2.5.1. Core and engine development can also be done on macOS or Linux; the UI and Shell integration require Windows.
+
+### Windows
+
+Use Windows 11, the .NET 10 SDK, and the `winapp` CLI. The setup script installs the CLI toolchain, enables Developer Mode, and creates a local development certificate. Run setup in an elevated PowerShell:
+
+```powershell
+git clone https://github.com/gavin-k/draghalo.git drophalo
+cd drophalo
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup-windows.ps1 -SkipVisualStudio
+```
+
+Then build, test, and create an unsigned MSIX package:
+
+```powershell
+.\scripts\build-windows.ps1
+.\scripts\build-windows.ps1 -Arch arm64
+```
+
+The default architecture is x64. The script downloads and verifies the pinned FFmpeg sidecar, builds the solution, runs Core and Engines tests, and writes packages to `artifacts/`. Use `-SkipPack` when no package is needed. If you build the app directly with `dotnet build`, run `scripts/fetch-sidecars.ps1` for the target architecture first; without FFmpeg, media operations are unavailable unless it is found on `PATH`.
+
+### macOS / Linux
+
+Install the .NET 10 SDK and make `dotnet` available on `PATH`. Media tests also need `ffmpeg` and `ffprobe`; on macOS, use `brew install ffmpeg`.
 
 ```bash
 git clone https://github.com/gavin-k/draghalo.git drophalo
 cd drophalo
-./build.sh            # restore + build + test（Core）
+./build.sh            # Restore, build, and test Core and Engines
 ```
 
-### Windows
+This does not build or run the Windows UI. See [the macOS development guide](scripts/dev-mac.md) for the cross-platform workflow. On Windows, prefer the PowerShell build script above.
 
-- Windows 11 (22H2+)，开发者模式
-- .NET 10 SDK、`winapp` CLI；可选 Visual Studio 2022 17.14+（「WinUI 应用程序开发」+「.NET 桌面开发」工作负载）
-- 一键安装以上全部（幂等，可重复执行；需管理员 PowerShell）：
+### Engines and packaging
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows.ps1       # 加 -SkipVisualStudio 只装 CLI 工具链
-.\scripts\build-windows.ps1                                                # 下载 ffmpeg + build + test + 未签名 x64 .msix -> .\artifacts
-.\scripts\build-windows.ps1 -Arch arm64
+| Area | Implementation |
+|---|---|
+| Images | Magick.NET / ImageMagick |
+| Audio and video | FFmpeg LGPL build in a separate process; Media Foundation for H.264 encoding, AV1 + Opus for WebM re-encoding |
+| PDF | PDFium through PDFtoImage, PdfPig, and SkiaSharp |
+| Documents and spreadsheets | OOXML readers and writers; Open XML SDK is used in tests |
+| OCR | Windows.Media.Ocr |
+| Archives | SharpCompress |
+| Windows integration | Win32 hooks, drag-image detection, OLE drop targets, and a notification-area icon |
+| Packages | MSIX / MSIX bundle through `winapp`; MSI through WiX v5 |
+
+[Build CI](.github/workflows/build.yml) runs on pushes and pull requests. The [release workflow](.github/workflows/release.yml) builds x64 and ARM64 packages and signs tagged releases through Azure Trusted Signing. Packaging instructions and runtime dependencies are in [`installer/README.md`](installer/README.md). Store and winget listings are not implied by the presence of package manifests.
+
+## Repository map
+
+```text
+drophalo/
+├─ docs/                    Product notes, architecture, ADRs, design references
+├─ src/
+│  ├─ DropHalo.App/          WinUI wheel, dock, queue, settings, onboarding, tray
+│  ├─ DropHalo.Core/         Conversion graph, jobs, naming, settings, tools
+│  ├─ DropHalo.Shell/        Win32 hooks, drag detection, OLE, file operations
+│  ├─ DropHalo.Engines/      Image, media, PDF, document, sheet, archive, subtitle engines
+│  └─ DropHalo.ContextMenu/  Planned Explorer integration; documentation only
+├─ skills/drophalo-tool/     Agent instructions, manifest reference, example tools
+├─ tests/                   Unit tests and Windows acceptance driver
+├─ scripts/                 Setup, builds, sidecar downloads, development helpers
+├─ installer/               MSIX, MSI, and winget manifest templates
+└─ .github/workflows/       Build and release automation
 ```
 
-不经过脚本直接 `dotnet build` App 时，先运行一次 `.\scripts\fetch-sidecars.ps1`，否则输出里没有 ffmpeg，音视频目标会灰显。
+## Documentation and contributing
 
-`build.sh` 在 Windows 的 Git Bash 下会改为构建整个 `DropHalo.slnx`（该分支尚未在 Windows 上实测，Windows 日常请用上面的 PowerShell 脚本）。CI 见 `.github/workflows/build.yml`（每次 push / PR）与 `release.yml`（`v*` 标签或手动触发，产出签名的 x64 + ARM64 `.msixbundle`、单架构 `.msix` 和各架构一个 `.msi`，推标签时发成 GitHub Release；签名和 MSI 的做法见 `installer/README.md`）。
+- [Contributing guide](CONTRIBUTING.md)
+- [Design system and references](docs/design/README.md)
+- [Architecture](docs/02-architecture.md) and [architecture decisions](docs/adr/)
+- [Technology research](docs/01-tech-stack.md) and [roadmap](docs/04-roadmap.md) — these also contain future proposals, not just implemented features
+- [简体中文 README](README_zh.md)
 
-## 路线图
+## License
 
-见 [`docs/04-roadmap.md`](docs/04-roadmap.md)。M0 目标：**一张图片拖进来、轻点 Shift、选 PNG、松手，队列里能撤销。**
-
-## 许可证
-
-[MIT](LICENSE) © 2026 Gavin Lee。第三方组件许可证见 [`docs/05-third-party-licenses.md`](docs/05-third-party-licenses.md)。
+[MIT](LICENSE) © 2026 Gavin Lee. See [third-party licenses](docs/05-third-party-licenses.md) for bundled dependencies.

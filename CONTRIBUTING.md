@@ -19,4 +19,4 @@
 
 ## 本地构建
 
-见 [README](README.md#开发环境)。
+见[中文 README 的构建说明](README_zh.md#从源码构建)。
