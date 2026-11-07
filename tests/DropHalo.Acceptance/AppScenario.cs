@@ -130,8 +130,7 @@ internal static partial class AppScenario
 
         var log = new AppLog();
         var started = Log.NowMs;
-        using var app = Process.Start(new ProcessStartInfo(exe, ["--data-dir", profile]) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe)! })
-            ?? throw new InvalidOperationException($"could not start {exe}");
+        using var app = StartApp(exe, profile);
         try
         {
             var ready = log.WaitFor(30000, "ready:");

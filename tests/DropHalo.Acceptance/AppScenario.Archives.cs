@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Windows.Win32;
 using Windows.Win32.UI.Input.KeyboardAndMouse;
 
@@ -10,10 +9,8 @@ internal static partial class AppScenario
     public static int RunArchives(string exe, int iterations)
     {
         var checks = new Checks();
-        if (Mutex.TryOpenExisting(@"Local\DropHalo.App", out var existing))
+        if (AnotherInstanceRunning(checks, "archive test owns its app", "Another DropHalo instance is running."))
         {
-            existing.Dispose();
-            checks.Check("archive test owns its app", false, "Another DropHalo instance is running.");
             return checks.Report("Archive drags");
         }
 
@@ -23,11 +20,7 @@ internal static partial class AppScenario
         Directory.CreateDirectory(profile);
         File.WriteAllText(Path.Combine(profile, "settings.json"), """{"version":2,"onboardingDone":true,"language":"Chinese"}""");
         var log = new AppLog();
-        using var app = Process.Start(new ProcessStartInfo(exe, ["--data-dir", profile])
-        {
-            UseShellExecute = false,
-            WorkingDirectory = Path.GetDirectoryName(exe)!,
-        }) ?? throw new InvalidOperationException($"could not start {exe}");
+        using var app = StartApp(exe, profile);
         var ownsApp = false;
         try
         {
@@ -65,7 +58,7 @@ internal static partial class AppScenario
             {
                 if (ownsApp)
                 {
-                    CancelPerformanceDrag(grouped: false);
+                    ReleaseDrag(grouped: false);
                     Quit(checks, log, app, exe);
                 }
             }
@@ -88,7 +81,7 @@ internal static partial class AppScenario
         var host = PInvoke.FindWindow("DropHalo.DropTargetHost", null);
         var image = PInvoke.FindWindowEx(default, default, "SysDragImage", null);
         var hit = PInvoke.WindowFromPoint(point);
-        var wheel = PInvoke.FindWindow(null, "DropHalo 轮盘");
+        var wheel = PInvoke.FindWindow(null, WheelTitle);
         _ = PInvoke.GetWindowRect(host, out var bounds);
         Log.Info($"drag state: cursor {point.X},{point.Y}, button {(PInvoke.GetAsyncKeyState((int)VIRTUAL_KEY.VK_LBUTTON) & 0x8000) != 0}, "
             + $"drag image {image} visible {(bool)PInvoke.IsWindowVisible(image)}, host {host} visible {(bool)PInvoke.IsWindowVisible(host)} "

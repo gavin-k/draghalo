@@ -146,8 +146,7 @@ internal static partial class AppScenario
         var jpg = Path.Combine(dir, $"hk-{DateTime.Now:HHmmss}.jpg");
         WriteJpeg(jpg, 640, 400);
         var log = new AppLog();
-        using var app = Process.Start(new ProcessStartInfo(exe, ["--data-dir", profile]) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe)! })
-            ?? throw new InvalidOperationException($"could not start {exe}");
+        using var app = StartApp(exe, profile);
         try
         {
             if (log.WaitFor(30000, "ready:") is null)

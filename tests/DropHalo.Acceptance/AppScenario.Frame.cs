@@ -29,8 +29,7 @@ internal static partial class AppScenario
     {
         var profile = Path.Combine(Path.GetTempPath(), "DropHaloAcceptance", "profile");
         var log = new AppLog();
-        using var app = Process.Start(new ProcessStartInfo(exe, ["--data-dir", profile, "--wheel-preview", "--white-wheel"]) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe)! })
-            ?? throw new InvalidOperationException($"could not start {exe}");
+        using var app = StartApp(exe, profile, "--wheel-preview", "--white-wheel");
         var exited = app.WaitForExit(30000);
         if (!exited)
         {

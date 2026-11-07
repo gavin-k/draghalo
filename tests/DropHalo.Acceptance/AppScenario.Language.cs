@@ -25,8 +25,7 @@ internal static partial class AppScenario
         Directory.CreateDirectory(profile);
         File.WriteAllText(Path.Combine(profile, "settings.json"), """{ "version": 2, "onboardingDone": true, "language": "English" }""");
         var log = new AppLog();
-        using var app = Process.Start(new ProcessStartInfo(exe, ["--data-dir", profile]) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe)! })
-            ?? throw new InvalidOperationException($"could not start {exe}");
+        using var app = StartApp(exe, profile);
         try
         {
             var ready = log.WaitFor(30000, "ready:");

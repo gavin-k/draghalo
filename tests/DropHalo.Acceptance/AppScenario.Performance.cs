@@ -17,10 +17,8 @@ internal static partial class AppScenario
     public static unsafe int RunPerformance(string exe, int iterations, bool reopenExplorer = false, bool grouped = false)
     {
         var checks = new Checks();
-        if (Mutex.TryOpenExisting(@"Local\DropHalo.App", out var existing))
+        if (AnotherInstanceRunning(checks, "performance owns the app under test", "Another DropHalo instance is running; left it untouched."))
         {
-            existing.Dispose();
-            checks.Check("performance owns the app under test", false, "Another DropHalo instance is running; left it untouched.");
             return checks.Report("Wheel performance");
         }
 
@@ -53,8 +51,7 @@ internal static partial class AppScenario
         Log.Info($"performance: exe {exe}; iterations {iterations}; budget {BudgetMs} ms; reopen Explorer={reopenExplorer}; grouped Tools={grouped}; source {jpg}; profile {profile}");
         try
         {
-            app = Process.Start(new ProcessStartInfo(exe, ["--data-dir", profile]) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe)! })
-                ?? throw new InvalidOperationException($"could not start {exe}");
+            app = StartApp(exe, profile);
             var ready = log.WaitFor(30000, "ready:");
             if (!checks.Check("performance app reports ready", ready is not null && !app.HasExited,
                 ready ?? $"no ready line within 30 s; exited={app.HasExited}"))
@@ -134,7 +131,7 @@ internal static partial class AppScenario
                     {
                         checks.Check($"iteration {iteration}: Tools reads the group from the temporary layout", SlotOf(entered, "group:性能分组") == 5,
                             entered ?? "No grouped Tools layout was shown.");
-                        var wheelWindow = PInvoke.FindWindow(null, "DropHalo 轮盘");
+                        var wheelWindow = PInvoke.FindWindow(null, WheelTitle);
                         RECT bounds = default;
                         var result = PInvoke.DwmGetWindowAttribute(wheelWindow, DWMWINDOWATTRIBUTE.DWMWA_EXTENDED_FRAME_BOUNDS, &bounds, (uint)sizeof(RECT));
                         var expected = wheel is { } placement ? (int)Math.Ceiling(2 * (WheelGeometry.RingOuterRadius + WheelGeometry.RingMargin) * placement.Scale) : 0;
@@ -160,10 +157,10 @@ internal static partial class AppScenario
                 }
                 finally
                 {
-                    CancelPerformanceDrag(grouped);
+                    ReleaseDrag(grouped);
                     var hidden = Checks.Wait(() =>
                     {
-                        var wheelWindow = PInvoke.FindWindow(null, "DropHalo 轮盘");
+                        var wheelWindow = PInvoke.FindWindow(null, WheelTitle);
                         return (wheelWindow.IsNull || !PInvoke.IsWindowVisible(wheelWindow)) && !DockVisible();
                     }, 2000);
                     checks.Check($"iteration {iteration}: cancellation hides wheel and empty dock", hidden, log.Find("wheel: closed") ?? "No close line.");
@@ -189,7 +186,7 @@ internal static partial class AppScenario
         }
         finally
         {
-            CancelPerformanceDrag(grouped);
+            ReleaseDrag(grouped);
             if (app is not null)
             {
                 try { Quit(checks, log, app, exe); }
@@ -214,7 +211,7 @@ internal static partial class AppScenario
         return checks.Report("Wheel performance");
     }
 
-    private static void CancelPerformanceDrag(bool grouped)
+    private static void ReleaseDrag(bool grouped)
     {
         Input.Key(VIRTUAL_KEY.VK_ESCAPE, up: false);
         Input.Key(VIRTUAL_KEY.VK_ESCAPE, up: true);
