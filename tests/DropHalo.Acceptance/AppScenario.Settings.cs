@@ -125,7 +125,35 @@ internal static partial class AppScenario
         ExplorerSource.CloseAndWait(folder);
 
         var before = Directory.GetFiles(logs, "drophalo-*.log").Length;
-        var cleared = Invoke(SettingsTitle, "清除日志", out how) ? log.WaitFor(3000, "settings: cleared ") : null;
+        string? cleared = null;
+        if (Invoke(SettingsTitle, "清除日志", out how))
+        {
+            var deadline = Environment.TickCount64 + 3000;
+            while (Environment.TickCount64 < deadline)
+            {
+                var remaining = (int)(deadline - Environment.TickCount64);
+                if (remaining <= 0)
+                {
+                    break;
+                }
+
+                try
+                {
+                    cleared = log.WaitFor(remaining, "settings: cleared ");
+                    break;
+                }
+                catch (UnauthorizedAccessException ex) when (ex.HResult == unchecked((int)0x80070005))
+                {
+                    // The deleted log can briefly be inaccessible before the app recreates it.
+                    remaining = (int)(deadline - Environment.TickCount64);
+                    if (remaining > 0)
+                    {
+                        Thread.Sleep(Math.Min(10, remaining));
+                    }
+                }
+            }
+        }
+
         var after = Directory.GetFiles(logs, "drophalo-*.log").Select(Path.GetFileName).ToList();
         checks.Check("清除日志 deletes the logs and the app starts today's afresh",
             cleared is not null && after.Count == 1 && after[0] == $"drophalo-{DateTime.Now:yyyyMMdd}.log" && new FileInfo(Path.Combine(logs, after[0])).Length < 4096,

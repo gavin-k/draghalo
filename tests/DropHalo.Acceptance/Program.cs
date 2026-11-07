@@ -15,6 +15,9 @@ internal static class Program
                                                    the M0 flow against the real app: JPG to PNG, Undo,
                                                    then a release off the wheel. --root is the package's
                                                    install folder when --exe is the MSIX execution alias
+          DropHalo.Acceptance performance --exe <DropHalo.exe> [--iterations 30] [--reopen-explorer] [--grouped]
+                                                   repeated real Explorer drags; every first frame must meet 150 ms
+                                                   --grouped opens Tools with a real group and ring-sized footprint
           DropHalo.Acceptance --dragsource <file> --at X,Y   (internal) WinForms drag source
           DropHalo.Acceptance --locate <file>                (internal) hook-free Explorer item locator
         """;
@@ -53,6 +56,15 @@ internal static class Program
             case "app" when ArgValue(args, "--exe") is { } exe:
                 Log.Open("app");
                 return AppScenario.Run(Path.GetFullPath(exe), explorer, ArgValue(args, "--root"));
+            case "performance" when ArgValue(args, "--exe") is { } performanceExe:
+                if (!int.TryParse(ArgValue(args, "--iterations") ?? "30", out var iterations) || iterations < 1)
+                {
+                    Console.Error.WriteLine("--iterations must be a positive integer.");
+                    return 2;
+                }
+
+                Log.Open("performance");
+                return AppScenario.RunPerformance(Path.GetFullPath(performanceExe), iterations, args.Contains("--reopen-explorer"), args.Contains("--grouped"));
             default:
                 Console.WriteLine(Usage);
                 return 2;

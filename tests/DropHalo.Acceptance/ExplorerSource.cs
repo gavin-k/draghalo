@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Windows.Win32.UI.Accessibility;
 using ComTreeScope = Windows.Win32.UI.Accessibility.TreeScope;
 using Windows.Win32;
@@ -163,47 +164,55 @@ internal static unsafe class ExplorerSource
             return null;
         }
 
-        var uia = (IUIAutomation)new CUIAutomation8();
-        var viewCond = uia.CreatePropertyCondition(UIA_PROPERTY_ID.UIA_ClassNamePropertyId, "UIItemsView");
-        var itemCond = uia.CreatePropertyCondition(UIA_PROPERTY_ID.UIA_NamePropertyId, name);
-
-        // With "hide extensions for known file types" on, the item is named without its extension. Which
-        // types count as known varies (here .jpg kept its extension, .png and .srt lost theirs).
-        var stemCond = uia.CreatePropertyCondition(UIA_PROPERTY_ID.UIA_NamePropertyId, Path.GetFileNameWithoutExtension(file));
-        while (DateTime.UtcNow < deadline)
+        try
         {
-            var t0 = sw.ElapsedMilliseconds;
-            var root = uia.ElementFromHandle(LastWindow);
-            var view = root.FindFirst(ComTreeScope.TreeScope_Descendants, viewCond);
-            var t1 = sw.ElapsedMilliseconds;
-            var item = view?.FindFirst(ComTreeScope.TreeScope_Children, itemCond) ?? view?.FindFirst(ComTreeScope.TreeScope_Children, stemCond);
-            var t2 = sw.ElapsedMilliseconds;
-            Log.Info($"explorer: UIA view {(view is null ? "not found" : "found")} in {t1 - t0} ms, item {(item is null ? "not found" : "found")} in {t2 - t1} ms");
-            if (item is null && view is not null && sw.ElapsedMilliseconds > 4000)
+            var uia = (IUIAutomation)new CUIAutomation8();
+            var viewCond = uia.CreatePropertyCondition(UIA_PROPERTY_ID.UIA_ClassNamePropertyId, "UIItemsView");
+            var itemCond = uia.CreatePropertyCondition(UIA_PROPERTY_ID.UIA_NamePropertyId, name);
+
+            // With "hide extensions for known file types" on, the item is named without its extension. Which
+            // types count as known varies (here .jpg kept its extension, .png and .srt lost theirs).
+            var stemCond = uia.CreatePropertyCondition(UIA_PROPERTY_ID.UIA_NamePropertyId, Path.GetFileNameWithoutExtension(file));
+            while (DateTime.UtcNow < deadline)
             {
-                var kids = view.FindAll(ComTreeScope.TreeScope_Children, uia.CreateTrueCondition());
-                var names = new List<string>();
-                for (var i = 0; i < kids.Length; i++)
+                var t0 = sw.ElapsedMilliseconds;
+                var root = uia.ElementFromHandle(LastWindow);
+                var view = root.FindFirst(ComTreeScope.TreeScope_Descendants, viewCond);
+                var t1 = sw.ElapsedMilliseconds;
+                var item = view?.FindFirst(ComTreeScope.TreeScope_Children, itemCond) ?? view?.FindFirst(ComTreeScope.TreeScope_Children, stemCond);
+                var t2 = sw.ElapsedMilliseconds;
+                Log.Info($"explorer: UIA view {(view is null ? "not found" : "found")} in {t1 - t0} ms, item {(item is null ? "not found" : "found")} in {t2 - t1} ms");
+                if (item is null && view is not null && sw.ElapsedMilliseconds > 4000)
                 {
-                    var k = kids.GetElement(i);
-                    names.Add($"{k.CurrentControlType}:'{k.CurrentName}'/{k.CurrentClassName}");
+                    var kids = view.FindAll(ComTreeScope.TreeScope_Children, uia.CreateTrueCondition());
+                    var names = new List<string>();
+                    for (var i = 0; i < kids.Length; i++)
+                    {
+                        var k = kids.GetElement(i);
+                        names.Add($"{k.CurrentControlType}:'{k.CurrentName}'/{k.CurrentClassName}");
+                    }
+
+                    Log.Info($"explorer: view '{view.CurrentName}' rect {view.CurrentBoundingRectangle} has {kids.Length} children: {string.Join(" | ", names)}");
                 }
 
-                Log.Info($"explorer: view '{view.CurrentName}' rect {view.CurrentBoundingRectangle} has {kids.Length} children: {string.Join(" | ", names)}");
-            }
-
-            if (item is not null)
-            {
-                var r = item.CurrentBoundingRectangle;
-                if (r.Width > 0)
+                if (item is not null)
                 {
-                    var rect = new Rectangle(r.X, r.Y, r.Width, r.Height);
-                    Log.Info($"explorer: item '{item.CurrentName}' (control type {item.CurrentControlType}, class {item.CurrentClassName}) at {rect} after {sw.ElapsedMilliseconds} ms");
-                    return (LastWindow, rect);
+                    var r = item.CurrentBoundingRectangle;
+                    if (r.Width > 0)
+                    {
+                        var rect = new Rectangle(r.X, r.Y, r.Width, r.Height);
+                        Log.Info($"explorer: item '{item.CurrentName}' (control type {item.CurrentControlType}, class {item.CurrentClassName}) at {rect} after {sw.ElapsedMilliseconds} ms");
+                        return (LastWindow, rect);
+                    }
                 }
-            }
 
-            Thread.Sleep(250);
+                Thread.Sleep(250);
+            }
+        }
+        catch (COMException ex) when (ex.HResult == unchecked((int)0x80131505))
+        {
+            // Source preparation only: the caller has not pressed the mouse or tapped the app's keys.
+            Log.Info($"explorer: attempt {attempt} UIA timed out (0x{ex.HResult:X8}) after {sw.ElapsedMilliseconds} ms; retrying if the original lookup budget remains");
         }
 
         Log.Info($"explorer: attempt {attempt} gave up on window 0x{(nint)LastWindow.Value:X}; closing it");
@@ -274,9 +283,10 @@ internal static unsafe class ExplorerSource
 
         uint pid = 0;
         _ = PInvoke.GetWindowThreadProcessId(window, &pid);
-        if (pid == 0 || pid == ShellPid())
+        var shellPid = ShellPid();
+        if (pid == 0 || shellPid == 0 || pid == shellPid)
         {
-            Log.Info($"explorer: window 0x{(nint)window.Value:X} ignored WM_CLOSE and belongs to the shell (pid {pid}); leaving it");
+            Log.Info($"explorer: window 0x{(nint)window.Value:X} ignored WM_CLOSE; cannot safely terminate pid {pid} with shell pid {shellPid}; leaving it");
             return;
         }
 
@@ -313,6 +323,12 @@ internal static unsafe class ExplorerSource
     private static void KillOrphanExplorers()
     {
         var shellPid = ShellPid();
+        if (shellPid == 0)
+        {
+            Log.Info("explorer: shell pid is unknown; leaving Explorer processes running");
+            return;
+        }
+
         var hosting = new HashSet<uint>();
         foreach (var w in Cabinets())
         {
