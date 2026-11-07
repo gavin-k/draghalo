@@ -37,6 +37,9 @@ internal static class AppStyles
         Refresh();
     }
 
+    /// <summary>The colour behind <see cref="Brush"/> for the same key.</summary>
+    public static Color Color(string key) => ((SolidColorBrush)Brush(key)).Color;
+
     public static Brush Brush(string key)
     {
         if (!Brushes.TryGetValue(key, out var brush))

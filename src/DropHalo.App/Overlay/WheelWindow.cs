@@ -245,7 +245,7 @@ internal sealed class WheelWindow
         _root = ElementCompositionPreview.GetElementVisual(content);
         _compositor = _root.Compositor;
 
-        // Keep the Border's inner-edge background and one-DIP inside stroke without its software shape mask.
+        // Composition ellipses draw the disc fill and its one-DIP inside stroke, so no XAML shape has to mask the content.
         var radius = (float)(discSize / 2);
         var visualSize = new Vector2((float)discSize);
         var fillGeometry = _compositor.CreateEllipseGeometry();
@@ -459,13 +459,13 @@ internal sealed class WheelWindow
     private void ApplyPalette()
     {
         _highContrast = _accessibility.HighContrast;
-        _text = ((SolidColorBrush)AppStyles.Brush("DwTextBrush")).Color;
-        _secondary = ((SolidColorBrush)AppStyles.Brush("DwText2Brush")).Color;
-        _surface = ((SolidColorBrush)AppStyles.Brush("DwSurface2Brush")).Color;
-        _selected = ((SolidColorBrush)AppStyles.Brush("DwAccentSoftBrush")).Color;
-        _selectedText = ((SolidColorBrush)AppStyles.Brush(_highContrast ? "DwOnAccentBrush" : "DwAccentBrush")).Color;
-        _discFill.Color = ((SolidColorBrush)AppStyles.Brush("DwSurfaceBrush")).Color;
-        _discStroke.Color = ((SolidColorBrush)AppStyles.Brush("DwBorderBrush")).Color;
+        _text = AppStyles.Color("DwTextBrush");
+        _secondary = AppStyles.Color("DwText2Brush");
+        _surface = AppStyles.Color("DwSurface2Brush");
+        _selected = AppStyles.Color("DwAccentSoftBrush");
+        _selectedText = AppStyles.Color(_highContrast ? "DwOnAccentBrush" : "DwAccentBrush");
+        _discFill.Color = AppStyles.Color("DwSurfaceBrush");
+        _discStroke.Color = AppStyles.Color("DwBorderBrush");
         _discFillVisual.Opacity = (float)EffectiveBackgroundOpacity;
         _backgroundRevision++;
         for (var i = 0; i < WheelModel.SlotCount; i++)
@@ -617,8 +617,8 @@ internal sealed class WheelWindow
             Place(_childPanels[i], Center + x - ChildLabelWidth / 2, Center + y - ChildLabelHeight / 2);
             PaintChild(i);
             _childVisuals[i].CenterPoint = new Vector3((float)(Center + x), (float)(Center + y), 0);
-            FanOut(_childVisuals[i]);
-            FanOut(_childPanelVisuals[i]);
+            Reveal(_childVisuals[i]);
+            Reveal(_childPanelVisuals[i]);
         }
 
         for (var i = count; i < LayoutGroup.Capacity; i++)
@@ -730,7 +730,7 @@ internal sealed class WheelWindow
     }
 
     /// <summary>Ring items appear together, so the last item is just as ready as the first.</summary>
-    private void FanOut(Visual visual)
+    private void Reveal(Visual visual)
     {
         if (!Animated)
         {

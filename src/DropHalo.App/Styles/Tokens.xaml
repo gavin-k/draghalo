@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   设计令牌，与 docs/design/README.md 保持一致。
-  浅色 / 深色 / 高对比由 ThemeDictionaries 切换。
+  浅色 / 深色由 ThemeDictionaries 切换；高对比不走 XAML，由 AppStyles 按系统 UIElementColor 解析。
 -->
 <ResourceDictionary
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -77,18 +77,6 @@
       <SolidColorBrush x:Key="DwAccentBrush" Color="{StaticResource DwAccent}" />
       <SolidColorBrush x:Key="DwAccentSoftBrush" Color="{StaticResource DwAccentSoft}" />
       <SolidColorBrush x:Key="DwOnAccentBrush" Color="{StaticResource DwOnAccent}" />
-    </ResourceDictionary>
-    <ResourceDictionary x:Key="HighContrast">
-      <SolidColorBrush x:Key="DwBgBrush" Color="{ThemeResource SystemColorWindowColor}" />
-      <SolidColorBrush x:Key="DwSurfaceBrush" Color="{ThemeResource SystemColorWindowColor}" />
-      <SolidColorBrush x:Key="DwSurface2Brush" Color="{ThemeResource SystemColorWindowColor}" />
-      <SolidColorBrush x:Key="DwBorderBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
-      <SolidColorBrush x:Key="DwTextBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
-      <SolidColorBrush x:Key="DwText2Brush" Color="{ThemeResource SystemColorWindowTextColor}" />
-      <SolidColorBrush x:Key="DwText3Brush" Color="{ThemeResource SystemColorGrayTextColor}" />
-      <SolidColorBrush x:Key="DwAccentBrush" Color="{ThemeResource SystemColorHotlightColor}" />
-      <SolidColorBrush x:Key="DwAccentSoftBrush" Color="{ThemeResource SystemColorHighlightColor}" />
-      <SolidColorBrush x:Key="DwOnAccentBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
     </ResourceDictionary>
   </ResourceDictionary.ThemeDictionaries>
 
