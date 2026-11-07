@@ -303,7 +303,7 @@ jobs:
           path: artifacts/msi/*.msi
           if-no-files-found: error
 
-  # 推送 v* 标签：把两个 job 的产物改成稳定的文件名，算一份 SHA256SUMS，发成（预）发布版。
+  # 推送 v* 标签：把两个 job 的产物改成稳定的文件名，算一份 SHA256SUMS，发成正式版（带后缀的标签发成预发布）。
   release:
     name: GitHub Release
     if: startsWith(github.ref, 'refs/tags/v')
@@ -355,9 +355,11 @@ jobs:
 
           MSIX、MSIX bundle、MSI 安装包及 MSI 内的 DropHalo.exe 均用 Azure Trusted Signing 签名（签名者 \`$PUBLISHER\`）。
           NOTES
+          # 带后缀的标签（v0.2.0-beta.1）是预发布；纯版本号是正式版。
+          pre=""; [[ "$v" == *-* ]] && pre="--prerelease"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" release/* --repo "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "$TAG" release/* --repo "$GITHUB_REPOSITORY" --title "DropHalo $v" --notes-file notes.md --generate-notes --prerelease
+            gh release create "$TAG" release/* --repo "$GITHUB_REPOSITORY" --title "DropHalo $v" --notes-file notes.md --generate-notes $pre
           fi
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,assets --jq '.url, (.assets[] | "\(.name) \(.size)")'
