@@ -252,7 +252,7 @@ public sealed unsafe class DragMonitor(ModifierTapper tapper, WinKeyGate winKeys
                 var (x, y) = LastPoint;
                 var monitor = PInvoke.MonitorFromPoint(new System.Drawing.Point(x, y), MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST);
                 var info = new MONITORINFO { cbSize = (uint)sizeof(MONITORINFO) };
-                if (edgeDock is { Enabled: true } && PInvoke.GetMonitorInfo(monitor, ref info)
+                if (edgeDock is not null && PInvoke.GetMonitorInfo(monitor, ref info)
                     && edgeDock.OnDragStarted(x, info.rcWork.left, info.rcWork.right) is { } side)
                 {
                     DockRequested?.Invoke(side, x, y);
