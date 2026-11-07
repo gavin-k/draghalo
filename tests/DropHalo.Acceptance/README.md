@@ -19,7 +19,7 @@ DropHalo.Acceptance.exe performance --exe C:\path\DropHalo.exe --iterations 100
 
 `source` verifies that a window covering Explorer receives no mouse press. `archives` repeats image conversion and undo, cancellation, edge placement, subtitle conversion, and ZIP repacking using fresh files. `performance` also accepts `--reopen-explorer` and `--grouped`.
 
-Every first-frame sample must satisfy the original **show time + first-frame time <= 150 ms** limit. Modifier taps retain their **300 ms** contract, and a file must enter within **2 seconds**. Failed, missing, and slow samples remain failures. A source-window precondition failure occurs before the mouse is pressed; it is reported as a failure, never skipped or retried as an already-started drag.
+Every first-frame sample must satisfy the original **show time + first-frame time <= 150 ms** limit. Modifier taps retain their **300 ms** contract. In `performance`, file entry and its model-rendered acknowledgement share one **2-second** deadline; pixel inspection follows that acknowledgement so the deliberate “reading files” placeholder is not mistaken for the populated wheel. Missing frames remain failures, and the existing pixel assertions are unchanged. A source-window precondition failure occurs before the mouse is pressed; it is reported as a failure, never skipped or retried as an already-started drag.
 
 The full `app` scenario uses fixed temporary test directories, the app's real log directory, and a sample folder in Pictures. Preserve existing contents before running it and restore them afterward. The archive and performance loops use unique profiles and directories. Their output and any failure screenshots are written under `%LOCALAPPDATA%\DropHaloAcceptance`.
 

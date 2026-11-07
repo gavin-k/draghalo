@@ -116,6 +116,8 @@ internal sealed class WheelWindow
     private readonly TextBlock _hint;
     private readonly FrameWatch _frames = new(TimeProvider.System);
     private WheelModel? _model;
+    private WheelModel? _pendingModelFrame;
+    private int _modelFrameGeneration;
     private bool _hubFirst;
     private WheelHit _hovered = WheelHit.None;
     private int _ringParent = -1;
@@ -339,6 +341,7 @@ internal sealed class WheelWindow
     private void ShowAt(int centerX, int centerY, double scale, bool ring, bool reportFirstFrame)
     {
         var dip = Fit(centerX, centerY, scale, ring);
+        CancelModelFrame();
         _generation++;
         CompositionTarget.Rendered -= OnFirstFrame;
         if (reportFirstFrame)
@@ -374,6 +377,7 @@ internal sealed class WheelWindow
     /// </summary>
     public void Resize(int centerX, int centerY, double scale, bool ring)
     {
+        CancelModelFrame();
         Fit(centerX, centerY, scale, ring);
         _generation++;
     }
@@ -384,6 +388,7 @@ internal sealed class WheelWindow
     /// </summary>
     public void Hide()
     {
+        CancelModelFrame();
         CompositionTarget.Rendered -= OnFirstFrame;
         _generation++;
         if (!_shown || !Animated)
@@ -442,6 +447,7 @@ internal sealed class WheelWindow
 
     public void Close()
     {
+        CancelModelFrame();
         _generation++;
         CompositionTarget.Rendered -= OnFirstFrame;
         AppStyles.PaletteChanged -= ApplyPalette;
@@ -512,6 +518,7 @@ internal sealed class WheelWindow
     /// </summary>
     public void SetModel(WheelModel? model)
     {
+        CancelModelFrame();
         _model = model;
         if (model is null)
         {
@@ -528,6 +535,29 @@ internal sealed class WheelWindow
             AutomationProperties.SetName(_sectors[i], slot?.AccessibleName ?? L.T("扇区 {0}（空）", i + 1));
             Paint(i);
         }
+
+        if (_shown && model is not null)
+        {
+            _pendingModelFrame = model;
+            _modelFrameGeneration = _generation;
+            CompositionTarget.Rendered += OnModelFrame;
+        }
+    }
+
+    private void OnModelFrame(object? sender, RenderedEventArgs e)
+    {
+        var current = _shown && _pendingModelFrame is not null && _modelFrameGeneration == _generation && ReferenceEquals(_pendingModelFrame, _model);
+        CancelModelFrame();
+        if (current)
+        {
+            FileLog.Info($"overlay: model frame generation {_generation}");
+        }
+    }
+
+    private void CancelModelFrame()
+    {
+        CompositionTarget.Rendered -= OnModelFrame;
+        _pendingModelFrame = null;
     }
 
     /// <summary>

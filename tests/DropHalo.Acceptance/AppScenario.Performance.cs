@@ -122,8 +122,14 @@ internal static partial class AppScenario
                         $"show {sample.ShowMs?.ToString("F1", CultureInfo.InvariantCulture) ?? "missing"} ms; frame {sample.FrameMs?.ToString("F0", CultureInfo.InvariantCulture) ?? "missing"} ms; total {sample.TotalMs?.ToString("F1", CultureInfo.InvariantCulture) ?? "missing"} ms");
                     sample.KeptFocus = PInvoke.GetForegroundWindow() == foreground && OwnerPid(foreground) != app.Id;
                     checks.Check($"iteration {iteration}: wheel keeps Explorer focus", sample.KeptFocus, $"foreground '{Title(PInvoke.GetForegroundWindow())}'");
+                    var entryDeadline = Environment.TickCount64 + 2000;
                     var entered = log.WaitFor(2000, "file(s) entered");
                     checks.Check($"iteration {iteration}: real file enters the wheel", SlotOf(entered, grouped ? "tool.half-size" : "png") >= 0, entered ?? "No file entered within 2 s.");
+                    var remaining = (int)Math.Max(0, entryDeadline - Environment.TickCount64);
+                    sample.ModelFrameLine = remaining > 0 ? log.WaitFor(remaining, "overlay: model frame") : null;
+                    sample.ModelRenderedWithinDeadline = sample.ModelFrameLine is not null && Environment.TickCount64 <= entryDeadline;
+                    checks.Check($"iteration {iteration}: file model renders within the same 2 s entry deadline",
+                        sample.ModelRenderedWithinDeadline, sample.ModelFrameLine ?? "No model frame within the file-entry deadline.");
                     if (grouped)
                     {
                         checks.Check($"iteration {iteration}: Tools reads the group from the temporary layout", SlotOf(entered, "group:性能分组") == 5,
@@ -235,5 +241,7 @@ internal static partial class AppScenario
         public string? ShownLine { get; set; }
         public string? FrameLine { get; set; }
         public string? Error { get; set; }
+        public string? ModelFrameLine { get; set; }
+        public bool ModelRenderedWithinDeadline { get; set; }
     }
 }
