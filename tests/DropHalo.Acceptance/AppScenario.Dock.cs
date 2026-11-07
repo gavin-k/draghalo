@@ -1,3 +1,4 @@
+using System.Drawing.Imaging;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Windows.Win32;
@@ -11,9 +12,8 @@ internal static partial class AppScenario
     private const int DockBudgetMs = 300;
 
     /// <summary>
-    /// The dock at the screen edge: a JPG dragged against an edge with no screen beyond it opens the dock
-    /// there, and the drag ending elsewhere hides it again. Dropped on the dock, the JPG is kept there and
-    /// nothing is copied or moved; dragged out of the dock, a Shift tap on the way, onto the wheel's PNG
+    /// The dock appears when a JPG is dragged, without first reaching an edge, and cancellation hides it again.
+    /// Dropped on the dock, the JPG is kept there and nothing is copied or moved; dragged out of the dock onto the wheel's PNG
     /// sector, it comes out as a PNG next to itself and leaves the dock, which hides. Dropped once more,
     /// 清空 empties the dock and hides it.
     /// </summary>
@@ -23,26 +23,10 @@ internal static partial class AppScenario
         WriteJpeg(jpg, 320, 200);
         using (var source = DragSource.Open(jpg, explorer))
         {
-            var mid = source.PressAndDrag();
-            var dock = ReachEdge(checks, log, mid, out var edge);
-            if (dock is { } under && under.Contains(source.Grab))
-            {
-                // Explorer laid the item out under the dock's footprint (seen at X=1704 with the dock at 1570..1920), so
-                // a release back on it would be a drop on the dock: leave the dock and cancel the drag with Esc instead.
-                Input.MoveSmooth(edge, new Point(under.Left - 80, edge.Y), 12, 30);
-                Thread.Sleep(250);
-                Input.Key(VIRTUAL_KEY.VK_ESCAPE, up: false);
-                Input.Key(VIRTUAL_KEY.VK_ESCAPE, up: true);
-                Thread.Sleep(150);
-                Input.LeftUp();
-                Log.Info($"app: the item sits under the dock at {source.Grab}, ended the drag with Esc");
-            }
-            else
-            {
-                Input.MoveSmooth(edge, source.Grab, 12, 30);
-                Thread.Sleep(250);
-                Input.LeftUp();
-            }
+            var dock = StartDockDrag(checks, log, source, out _);
+            Input.Key(VIRTUAL_KEY.VK_ESCAPE, up: false);
+            Input.Key(VIRTUAL_KEY.VK_ESCAPE, up: true);
+            Input.LeftUp();
 
             if (dock is null)
             {
@@ -50,7 +34,7 @@ internal static partial class AppScenario
             }
 
             var hidden = log.WaitFor(2000, "dock: hidden (the drag ended without a drop)");
-            checks.Check("a drag that reaches the edge and ends elsewhere hides the dock again", hidden is not null && !DockVisible(),
+            checks.Check("canceling a drag hides the empty dock again", hidden is not null && !DockVisible(),
                 hidden ?? $"no 'dock: hidden' within 2 s; {log.Find("dock: ") ?? "no other dock line"}");
         }
 
@@ -73,7 +57,7 @@ internal static partial class AppScenario
     }
 
     /// <summary>
-    /// Drags <paramref name="jpg"/> against the edge and drops it on the dock that opens, then checks the dock
+    /// Drags <paramref name="jpg"/> and drops it on the dock that appears, then checks the dock
     /// keeps it while the folder stays as it was.
     /// </summary>
     private static bool DropOnDock(Checks checks, AppLog log, string jpg, bool explorer)
@@ -81,10 +65,9 @@ internal static partial class AppScenario
         var dir = Path.GetDirectoryName(jpg)!;
         var before = Directory.GetFiles(dir);
         using var source = DragSource.Open(jpg, explorer);
-        var mid = source.PressAndDrag();
-        if (ReachEdge(checks, log, mid, out var edge) is not { } dock)
+        if (StartDockDrag(checks, log, source, out var mid) is not { } dock)
         {
-            Input.MoveSmooth(edge, source.Grab, 12, 30);
+            Input.MoveSmooth(mid, source.Grab, 12, 30);
             Thread.Sleep(250);
             Input.LeftUp();
             return false;
@@ -92,7 +75,7 @@ internal static partial class AppScenario
 
         // A few moves inside so OLE finds the window that appeared under the drag.
         var inside = new Point(dock.X + dock.Width / 2, dock.Y + dock.Height / 2);
-        Input.MoveSmooth(edge, inside, 8, 30);
+        Input.MoveSmooth(mid, inside, 8, 30);
         for (var i = 0; i < 20 && log.Find("dock: entered") is null; i++)
         {
             Input.MoveTo(inside.X + Wobble[i % Wobble.Length], inside.Y + Wobble[(i + 3) % Wobble.Length]);
@@ -110,6 +93,11 @@ internal static partial class AppScenario
             kept && File.Exists(jpg) && after.Length == before.Length,
             $"{entered ?? "no 'dock: entered'"}; {added ?? "no 'dock: added' within 3 s"}; dock {(DockVisible() ? "shown" : "hidden")}; "
             + $"source {(File.Exists(jpg) ? "there" : "gone")}; files {before.Length} -> {after.Length}");
+        if (kept)
+        {
+            DockScreenshot(dock, "filled");
+        }
+
         return kept;
     }
 
@@ -178,44 +166,51 @@ internal static partial class AppScenario
             $"{outcome ?? "no 'dock: dragged out' within 3 s"}; {hidden ?? "no 'dock: hidden'"}; source {(File.Exists(jpg) ? "there" : "gone")}");
     }
 
-    /// <summary>
-    /// Moves the pointer from <paramref name="mid"/> onto an open edge, ending at <paramref name="edge"/>, and
-    /// returns where the app says it put the dock, after checking it showed in time: from the move onto the
-    /// edge to the app's "dock: shown" line, both on this machine's clock.
-    /// </summary>
-    private static Rectangle? ReachEdge(Checks checks, AppLog log, Point mid, out Point edge)
+    /// <summary>Starts a file drag away from the edges and checks the dock appears without taking focus.</summary>
+    private static Rectangle? StartDockDrag(Checks checks, AppLog log, DragSource source, out Point mid)
     {
-        if (OpenEdge(mid) is not { } at)
-        {
-            edge = mid;
-            checks.Check("the screen has a left or right edge with no other screen beyond it", false,
-                string.Join("; ", Screen.AllScreens.Select(s => s.Bounds.ToString())));
-            return null;
-        }
-
-        edge = at;
-        Input.MoveSmooth(mid, new Point(at.X + (at.X > mid.X ? -40 : 40), at.Y), 10, 30);
-        Thread.Sleep(100);
+        Thread.Sleep(400);
+        Input.MoveTo(source.Grab.X, source.Grab.Y);
+        Thread.Sleep(150);
+        Input.LeftDown();
+        Thread.Sleep(120);
+        checks.Check("pressing a file without dragging does not open the dock", !DockVisible(), "checked before crossing the drag threshold");
+        var foreground = PInvoke.GetForegroundWindow();
+        var area = Screen.FromPoint(source.Grab).WorkingArea;
+        var direction = source.Grab.X < area.X + area.Width / 2 ? 1 : -1;
+        mid = new Point(source.Grab.X + direction * 120, source.Grab.Y);
         log.Mark();
         var from = DateTime.Now;
-        Input.MoveTo(at.X, at.Y);
+        Input.MoveSmooth(source.Grab, mid, 6, 25);
         var shown = log.WaitFor(2000, "dock: shown");
-        var side = at.X > mid.X ? "right" : "left";
-        if (shown is null || DockShownRegex().Match(shown) is not { Success: true } m || m.Groups["side"].Value != side)
+        if (shown is null || DockShownRegex().Match(shown) is not { Success: true } m)
         {
-            checks.Check($"a drag pushed against the {side} edge shows the dock there", false, shown ?? "no 'dock: shown' within 2 s");
+            checks.Check("dragging a file automatically shows the dock", false, shown ?? "no 'dock: shown' within 2 s");
             return null;
         }
 
         if (DateTime.TryParseExact(shown[..23], "yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture, DateTimeStyles.None, out var stamped))
         {
             var ms = (stamped - from).TotalMilliseconds;
-            checks.Check($"a drag pushed against the {side} edge shows the dock there within {DockBudgetMs} ms", ms <= DockBudgetMs,
-                $"{ms:F0} ms from the move onto {at.X},{at.Y} to '{shown[24..]}'");
+            checks.Check($"dragging a file shows the dock within {DockBudgetMs} ms", ms >= 0 && ms <= DockBudgetMs,
+                $"{ms:F0} ms from the first drag move to '{shown[24..]}'");
         }
 
         int Group(string name) => int.Parse(m.Groups[name].Value, CultureInfo.InvariantCulture);
-        return new Rectangle(Group("x"), Group("y"), Group("w"), Group("h"));
+        var dock = new Rectangle(Group("x"), Group("y"), Group("w"), Group("h"));
+        checks.Check("the dock stays in the work area, away from the starting pointer, without taking focus",
+            area.Contains(dock) && !dock.Contains(source.Grab) && PInvoke.GetForegroundWindow() == foreground,
+            $"dock {dock}; work area {area}; starting pointer {source.Grab}");
+        DockScreenshot(dock, "empty");
+        return dock;
+    }
+
+    private static void DockScreenshot(Rectangle area, string state)
+    {
+        using var shot = Capture(area);
+        var path = Path.ChangeExtension(Log.FilePath ?? Path.Combine(Path.GetTempPath(), "app"), null) + $"-dock-{state}.png";
+        shot.Save(path, ImageFormat.Png);
+        Log.Info($"app: dock screenshot {area} -> {path}");
     }
 
     /// <summary>The last pixel column of the screen under <paramref name="from"/> on its right, else its left, where no other screen carries on; null when both do.</summary>
@@ -229,19 +224,19 @@ internal static partial class AppScenario
     }
 
     /// <summary>
-    /// With the dock switched off a drag pushed against the edge opens nothing, then drops back on the source,
+    /// With the dock switched off neither starting a drag nor reaching an edge opens it; dropping back on the source
     /// which does nothing.
     /// </summary>
     private static void EdgeOpensNothing(Checks checks, AppLog log, string source, bool explorer)
     {
         using var drag = DragSource.Open(source, explorer);
+        log.Mark();
         var mid = drag.PressAndDrag();
         var edge = OpenEdge(mid) ?? mid;
         Input.MoveSmooth(mid, edge, 12, 30);
-        log.Mark();
         Rest(edge, 700, 0);
         var opened = log.WaitFor(300, "dock: shown");
-        checks.Check("with the dock off a drag pushed against the edge opens nothing", opened is null && !DockVisible(),
+        checks.Check("with the dock off starting a drag and reaching the edge opens nothing", opened is null && !DockVisible(),
             opened ?? (DockVisible() ? "no 'dock: shown', but the dock is still up from before" : "no 'dock: shown' within 1 s"));
         Input.MoveSmooth(edge, drag.Grab, 12, 30);
         Thread.Sleep(250);

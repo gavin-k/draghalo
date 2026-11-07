@@ -60,7 +60,7 @@ internal sealed class SettingsWindow
     private readonly ToggleSwitch _longPress = new() { Header = L.T("触屏或笔长按唤出转换轮盘"), OnContent = L.T("开"), OffContent = L.T("关") };
     private readonly TextBlock _longPressNote = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.75 };
     private readonly Slider _wheelOpacity = new() { Minimum = 0, Maximum = 100, StepFrequency = 1, SmallChange = 5, LargeChange = 10 };
-    private readonly ToggleSwitch _edgeDock = new() { Header = L.T("拖到屏幕左右边缘时弹出停靠栏"), OnContent = L.T("开"), OffContent = L.T("关") };
+    private readonly ToggleSwitch _edgeDock = new() { Header = L.T("拖动文件时自动显示停靠栏"), OnContent = L.T("开"), OffContent = L.T("关") };
     private readonly RadioButton _nextToSource = new() { Content = L.T("放在源文件旁边"), GroupName = "location" };
     private readonly RadioButton _toFolder = new() { Content = L.T("统一放到一个文件夹"), GroupName = "location" };
     private readonly TextBlock _folder = new() { TextWrapping = TextWrapping.Wrap, Opacity = 0.75, VerticalAlignment = VerticalAlignment.Center };
@@ -241,7 +241,7 @@ internal sealed class SettingsWindow
         page.Children.Add(_saveProblem);
         page.Children.Add(Section(L.T("唤出轮盘"), L.T("拖动文件时，把一行里选中的键一起按下再松开，那个轮盘就会在鼠标处弹出。转换轮盘把文件转成别的格式；工具轮盘压缩、缩小、拆分或提取音频；动作轮盘复制路径、重命名、压缩或删除。工具和动作轮盘一个键都不选就不会弹出。"), keys, _keyProblem, _tapWindow, _longPress, _longPressNote));
         page.Children.Add(Section(L.T("轮盘外观"), L.T("调整轮盘背景的浓淡。文字、图标和选中状态保持清晰，修改立即生效。"), _wheelOpacity));
-        page.Children.Add(Section(L.T("停靠栏"), L.T("拖动文件时把鼠标推到屏幕左边或右边，那里会弹出停靠栏。文件先放进去，可以从几个文件夹陆续收集，回头一起或一个个拖走。放进去和拖出来都不会移动原文件，拖到文件夹里是复制。"), _edgeDock));
+        page.Children.Add(Section(L.T("停靠栏"), L.T("开始拖动文件时，停靠栏会自动出现在屏幕边缘。把文件放进去，可以从几个文件夹陆续收集，再一起或逐个拖出。停靠栏只暂存文件路径，不移动原文件；拖到文件夹里是复制。"), _edgeDock));
         page.Children.Add(Section(L.T("文件动作"), L.T("动作轮盘上哪几项能用。没勾选的仍然显示，只是灰色。删除默认不勾选，免得手一滑把文件扔进回收站。"), actions));
         page.Children.Add(Section(L.T("我的工具"), L.T("把 SKILL.md 所在的文件夹交给你的 AI 助手（Claude Code、Codex、Cursor 都行），说一句想要什么工具，它会把工具写进下面的文件夹，DropHalo 自动加载。配方型的工具只用内置功能，装上就能用；脚本型的先是灰的，在这里看过脚本、打开开关才会跑。"),
             _toolsFolder,

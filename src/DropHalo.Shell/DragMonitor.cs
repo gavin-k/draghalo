@@ -21,11 +21,11 @@ public enum DragPhase { Idle, MaybeDragging, Dragging }
 /// without a drag image (WinForms DoDragDrop, or a run where SysDragImage never showed) still has to
 /// open the wheel. Win key events go through <see cref="WinKeyGate"/>, other keys through
 /// <see cref="TypeAhead"/>, which takes them while the Convert wheel is open. The pointer moves of a
-/// drag go to <see cref="LongPress"/>, which says when to start its timer, and those of a drag with a
-/// drag image to <see cref="EdgeDock"/>, which says when the pointer is against an edge of the screen.
+/// drag go to <see cref="LongPress"/>, which says when to start its timer, and a confirmed drag and its
+/// pointer moves go to <see cref="EdgeDock"/>, which chooses where to show the dock.
 ///
 /// Windows silently removes a low-level hook whose callback runs past LowLevelHooksTimeout, so the
-/// callbacks only update state, and <see cref="PhaseChanged"/>, <see cref="EdgeReached"/> and the Invoked
+/// callbacks only update state, and <see cref="PhaseChanged"/>, <see cref="DockRequested"/> and the Invoked
 /// events of the tapper and the long-press are raised inline on this thread: handlers must post to their
 /// own thread and return.
 /// </summary>
@@ -53,10 +53,10 @@ public sealed unsafe class DragMonitor(ModifierTapper tapper, WinKeyGate winKeys
     public event Action<DragPhase>? PhaseChanged;
 
     /// <summary>
-    /// The pointer of a drag with a drag image arrived at the left or right edge of the screen, at x, y in
-    /// physical pixels. Raised on the hook thread, inside the hook callback.
+    /// A drag with a drag image started or reached an open edge. The requested side is on the monitor
+    /// containing x, y in physical pixels. Raised on the hook thread; handlers must post and return.
     /// </summary>
-    public event Action<DockSide, int, int>? EdgeReached;
+    public event Action<DockSide, int, int>? DockRequested;
 
     /// <summary>A handler threw on the hook thread. The exception is not rethrown: it would cross into user32.</summary>
     public event Action<Exception>? Faulted;
@@ -242,12 +242,21 @@ public sealed unsafe class DragMonitor(ModifierTapper tapper, WinKeyGate winKeys
 
     private void PollDragImage()
     {
-        if (_buttonDown && !PInvoke.FindWindowEx(default, default, "SysDragImage", null).IsNull)
+        // shortcut: auto-open needs SysDragImage; replace this gate when a reliable global OLE drag signal is available.
+        if (_buttonDown && _phase == DragPhase.MaybeDragging && !PInvoke.FindWindowEx(default, default, "SysDragImage", null).IsNull)
         {
             StopPolling();
             try
             {
                 Transition(DragPhase.Dragging);
+                var (x, y) = LastPoint;
+                var monitor = PInvoke.MonitorFromPoint(new System.Drawing.Point(x, y), MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST);
+                var info = new MONITORINFO { cbSize = (uint)sizeof(MONITORINFO) };
+                if (edgeDock is { Enabled: true } && PInvoke.GetMonitorInfo(monitor, ref info)
+                    && edgeDock.OnDragStarted(x, info.rcWork.left, info.rcWork.right) is { } side)
+                {
+                    DockRequested?.Invoke(side, x, y);
+                }
             }
             catch (Exception ex)
             {
@@ -310,7 +319,7 @@ public sealed unsafe class DragMonitor(ModifierTapper tapper, WinKeyGate winKeys
             MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONULL).IsNull;
         if (edgeDock!.OnMove(pt.X, bounds.left, bounds.right, _edgeZone, IsOpen) is { } reached)
         {
-            EdgeReached?.Invoke(reached, pt.X, pt.Y);
+            DockRequested?.Invoke(reached, pt.X, pt.Y);
         }
     }
 

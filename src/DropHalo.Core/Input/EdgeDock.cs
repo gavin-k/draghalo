@@ -5,14 +5,14 @@ namespace DropHalo.Core.Input;
 public enum DockSide { Left, Right }
 
 /// <summary>
-/// Says when a drag has been pushed against the left or right edge of the screen, where the dock opens to
-/// collect files. Pure decision logic like <see cref="LongPress"/>: the Shell hook thread feeds it the
+/// Chooses a side when a drag starts, or has been pushed against an open screen edge, where the dock opens
+/// to collect files. Pure decision logic like <see cref="LongPress"/>: the Shell hook thread feeds it the
 /// pointer moves of a drag, tests feed synthetic ones. Not thread-safe apart from <see cref="Rebind"/>;
 /// call the rest from one thread.
 /// </summary>
 /// <remarks>
-/// Only an open edge counts, one with no monitor beyond it: at the edge between two monitors the pointer
-/// is on its way across. Only left and right, because Windows 11 has its own share tray along the top.
+/// Later edge visits count only at an open edge, with no monitor beyond it: between two monitors the
+/// pointer is on its way across. Only left and right, because Windows 11 has its own share tray along the top.
 /// The caller feeds only drags that carry a drag image: dragging a window by its title bar to the edge
 /// snaps it, and that gesture must not open the dock as well. Each visit to an edge counts once; the
 /// pointer has to leave it and come back to count again.
@@ -27,6 +27,10 @@ public sealed class EdgeDock(KeyBindings bindings)
 
     /// <summary>False with the dock switched off in Settings.</summary>
     public bool Enabled => _bindings.EdgeDock;
+
+    /// <summary>Open opposite the pointer so the new dock does not cover the file being dragged.</summary>
+    public DockSide? OnDragStarted(int x, int left, int right)
+        => !Enabled ? null : (long)x - left < ((long)right - left) / 2 ? DockSide.Right : DockSide.Left;
 
     /// <summary>
     /// Feed a pointer move during a drag: its x, the left and (exclusive) right of its monitor, and

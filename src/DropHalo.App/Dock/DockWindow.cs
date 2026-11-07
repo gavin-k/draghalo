@@ -1,10 +1,12 @@
 using DropHalo.App.Diagnostics;
+using DropHalo.App.Styles;
 using DropHalo.Core.Input;
 using DropHalo.Shell;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Text;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.ApplicationModel.DataTransfer;
@@ -17,8 +19,8 @@ using Windows.Win32.UI.HiDpi;
 namespace DropHalo.App.Dock;
 
 /// <summary>
-/// The dock: a drag pushed against the left or right edge of the screen (<see cref="EdgeDock"/>) opens a
-/// strip there that files can be dropped on and left, from several folders one after another, then
+/// The dock: a confirmed drag (<see cref="EdgeDock"/>) opens a strip on the opposite screen edge, where
+/// files can be dropped and left, from several folders one after another, then
 /// dragged out together or one by one: onto the wheel, into a folder, into a mail. Dropping copies
 /// nothing and moves nothing, the dock only remembers the paths; dragging out offers copy and link only,
 /// so files never leave where they are. A file dragged out somewhere leaves the dock, which hides once
@@ -30,17 +32,19 @@ namespace DropHalo.App.Dock;
 /// </summary>
 internal sealed class DockWindow
 {
-    private const double Width = 280;
-    private const double Height = 360;
+    private const double Width = 320;
+    private const double Height = 400;
     private static readonly TimeSpan IdleGrace = TimeSpan.FromMilliseconds(500);
 
     private readonly Window _window;
     private readonly DispatcherQueue _ui;
     private readonly Func<bool> _wheelOpen;
     private readonly List<string> _files = [];
-    private readonly StackPanel _rows = new() { Spacing = 6 };
-    private readonly TextBlock _title = new() { FontSize = 16, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
-    private readonly TextBlock _empty = new() { Text = L.T("把文件放在这里，回头再拖走。"), TextWrapping = TextWrapping.Wrap, Opacity = 0.7 };
+    private readonly StackPanel _rows = new() { Spacing = 8 };
+    private readonly TextBlock _title = new() { FontSize = 20, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Foreground = Brush("DwTextBrush") };
+    private readonly Border _empty;
+    private readonly Button _clear;
+    private readonly Border _dropSurface;
     private readonly Border _all;
     private readonly DispatcherQueueTimer _idleGrace;
     private bool _draggingOut;
@@ -71,7 +75,7 @@ internal sealed class DockWindow
             }
         };
 
-        var clear = new Button { Content = L.T("清空"), VerticalAlignment = VerticalAlignment.Center };
+        var clear = _clear = new Button { Content = L.T("清空"), VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(10, 6, 10, 6), CornerRadius = new CornerRadius(8) };
         clear.Click += (_, _) =>
         {
             FileLog.Info($"dock: cleared {_files.Count} file(s)");
@@ -79,24 +83,57 @@ internal sealed class DockWindow
             Hide("cleared");
         };
         Grid.SetColumn(clear, 1);
+        _empty = new Border
+        {
+            Padding = new Thickness(24, 42, 24, 42),
+            Child = new StackPanel
+            {
+                Spacing = 16,
+                Children =
+                {
+                    new SymbolIcon(Symbol.Download) { Foreground = Brush("DwAccentBrush"), HorizontalAlignment = HorizontalAlignment.Center },
+                    new TextBlock { Text = L.T("把文件放在这里，回头再拖走。"), FontSize = 15, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, Foreground = Brush("DwText2Brush") },
+                },
+            },
+        };
         _all = new Border
         {
-            Padding = new Thickness(10, 8, 10, 8),
-            CornerRadius = new CornerRadius(6),
-            Background = Brush("AccentFillColorDefaultBrush"),
-            Child = new TextBlock { Text = L.T("全部拖出"), Foreground = Brush("TextOnAccentFillColorPrimaryBrush"), HorizontalAlignment = HorizontalAlignment.Center },
+            Padding = new Thickness(12, 12, 12, 12),
+            CornerRadius = new CornerRadius(10),
+            Background = Brush("DwSurface2Brush"),
+            BorderBrush = Brush("DwAccentBrush"),
+            BorderThickness = new Thickness(1),
+            Child = new TextBlock { Text = L.T("全部拖出"), FontWeight = FontWeights.SemiBold, Foreground = Brush("DwAccentBrush"), HorizontalAlignment = HorizontalAlignment.Center },
         };
+        AutomationProperties.SetName(_all, L.T("全部拖出"));
         DragsOut(_all, () => [.. _files]);
-        Grid.SetRow(_all, 2);
-        var list = new ScrollViewer { Content = _rows };
-        Grid.SetRow(list, 1);
+        var footer = new StackPanel
+        {
+            Spacing = 10,
+            Children =
+            {
+                _all,
+                new TextBlock { Text = L.T("原文件保留在原位置"), FontSize = 12, Foreground = Brush("DwText3Brush"), HorizontalAlignment = HorizontalAlignment.Center },
+            },
+        };
+        Grid.SetRow(footer, 2);
+        _dropSurface = new Border
+        {
+            CornerRadius = new CornerRadius(12),
+            Background = Brush("DwSurface2Brush"),
+            BorderBrush = Brush("DwBorderBrush"),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(8),
+            Child = new ScrollViewer { Content = _rows, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled },
+        };
+        Grid.SetRow(_dropSurface, 1);
 
         var root = new Grid
         {
-            Padding = new Thickness(12),
-            RowSpacing = 10,
+            Padding = new Thickness(18),
+            RowSpacing = 16,
             AllowDrop = true,
-            Background = Brush("ApplicationPageBackgroundThemeBrush"),
+            Background = Brush("DwSurfaceBrush"),
             RowDefinitions =
             {
                 new RowDefinition { Height = GridLength.Auto },
@@ -110,13 +147,17 @@ internal sealed class DockWindow
                     ColumnDefinitions = { new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }, new ColumnDefinition { Width = GridLength.Auto } },
                     Children = { _title, clear },
                 },
-                list,
-                _all,
+                _dropSurface,
+                footer,
             },
         };
         root.DragEnter += OnDragEnter;
         root.DragOver += OnDragOver;
-        root.DragLeave += (_, _) => _over = false;
+        root.DragLeave += (_, _) =>
+        {
+            _over = false;
+            _dropSurface.BorderBrush = Brush("DwBorderBrush");
+        };
         root.Drop += OnDrop;
         _window.Content = root;
         Render();
@@ -132,7 +173,13 @@ internal sealed class DockWindow
             }
         };
 
-        monitor.EdgeReached += (side, x, y) => ui.TryEnqueue(() => Open(side, x, y));
+        monitor.DockRequested += (side, x, y) => ui.TryEnqueue(() =>
+        {
+            if (monitor.Phase == DragPhase.Dragging)
+            {
+                Open(side, x, y);
+            }
+        });
         monitor.PhaseChanged += phase =>
         {
             // Whether the last drag showed the Shell's drag image, which the hook needs to see before the dock opens.
@@ -156,12 +203,13 @@ internal sealed class DockWindow
     }
 
     /// <summary>
-    /// A drag reached <paramref name="side"/> at <paramref name="x"/>, <paramref name="y"/> (physical pixels):
+    /// A drag requests <paramref name="side"/> at <paramref name="x"/>, <paramref name="y"/> (physical pixels):
     /// shows the dock along that edge of the work area, centred on the pointer. Not while the wheel is open,
     /// whose drop target covers the screen, nor when the dock is already up.
     /// </summary>
     private void Open(DockSide side, int x, int y)
     {
+        _idleGrace.Stop();
         if (IsVisible || _wheelOpen())
         {
             return;
@@ -176,7 +224,7 @@ internal sealed class DockWindow
         }
 
         var work = info.rcWork;
-        var (w, h) = ((int)Math.Round(Width * scale), Math.Min((int)Math.Round(Height * scale), work.bottom - work.top));
+        var (w, h) = (Math.Min((int)Math.Round(Width * scale), work.right - work.left), Math.Min((int)Math.Round(Height * scale), work.bottom - work.top));
         var left = side == DockSide.Left ? work.left : work.right - w;
         var top = Math.Clamp(y - h / 2, work.top, work.bottom - h);
         _window.AppWindow.MoveAndResize(new RectInt32(left, top, w, h));
@@ -211,6 +259,7 @@ internal sealed class DockWindow
         if (!_over)
         {
             _over = true;
+            _dropSurface.BorderBrush = Brush(!_draggingOut && e.DataView.Contains(StandardDataFormats.StorageItems) ? "DwAccentBrush" : "DwBorderBrush");
             FileLog.Info($"dock: entered by a drag {(_draggingOut ? "out of the dock" : e.DataView.Contains(StandardDataFormats.StorageItems) ? "of files" : "of something else")}");
         }
 
@@ -231,6 +280,7 @@ internal sealed class DockWindow
     private async void OnDrop(object sender, DragEventArgs e)
     {
         _over = false;
+        _dropSurface.BorderBrush = Brush("DwBorderBrush");
         if (_draggingOut || !e.DataView.Contains(StandardDataFormats.StorageItems))
         {
             return;
@@ -373,19 +423,29 @@ internal sealed class DockWindow
 
         foreach (var path in _files)
         {
+            var text = new StackPanel
+            {
+                Spacing = 4,
+                Children =
+                {
+                    new TextBlock { Text = Path.GetFileName(path), FontSize = 14, FontWeight = FontWeights.SemiBold, Foreground = Brush("DwTextBrush"), TextTrimming = TextTrimming.CharacterEllipsis },
+                    new TextBlock { Text = Path.GetDirectoryName(path) ?? "", FontSize = 12, Foreground = Brush("DwText3Brush"), TextTrimming = TextTrimming.CharacterEllipsis },
+                },
+            };
+            Grid.SetColumn(text, 1);
             var row = new Border
             {
-                Padding = new Thickness(10, 6, 10, 6),
-                CornerRadius = new CornerRadius(6),
-                BorderThickness = new Thickness(1),
-                Background = Brush("CardBackgroundFillColorDefaultBrush"),
-                BorderBrush = Brush("CardStrokeColorDefaultBrush"),
-                Child = new StackPanel
+                Padding = new Thickness(12),
+                CornerRadius = new CornerRadius(8),
+                Background = Brush("DwSurfaceBrush"),
+                Child = new Grid
                 {
+                    ColumnSpacing = 12,
+                    ColumnDefinitions = { new ColumnDefinition { Width = GridLength.Auto }, new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) } },
                     Children =
                     {
-                        new TextBlock { Text = Path.GetFileName(path), TextTrimming = TextTrimming.CharacterEllipsis },
-                        new TextBlock { Text = Path.GetDirectoryName(path) ?? "", FontSize = 12, Opacity = 0.7, TextTrimming = TextTrimming.CharacterEllipsis },
+                        new SymbolIcon(Symbol.Document) { Foreground = Brush("DwAccentBrush"), VerticalAlignment = VerticalAlignment.Center },
+                        text,
                     },
                 },
             };
@@ -394,7 +454,8 @@ internal sealed class DockWindow
         }
 
         _all.Visibility = _files.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
+        _clear.Visibility = _files.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private static Brush Brush(string key) => (Brush)Application.Current.Resources[key];
+    private static Brush Brush(string key) => AppStyles.Brush(key);
 }

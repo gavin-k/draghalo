@@ -16,6 +16,19 @@ public class EdgeDockTests
             return open;
         });
 
+    [Theory]
+    [InlineData(300, 0, 1920, DockSide.Right)]
+    [InlineData(1700, 0, 1920, DockSide.Left)]
+    [InlineData(-1700, -1920, 0, DockSide.Right)]
+    [InlineData(-300, -1920, 0, DockSide.Left)]
+    public void A_drag_starts_with_the_dock_opposite_the_pointer(int x, int left, int right, DockSide side)
+    {
+        var dock = new EdgeDock(KeyBindings.Default);
+        dock.OnDragStarted(x, left, right).Should().Be(side);
+        dock.Rebind(KeyBindings.Default with { EdgeDock = false });
+        dock.OnDragStarted(x, left, right).Should().BeNull();
+    }
+
     [Fact]
     public void Pushing_against_the_right_edge_counts_once_per_visit()
     {
