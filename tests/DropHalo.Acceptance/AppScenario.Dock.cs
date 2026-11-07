@@ -169,11 +169,7 @@ internal static partial class AppScenario
     /// <summary>Starts a file drag away from the edges and checks the dock appears without taking focus.</summary>
     private static Rectangle? StartDockDrag(Checks checks, AppLog log, DragSource source, out Point mid)
     {
-        Thread.Sleep(400);
-        Input.MoveTo(source.Grab.X, source.Grab.Y);
-        Thread.Sleep(150);
-        Input.LeftDown();
-        Thread.Sleep(120);
+        source.Press();
         checks.Check("pressing a file without dragging does not open the dock", !DockVisible(), "checked before crossing the drag threshold");
         var foreground = PInvoke.GetForegroundWindow();
         var area = Screen.FromPoint(source.Grab).WorkingArea;

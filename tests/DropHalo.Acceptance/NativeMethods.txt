@@ -40,3 +40,6 @@ GetCursorPos
 WindowFromPoint
 GetWindowRect
 GetAncestor
+SetForegroundWindow
+AttachThreadInput
+GetCurrentThreadId

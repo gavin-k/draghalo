@@ -55,10 +55,11 @@ internal sealed class DragSource : IDisposable
     public string? Result(TimeSpan timeout) => _child is null ? null : ReadLine(_child, "RESULT", timeout);
 
     /// <summary>
-    /// Press on the source and drag far enough that the system drag is under way, towards the middle of the
-    /// screen: near an edge the app shifts the wheel to keep it on screen, and it must not end up over the source.
+    /// Moves to the grab point and presses the mouse there, after checking a real Explorer source is the window
+    /// under the pointer and in the foreground: a press that lands anywhere else starts no drag and would make the
+    /// scenario blame the app for it.
     /// </summary>
-    public Point PressAndDrag(int distancePx = 520)
+    public void Press()
     {
         Thread.Sleep(400);
         Input.MoveTo(Grab.X, Grab.Y);
@@ -76,6 +77,15 @@ internal sealed class DragSource : IDisposable
 
         Input.LeftDown();
         Thread.Sleep(120);
+    }
+
+    /// <summary>
+    /// Press on the source and drag far enough that the system drag is under way, towards the middle of the
+    /// screen: near an edge the app shifts the wheel to keep it on screen, and it must not end up over the source.
+    /// </summary>
+    public Point PressAndDrag(int distancePx = 520)
+    {
+        Press();
         var area = Screen.FromPoint(Grab).WorkingArea;
         var direction = Grab.X > area.X + area.Width / 2 ? -1 : 1;
         var mid = new Point(Grab.X + direction * distancePx, Grab.Y);

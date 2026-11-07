@@ -58,7 +58,59 @@ internal static unsafe class ExplorerSource
         LastWindow = new HWND((nint)Convert.ToInt64(p[1], 16));
         var rect = new Rectangle(int.Parse(p[2]), int.Parse(p[3]), int.Parse(p[4]), int.Parse(p[5]));
         Log.Info($"explorer: child located item at {rect} in window 0x{(nint)LastWindow.Value:X} after {sw.ElapsedMilliseconds} ms");
+        Activate(LastWindow);
         return (LastWindow, rect);
+    }
+
+    /// <summary>
+    /// Brings the new folder window to the foreground when Windows left it behind. The shell may only activate
+    /// a new window while it was the last to receive input; after a drag that pressed on DropHalo's own dock the
+    /// app holds that right instead, so the activation is made with this thread attached to the foreground
+    /// thread's input queue. <see cref="DragSource.Press"/> still refuses to press when the window is not in front.
+    /// </summary>
+    private static unsafe void Activate(HWND window)
+    {
+        var foreground = PInvoke.GetForegroundWindow();
+        if (foreground == window)
+        {
+            return;
+        }
+
+        var ours = PInvoke.GetCurrentThreadId();
+        var theirs = foreground.IsNull ? 0 : PInvoke.GetWindowThreadProcessId(foreground, null);
+        var attached = theirs != 0 && theirs != ours && PInvoke.AttachThreadInput(theirs, ours, true);
+        try
+        {
+            _ = PInvoke.SetForegroundWindow(window);
+        }
+        finally
+        {
+            if (attached)
+            {
+                _ = PInvoke.AttachThreadInput(theirs, ours, false);
+            }
+        }
+
+        Thread.Sleep(150);
+        var clicked = false;
+        if (PInvoke.GetForegroundWindow() != window && PInvoke.GetWindowRect(window, out var r))
+        {
+            // What a user would do: a click on the middle of the title bar, clear of the tab strip, activates any window.
+            clicked = true;
+            Input.MoveTo((r.left + r.right) / 2, r.top + 20);
+            Thread.Sleep(100);
+            Input.LeftDown();
+            Thread.Sleep(60);
+            Input.LeftUp();
+            Thread.Sleep(250);
+        }
+
+        var now = PInvoke.GetForegroundWindow();
+        uint pid = 0;
+        _ = PInvoke.GetWindowThreadProcessId(foreground, &pid);
+        Log.Info($"explorer: window 0x{(nint)window.Value:X} {(now == window ? "brought to" : "still not in")} the foreground "
+            + $"(was 0x{(nint)foreground.Value:X} '{WindowText(foreground)}' PID {pid}, now 0x{(nint)now.Value:X}, "
+            + $"input {(attached ? "attached" : "not attached")}{(clicked ? ", title bar clicked" : "")})");
     }
 
     /// <summary>Entry point of <c>--locate</c>: runs <see cref="OpenInProcess"/> and prints LOCATED / ERROR.</summary>
