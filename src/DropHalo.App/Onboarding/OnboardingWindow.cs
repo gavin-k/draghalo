@@ -1,4 +1,5 @@
 using DropHalo.App.Diagnostics;
+using DropHalo.App.Styles;
 using DropHalo.Core.Jobs;
 using DropHalo.Core.Settings;
 using DropHalo.Core.Wheel;
@@ -59,30 +60,37 @@ internal sealed class OnboardingWindow
         start.Click += (_, _) => Finish("started");
         Grid.SetColumn(start, 1);
 
-        var page = new StackPanel { Spacing = 16, Padding = new Thickness(24, 20, 24, 24) };
-        page.Children.Add(new TextBlock { Text = L.T("拖动文件，轻点一下，松手即转换"), FontSize = 20, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
-        page.Children.Add(new StackPanel { Spacing = 8, Children = { drag, _press, _release } });
-        page.Children.Add(new StackPanel
+        var page = new StackPanel { Spacing = 20, Padding = new Thickness(28), MaxWidth = 680, HorizontalAlignment = HorizontalAlignment.Stretch };
+        page.Children.Add(new TextBlock { Text = "DropHalo", FontSize = 14, FontWeight = FontWeights.SemiBold, Foreground = AppStyles.Brush("DwAccentBrush") });
+        page.Children.Add(new TextBlock { Text = L.T("拖动文件，轻点一下，松手即转换"), FontSize = 28, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap, Foreground = AppStyles.Brush("DwTextBrush") });
+        page.Children.Add(AppStyles.Card(new StackPanel { Spacing = 20, Children = { drag, _press, _release } }));
+        page.Children.Add(AppStyles.Card(new StackPanel
         {
             Spacing = 8,
             Children =
             {
-                new TextBlock { Text = L.T("手边没有合适的文件？「试一试」会在「图片\\{0}」里放一张示例照片并在资源管理器里选中它，用完可以删掉。", SampleFolderName), TextWrapping = TextWrapping.Wrap, Opacity = 0.75 },
+                new TextBlock { Text = L.T("手边没有合适的文件？「试一试」会在「图片\\{0}」里放一张示例照片并在资源管理器里选中它，用完可以删掉。", SampleFolderName), TextWrapping = TextWrapping.Wrap, Foreground = AppStyles.Brush("DwText2Brush") },
                 tryIt,
             },
-        });
+        }));
         page.Children.Add(_outcome);
         page.Children.Add(new TextBlock
         {
             Text = L.T("关掉这个窗口后，DropHalo 留在任务栏右侧的通知区域里（新图标可能先收在 ^ 形的隐藏图标里），随时可以用。点它的图标打开任务窗口，那里能看到进度、撤销转换、打开设置。"),
             TextWrapping = TextWrapping.Wrap,
+            FontSize = 13,
+            Foreground = AppStyles.Brush("DwText2Brush"),
         });
         page.Children.Add(new Grid
         {
             ColumnDefinitions = { new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }, new ColumnDefinition { Width = GridLength.Auto } },
             Children = { keys, start },
         });
-        _window.Content = new ScrollViewer { Content = page };
+        _window.Content = new Grid
+        {
+            Background = AppStyles.Brush("DwBgBrush"),
+            Children = { new ScrollViewer { Content = page, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled } },
+        };
 
         ShowSettings(settings.Current);
         settings.Changed += changed => _ui.TryEnqueue(() => ShowSettings(changed));
@@ -109,7 +117,7 @@ internal sealed class OnboardingWindow
         {
             var area = DisplayArea.Primary.WorkArea;
             var scale = PInvoke.GetDpiForWindow(Handle) / 96.0;
-            var (w, h) = ((int)(480 * scale), Math.Min((int)(600 * scale), area.Height - 48));
+            var (w, h) = (Math.Min((int)(560 * scale), area.Width - 48), Math.Min((int)(720 * scale), area.Height - 48));
             _window.AppWindow.MoveAndResize(new RectInt32(area.X + (area.Width - w) / 2, area.Y + (area.Height - h) / 2, w, h));
             _placed = true;
         }
@@ -124,7 +132,7 @@ internal sealed class OnboardingWindow
         _window.Close();
     }
 
-    private static TextBlock Step() => new() { TextWrapping = TextWrapping.Wrap, FontSize = 15 };
+    private static TextBlock Step() => new() { TextWrapping = TextWrapping.Wrap, FontSize = 15, LineHeight = 24, Foreground = AppStyles.Brush("DwTextBrush") };
 
     private void ShowSettings(AppSettings settings)
     {

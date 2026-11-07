@@ -1,4 +1,5 @@
 using DropHalo.App.Diagnostics;
+using DropHalo.App.Styles;
 using DropHalo.Core.Jobs;
 using DropHalo.Core.Settings;
 using Microsoft.UI.Dispatching;
@@ -24,8 +25,9 @@ internal sealed class QueueWindow
     private readonly Window _window;
     private readonly JobQueue _queue;
     private readonly DispatcherQueue _ui;
-    private readonly StackPanel _rows = new() { Spacing = 8 };
+    private readonly StackPanel _rows = new() { Spacing = 12 };
     private readonly TextBlock _empty;
+    private readonly Border _emptyCard;
     private readonly Dictionary<Guid, Row> _byJob = [];
     private bool _placed;
 
@@ -43,26 +45,38 @@ internal sealed class QueueWindow
                 window.Hide();
             }
         };
-        _empty = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.7 };
-        _rows.Children.Add(_empty);
+        _empty = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = AppStyles.Brush("DwText2Brush"), LineHeight = 22 };
+        _emptyCard = AppStyles.Card(new StackPanel
+        {
+            Spacing = 12,
+            Children =
+            {
+                new FontIcon { Glyph = "\uE8B7", FontSize = 28, Foreground = AppStyles.Brush("DwAccentBrush"), HorizontalAlignment = HorizontalAlignment.Left },
+                new TextBlock { Text = L.T("随时准备就绪"), FontSize = 18, FontWeight = FontWeights.SemiBold, Foreground = AppStyles.Brush("DwTextBrush") },
+                _empty,
+            },
+        });
+        _rows.Children.Add(_emptyCard);
         var settings = new Button { Content = L.T("设置"), VerticalAlignment = VerticalAlignment.Center };
         settings.Click += (_, _) => showSettings();
         Grid.SetColumn(settings, 1);
         _window.Content = new Grid
         {
-            Padding = new Thickness(16),
+            Padding = new Thickness(24),
+            Background = AppStyles.Brush("DwBgBrush"),
             RowDefinitions = { new RowDefinition { Height = GridLength.Auto }, new RowDefinition { Height = new GridLength(1, GridUnitType.Star) } },
             Children =
             {
                 new Grid
                 {
-                    Margin = new Thickness(0, 0, 0, 12),
+                    Margin = new Thickness(0, 0, 0, 20),
                     ColumnDefinitions = { new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }, new ColumnDefinition { Width = GridLength.Auto } },
-                    Children = { new TextBlock { Text = L.T("任务"), FontSize = 20, FontWeight = FontWeights.SemiBold }, settings },
+                    Children = { new TextBlock { Text = L.T("任务"), FontSize = 28, FontWeight = FontWeights.SemiBold, Foreground = AppStyles.Brush("DwTextBrush") }, settings },
                 },
                 Rows(new ScrollViewer { Content = _rows }),
             },
         };
+        AppStyles.Initialize((FrameworkElement)_window.Content);
         queue.JobChanged += job =>
         {
             LogOutcome(job);
@@ -82,7 +96,7 @@ internal sealed class QueueWindow
         {
             var area = DisplayArea.Primary.WorkArea;
             var scale = PInvoke.GetDpiForWindow(Handle) / 96.0;
-            var (w, h) = ((int)(440 * scale), (int)(380 * scale));
+            var (w, h) = (Math.Min((int)(520 * scale), area.Width - 48), Math.Min((int)(440 * scale), area.Height - 48));
             _window.AppWindow.MoveAndResize(new RectInt32(area.X + area.Width - w - 24, area.Y + area.Height - h - 24, w, h));
             _placed = true;
         }
@@ -146,7 +160,7 @@ internal sealed class QueueWindow
         {
             row = new Row(job, this);
             _byJob[job.Id] = row;
-            _rows.Children.Remove(_empty);
+            _rows.Children.Remove(_emptyCard);
             _rows.Children.Insert(0, row.Element);
             if (!_window.AppWindow.IsVisible)
             {
@@ -228,8 +242,8 @@ internal sealed class QueueWindow
     private sealed class Row
     {
         private readonly Job _job;
-        private readonly TextBlock _state = new() { FontSize = 12, Opacity = 0.75, TextWrapping = TextWrapping.Wrap };
-        private readonly ProgressBar _progress = new() { Maximum = 1 };
+        private readonly TextBlock _state = new() { FontSize = 13, Foreground = AppStyles.Brush("DwText2Brush"), TextWrapping = TextWrapping.Wrap };
+        private readonly ProgressBar _progress = new() { Maximum = 1, Margin = new Thickness(0, 6, 0, 0) };
         private readonly Button _cancel;
         private readonly Button _retry;
         private readonly Button _reveal;
@@ -243,25 +257,23 @@ internal sealed class QueueWindow
             _retry = Command(L.T("重试"), () => owner.Retry(job, this));
             _reveal = Command(L.T("打开位置"), () => Reveal(job, this));
             _undo = Command(L.T("撤销"), async () => await owner.UndoAsync(job, this).ConfigureAwait(true));
-            var text = new StackPanel { Spacing = 2 };
-            text.Children.Add(new TextBlock { Text = job.Label, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
+            var text = new StackPanel { Spacing = 6 };
+            text.Children.Add(new TextBlock { Text = job.Label, FontSize = 15, FontWeight = FontWeights.SemiBold, Foreground = AppStyles.Brush("DwTextBrush"), TextTrimming = TextTrimming.CharacterEllipsis });
             text.Children.Add(_state);
             text.Children.Add(_progress);
-            var commands = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
+            var commands = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
             commands.Children.Add(_cancel);
             commands.Children.Add(_retry);
             commands.Children.Add(_reveal);
             commands.Children.Add(_undo);
-            Grid.SetColumn(commands, 1);
-            Element = new Grid
+            Element = AppStyles.Card(new StackPanel
             {
-                ColumnSpacing = 12,
-                ColumnDefinitions = { new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }, new ColumnDefinition { Width = GridLength.Auto } },
+                Spacing = 14,
                 Children = { text, commands },
-            };
+            });
         }
 
-        public Grid Element { get; }
+        public Border Element { get; }
 
         public void Busy(bool busy) => _undo.IsEnabled = !busy;
 

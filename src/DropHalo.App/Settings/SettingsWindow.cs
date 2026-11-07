@@ -1,4 +1,5 @@
 using DropHalo.App.Diagnostics;
+using DropHalo.App.Styles;
 using DropHalo.Core.Conversion;
 using DropHalo.Core.Jobs;
 using DropHalo.Core.Privacy;
@@ -246,8 +247,16 @@ internal sealed class SettingsWindow
         AutomationProperties.SetAutomationId(reloadTools, "reload-tools");
         var toolButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { openTools, reloadTools, openSkill } };
 
-        var page = new StackPanel { Spacing = 24, Padding = new Thickness(20, 16, 20, 24) };
-        page.Children.Add(new TextBlock { Text = L.T("设置"), FontSize = 20, FontWeight = FontWeights.SemiBold });
+        var page = new StackPanel { Spacing = 24, Padding = new Thickness(28, 24, 28, 32), MaxWidth = 760, HorizontalAlignment = HorizontalAlignment.Stretch };
+        page.Children.Add(new StackPanel
+        {
+            Spacing = 6,
+            Children =
+            {
+                new TextBlock { Text = L.T("设置"), FontSize = 28, FontWeight = FontWeights.SemiBold, Foreground = AppStyles.Brush("DwTextBrush") },
+                new TextBlock { Text = L.T("让常用操作，触手可及。"), FontSize = 14, Foreground = AppStyles.Brush("DwText2Brush") },
+            },
+        });
         page.Children.Add(_saveProblem);
         page.Children.Add(Section(L.T("唤出轮盘"), L.T("拖动文件时，把一行里选中的键一起按下再松开，那个轮盘就会在鼠标处弹出。转换轮盘把文件转成别的格式；工具轮盘压缩、缩小、拆分或提取音频；动作轮盘复制路径、重命名、压缩或删除。工具和动作轮盘一个键都不选就不会弹出。"), keys, _keyProblem, _tapWindow, _longPress, _longPressNote));
         page.Children.Add(Section(L.T("轮盘外观"), L.T("100% 为默认背景，数值越低越透明。文字、图标和悬停高亮保持清晰，修改后立即生效。"), _wheelOpacity, _solidWheel));
@@ -328,7 +337,12 @@ internal sealed class SettingsWindow
 
         _startupSection = Section(L.T("启动"), null, _startup, _startupNote);
         page.Children.Add(_startupSection);
-        _window.Content = new ScrollViewer { Content = page };
+        page.Children.Add(new TextBlock { Text = L.T("更改会自动保存。"), FontSize = 12, Foreground = AppStyles.Brush("DwText2Brush") });
+        _window.Content = new Grid
+        {
+            Background = AppStyles.Brush("DwBgBrush"),
+            Children = { new ScrollViewer { Content = page, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled } },
+        };
     }
 
     public HWND Handle => new(WinRT.Interop.WindowNative.GetWindowHandle(_window));
@@ -345,7 +359,7 @@ internal sealed class SettingsWindow
         {
             var area = DisplayArea.Primary.WorkArea;
             var scale = PInvoke.GetDpiForWindow(Handle) / 96.0;
-            var (w, h) = ((int)(480 * scale), Math.Min((int)(680 * scale), area.Height - 48));
+            var (w, h) = (Math.Min((int)(640 * scale), area.Width - 48), Math.Min((int)(760 * scale), area.Height - 48));
             _window.AppWindow.MoveAndResize(new RectInt32(area.X + (area.Width - w) / 2, area.Y + (area.Height - h) / 2, w, h));
             _placed = true;
         }
@@ -374,17 +388,19 @@ internal sealed class SettingsWindow
     private static StackPanel Section(string title, string? note, params UIElement[] children)
     {
         var section = new StackPanel { Spacing = 10 };
-        section.Children.Add(new TextBlock { Text = title, FontSize = 16, FontWeight = FontWeights.SemiBold });
+        section.Children.Add(new TextBlock { Text = title, FontSize = 16, FontWeight = FontWeights.SemiBold, Foreground = AppStyles.Brush("DwTextBrush") });
+        var content = new StackPanel { Spacing = 14 };
         if (note is not null)
         {
-            section.Children.Add(new TextBlock { Text = note, TextWrapping = TextWrapping.Wrap, Opacity = 0.75 });
+            content.Children.Add(new TextBlock { Text = note, FontSize = 13, TextWrapping = TextWrapping.Wrap, Foreground = AppStyles.Brush("DwText2Brush") });
         }
 
         foreach (var child in children)
         {
-            section.Children.Add(child);
+            content.Children.Add(child);
         }
 
+        section.Children.Add(AppStyles.Card(content));
         return section;
     }
 
