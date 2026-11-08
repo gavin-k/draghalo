@@ -190,6 +190,24 @@ class MirrorTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 mirror.verify("../../other")
 
+    def test_anonymous_tag_quota_can_use_the_same_official_listing(self):
+        failure = urllib.error.HTTPError(mirror.GITHUB_API + "/tags/v0.1.6", 403, "rate limit exceeded", {}, None)
+        self.addCleanup(failure.close)
+        with patch.dict(os.environ, {"GH_TOKEN": ""}), patch.object(mirror, "open_url", side_effect=[failure, io.BytesIO(json.dumps([self.upstream]).encode())]) as opened:
+            self.assertEqual(mirror.github("/tags/v0.1.6"), self.upstream)
+            self.assertEqual(opened.call_args.args[0], mirror.GITHUB_API + "?per_page=100&page=1")
+
+    def test_quota_fallback_cannot_invent_a_missing_or_authenticated_release(self):
+        failure = urllib.error.HTTPError(mirror.GITHUB_API + "/tags/v0.1.6", 403, "rate limit exceeded", {}, None)
+        self.addCleanup(failure.close)
+        with patch.dict(os.environ, {"GH_TOKEN": ""}), patch.object(mirror, "open_url", side_effect=[failure, io.BytesIO(b"[]")]):
+            with self.assertRaises(urllib.error.HTTPError):
+                mirror.github("/tags/v0.1.6")
+        with patch.dict(os.environ, {"GH_TOKEN": "fixture"}), patch.object(mirror, "open_url", side_effect=failure) as opened:
+            with self.assertRaises(urllib.error.HTTPError):
+                mirror.github("/tags/v0.1.6")
+            self.assertEqual(opened.call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
