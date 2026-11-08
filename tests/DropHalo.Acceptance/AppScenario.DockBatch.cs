@@ -1,13 +1,14 @@
 using System.Diagnostics;
 using Windows.Win32;
 using Windows.Win32.UI.Input.KeyboardAndMouse;
+using Windows.Win32.UI.WindowsAndMessaging;
 
 namespace DropHalo.Acceptance;
 
 internal static partial class AppScenario
 {
     /// <summary>Replays a multi-file Explorer drop, clicking and dragging 全部拖出, cancellation and copying.</summary>
-    public static int RunDockBatch(string exe, int iterations)
+    public static int RunDockBatch(string exe, int iterations, bool cancelBeforeCopy = true)
     {
         var checks = new Checks();
         if (AnotherInstanceRunning(checks, "dock test owns its app", "Another DropHalo is running; left it untouched."))
@@ -69,22 +70,25 @@ internal static partial class AppScenario
                 Input.LeftUp();
                 Thread.Sleep(250);
                 checks.Check("clicking 全部拖出 keeps the app responsive", !app.HasExited && app.Responding && DockVisible(), $"PID {app.Id}");
-                Input.LeftDown();
-                Thread.Sleep(80);
-                Input.MoveSmooth(grab, mid, 12, 20);
-                var started = log.WaitFor(5000, "dock: drag out of 4 file(s) started");
-                Input.MoveSmooth(mid, new Point(mid.X + 50, mid.Y), 8, 30);
-                Thread.Sleep(300);
-                Input.Key(VIRTUAL_KEY.VK_ESCAPE, up: false);
-                Thread.Sleep(150);
-                Input.Key(VIRTUAL_KEY.VK_ESCAPE, up: true);
-                Input.LeftUp();
-                var canceled = log.WaitFor(5000, "dock: dragged out 4 file(s), canceled");
-                if (!checks.Check("canceling 全部拖出 preserves all files and the app", started is not null && canceled is not null && !app.HasExited && app.Responding && DockVisible(),
-                    $"{started ?? "drag did not start"}; {canceled ?? "drag did not finish"}; exited={app.HasExited}"))
+                if (cancelBeforeCopy)
                 {
-                    CaptureDragFailure();
-                    break;
+                    Input.LeftDown();
+                    Thread.Sleep(80);
+                    Input.MoveSmooth(grab, mid, 12, 20);
+                    var started = log.WaitFor(5000, "dock: drag out of 4 file(s) started");
+                    Input.MoveSmooth(mid, new Point(mid.X + 50, mid.Y), 8, 30);
+                    Thread.Sleep(300);
+                    Input.Key(VIRTUAL_KEY.VK_ESCAPE, up: false);
+                    Thread.Sleep(150);
+                    Input.Key(VIRTUAL_KEY.VK_ESCAPE, up: true);
+                    Input.LeftUp();
+                    var canceled = log.WaitFor(5000, "dock: dragged out 4 file(s), canceled");
+                    if (!checks.Check("canceling 全部拖出 preserves all files and the app", started is not null && canceled is not null && !app.HasExited && app.Responding && DockVisible(),
+                        $"{started ?? "drag did not start"}; {canceled ?? "drag did not finish"}; exited={app.HasExited}"))
+                    {
+                        CaptureDragFailure();
+                        break;
+                    }
                 }
 
                 var target = Directory.CreateDirectory(Path.Combine(dir, $"target-{i}")).FullName;
@@ -92,6 +96,7 @@ internal static partial class AppScenario
                 File.WriteAllText(marker, "target");
                 using (var receiver = DragSource.Open(marker, explorer: true))
                 {
+                    var targetWindow = ExplorerSource.LastWindow;
                     var destination = new Point(receiver.Grab.X + 180, receiver.Grab.Y + 120);
                     log.Mark();
                     Input.MoveTo(grab.X, grab.Y);
@@ -99,9 +104,21 @@ internal static partial class AppScenario
                     Thread.Sleep(80);
                     Input.MoveSmooth(grab, destination, 16, 25);
                     Thread.Sleep(400);
+                    LogDragState();
+                    var targetAtRelease = PInvoke.GetAncestor(PInvoke.WindowFromPoint(destination), GET_ANCESTOR_FLAGS.GA_ROOT);
+                    checks.Check("the copy is released over its Explorer destination", targetAtRelease == targetWindow,
+                        $"expected {targetWindow}, actual {targetAtRelease} '{Title(targetAtRelease)}', destination {destination}");
                     Input.LeftUp();
                     var completed = log.WaitFor(5000, "dock: dragged out 4 file(s), copied");
                     var copied = Checks.Wait(() => files.All(f => File.Exists(Path.Combine(target, Path.GetFileName(f)))) && File.Exists(Path.Combine(target, "folder", "nested.txt")), 5000);
+                    if (completed is null || !copied)
+                    {
+                        LogDragState();
+                        if (PInvoke.GetWindowRect(targetWindow, out var targetBounds))
+                        {
+                            DockScreenshot(new Rectangle(targetBounds.left, targetBounds.top, targetBounds.right - targetBounds.left, targetBounds.bottom - targetBounds.top), "destination-failure");
+                        }
+                    }
                     checks.Check("全部拖出 copies every file and folder and leaves originals intact", completed is not null && copied && files.All(File.Exists) && Directory.Exists(folder), completed ?? "copy did not complete");
                     checks.Check("completed 全部拖出 hides the empty dock and keeps the app responsive", !app.HasExited && app.Responding && Checks.Wait(() => !DockVisible(), 3000), $"exited={app.HasExited}");
                 }
