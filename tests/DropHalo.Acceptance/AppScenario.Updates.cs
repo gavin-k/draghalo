@@ -49,7 +49,9 @@ internal static partial class AppScenario
 
             void Check(string source)
             {
-                var invoked = Invoke(EnglishSettingsTitle, "Check for updates", out var detail);
+                var ready = Checks.Wait(() => Element(EnglishSettingsTitle, "check-update", out _, byId: true)?.CurrentIsEnabled == true, 5000);
+                var detail = "manual check stayed disabled";
+                var invoked = ready && Invoke(EnglishSettingsTitle, "Check for updates", out detail);
                 var complete = invoked && Checks.Wait(() => Element(EnglishSettingsTitle, "check-update", out _, byId: true)?.CurrentIsEnabled == true, 60000);
                 var status = Element(EnglishSettingsTitle, "update-status", out _, byId: true)?.CurrentName.ToString() ?? "";
                 checks.Check($"{source} checks the real public release", complete && (status.StartsWith("You are up to date", StringComparison.Ordinal) || status.StartsWith("New version available", StringComparison.Ordinal)), status.Length > 0 ? status : detail);
@@ -67,7 +69,9 @@ internal static partial class AppScenario
                         ((IUIAutomationInvokePattern)cancel.GetCurrentPattern(UIA_PATTERN_ID.UIA_InvokePatternId)).Invoke();
                     }
 
-                    checks.Check($"{source} install cancellation keeps the current app", prompted && cancel is not null && !app.HasExited, detail);
+                    checks.Check($"{source} install cancellation keeps the current app", prompted && cancel is not null
+                        && Checks.Wait(() => Element(EnglishSettingsTitle, "check-update", out _, byId: true)?.CurrentIsEnabled == true, 5000)
+                        && !app.HasExited, detail);
                 }
             }
 
