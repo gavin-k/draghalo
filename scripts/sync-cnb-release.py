@@ -93,8 +93,23 @@ def assets_for(release, *, stable=True):
 
 
 def github(path):
-    with open_url(GITHUB_API + path, authenticated=bool(os.environ.get("GH_TOKEN"))) as response:
-        return json.load(response)
+    authenticated = bool(os.environ.get("GH_TOKEN"))
+    try:
+        with open_url(GITHUB_API + path, authenticated=authenticated) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as error:
+        if error.code != 403 or authenticated or not path.startswith("/tags/"):
+            raise
+        # CNB's shared anonymous quota can block tag endpoints while the public release listing is cached.
+        page = 1
+        while True:
+            releases = github(f"?per_page=100&page={page}")
+            found = next((r for r in releases if r["tag_name"] == path[6:]), None)
+            if found is not None:
+                return found
+            if len(releases) < 100:
+                raise error
+            page += 1
 
 
 def checksums(path, names):
