@@ -190,6 +190,14 @@ class MirrorTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 mirror.verify("../../other")
 
+    def test_release_receipts_are_actually_staged_with_repository_ignore_rules(self):
+        subprocess.run(["git", "init", "-q"], check=True, capture_output=True)
+        Path(".gitignore").write_text((Path(__file__).resolve().parents[1] / ".gitignore").read_text())
+        receipt = Path("updates/releases/v0.1.6.json")
+        mirror.write_json(receipt, {"tag_name": "v0.1.6"})
+        subprocess.run(["git", "add", "updates"], check=True, capture_output=True)
+        subprocess.run(["git", "ls-files", "--error-unmatch", str(receipt)], check=True, capture_output=True)
+
     def test_anonymous_tag_quota_can_use_the_same_official_listing(self):
         failure = urllib.error.HTTPError(mirror.GITHUB_API + "/tags/v0.1.6", 403, "rate limit exceeded", {}, None)
         self.addCleanup(failure.close)
