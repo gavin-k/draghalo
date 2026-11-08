@@ -15,8 +15,8 @@ internal static partial class AppScenario
     /// <summary>
     /// Through the settings window, the way a screen reader would use it: the solid wheel retains its opacity setting; unticking the only key is refused
     /// with the reason and nothing is saved; Ctrl instead of Shift, touch long press off, the dock off, the
-    /// output folder preset in settings.json and a file-name template are saved, and so are English and then
-    /// 简体中文 picked as the language, the window staying Chinese; 隐私与离线 counts no network
+    /// output folder preset in settings.json and a file-name template are saved; canceling a language change
+    /// keeps the saved language and the app running; 隐私与离线 counts no network
     /// request, opens the log folder and clears the logs; 登录 Windows 时启动 writes and removes the Run value; a
     /// resting finger then opens nothing, nor does a drag pushed against the edge, and the next drag opens the
     /// wheel on Ctrl, not Shift, and puts the PNG in that folder, which does not exist yet, under the new name.
@@ -65,13 +65,13 @@ internal static partial class AppScenario
             keys is not null && touch is not null && dock is not null && location is not null && naming is not null,
             $"{keys ?? "no keys line"}; {touch ?? "no long press line"}; {dock ?? "no dock line"}; {location ?? "no folder line"}; {naming ?? "no naming line"}");
 
-        // A language takes effect at the next start, so the window stays Chinese; the English scenario starts in English.
-        var english = Pick("language", "English", out how) ? log.WaitFor(2000, "settings: saved language English") : null;
-        var chinese = english is not null && Pick("language", "简体中文", out how) ? log.WaitFor(2000, "settings: saved language Chinese") : null;
-        var still = Element(SettingsTitle, "唤出轮盘", out _) is not null;
-        checks.Check("English and then 简体中文 are saved as they are picked, and the window stays Chinese",
-            english is not null && chinese is not null && still,
-            $"{how}; {english ?? "no English line"}; {chinese ?? "no Chinese line"}; 唤出轮盘 {(still ? "still there" : "gone")}");
+        saved = File.ReadAllText(file);
+        var prompted = Pick("language", "English", out how) && Element(SettingsTitle, "重启以切换语言？", out how) is not null;
+        var canceled = prompted && Invoke(SettingsTitle, "取消", out how);
+        checks.Check("canceling a language change leaves settings.json and the current language unchanged",
+            canceled && Checks.Wait(() => LanguageSelected(SettingsTitle, "简体中文"), 3000)
+            && File.ReadAllText(file) == saved && Element(SettingsTitle, "唤出轮盘", out _) is not null,
+            how);
 
         EditLayout(checks, log, profile);
 

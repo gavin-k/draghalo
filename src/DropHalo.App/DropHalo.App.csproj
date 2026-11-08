@@ -86,7 +86,7 @@
 
   <ItemGroup>
     <Compile Include="../Shared/L.cs" Link="L.cs" />
-    <EmbeddedResource Include="Strings.en.json" LogicalName="Strings.en.json" WithCulture="false" />
+    <EmbeddedResource Include="Strings.*.json" LogicalName="%(Filename)%(Extension)" WithCulture="false" />
   </ItemGroup>
 
   <ItemGroup>

@@ -6,49 +6,60 @@ using FluentAssertions;
 namespace DropHalo.Core.Tests.Localization;
 
 /// <summary>
-/// Reads the source of each project that speaks to the user: every <c>L.T("…")</c> needs its English in the
-/// project's Strings.en.json, every English is still used and keeps the Chinese's placeholders, and no Chinese is
+/// Reads the source of each project that speaks to the user: every <c>L.T("…")</c> needs its translations,
+/// every translation is still used and keeps the Chinese's placeholders, and no Chinese is
 /// left in a literal the catalog can't see.
 /// </summary>
 public sealed partial class CatalogTests
 {
     public static TheoryData<string> Projects => new() { "src/DropHalo.Core", "src/DropHalo.Engines", "src/DropHalo.App", "src/DropHalo.Shell" };
+    private static readonly string[] Codes = ["en", "ko", "ja", "de", "fr", "es"];
 
-    /// <summary>Chinese literals that are meant to stay Chinese in English too, by project-relative file.</summary>
+    /// <summary>User data and native language names that stay unchanged, by project-relative file.</summary>
     private static readonly Dictionary<string, string[]> Untranslated = new()
     {
         // The language picker names Chinese in Chinese, so someone who reads only it can find it.
-        ["Settings/SettingsWindow.cs"] = ["简体中文"],
+        ["Settings/SettingsWindow.cs"] = ["简体中文", "日本語"],
         // A group's name is the user's data in layout.json; the one DropHalo makes up carries both languages.
         ["Wheel/WheelLayout.cs"] = ["更多"],
     };
 
     [Theory]
     [MemberData(nameof(Projects))]
-    public void EveryTextHasItsEnglish(string project)
+    public void EveryTextHasItsTranslations(string project)
     {
-        var english = Catalog(project);
-        Texts(project).Where(t => !english.ContainsKey(t.Text)).Select(t => $"{t.File}: {t.Text}").Should().BeEmpty();
+        foreach (var code in Codes)
+        {
+            var catalog = Catalog(project, code);
+            Texts(project).Where(t => !catalog.TryGetValue(t.Text, out var translated) || string.IsNullOrWhiteSpace(translated))
+                .Select(t => $"{t.File}: {t.Text}").Should().BeEmpty($"{project} needs a complete {code} catalog");
+        }
     }
 
     [Theory]
     [MemberData(nameof(Projects))]
-    public void EveryEnglishIsStillUsed(string project)
+    public void EveryTranslationIsStillUsed(string project)
     {
         var used = Texts(project).Select(t => t.Text).ToHashSet();
-        Catalog(project).Keys.Where(k => !used.Contains(k)).Should().BeEmpty();
+        foreach (var code in Codes)
+        {
+            Catalog(project, code).Keys.Where(k => !used.Contains(k)).Should().BeEmpty($"{project}/Strings.{code}.json has no obsolete keys");
+        }
     }
 
     [Theory]
     [MemberData(nameof(Projects))]
-    public void EnglishKeepsThePlaceholders(string project)
+    public void TranslationsKeepThePlaceholders(string project)
     {
-        foreach (var (chinese, english) in Catalog(project))
+        foreach (var code in Codes)
+        foreach (var (chinese, translation) in Catalog(project, code))
         {
             var indices = Indices(chinese);
-            Indices(english).Should().BeEquivalentTo(indices, $"“{english}” translates “{chinese}”");
+            Indices(translation).Should().BeEquivalentTo(indices, $"{code}: “{translation}” translates “{chinese}”");
+            NamedPlaceholder().Matches(translation).Select(m => m.Value).Should()
+                .BeEquivalentTo(NamedPlaceholder().Matches(chinese).Select(m => m.Value), $"{code} keeps template tokens unchanged");
             var args = Enumerable.Range(0, indices.Count == 0 ? 0 : indices.Max() + 1).Select(n => (object?)(n + 2)).ToArray();
-            Loc.Text(chinese, new Dictionary<string, string> { [chinese] = english }, args).Should().NotContain("|");
+            Loc.Text(chinese, new Dictionary<string, string> { [chinese] = translation }, args).Should().NotContain("|");
         }
     }
 
@@ -96,12 +107,17 @@ public sealed partial class CatalogTests
     {
         var csproj = File.ReadAllText(Path.Combine(Root, project, Path.GetFileName(project) + ".csproj"));
         csproj.Should().Contain("<Compile Include=\"../Shared/L.cs\"")
-            .And.Contain($"<EmbeddedResource Include=\"{Loc.CatalogName}\" LogicalName=\"{Loc.CatalogName}\" WithCulture=\"false\" />");
+            .And.Contain("<EmbeddedResource Include=\"Strings.*.json\" LogicalName=\"%(Filename)%(Extension)\" WithCulture=\"false\" />");
     }
 
     [Fact]
-    public void TheCatalogIsEmbedded() =>
-        Loc.Catalog(typeof(Loc).Assembly).Should().BeEquivalentTo(Catalog("src/DropHalo.Core"));
+    public void TheCatalogsAreEmbedded()
+    {
+        foreach (var language in Enum.GetValues<UiLanguage>().Where(l => l != UiLanguage.Chinese))
+        {
+            Loc.Catalog(typeof(Loc).Assembly, language).Should().BeEquivalentTo(Catalog("src/DropHalo.Core", Loc.Tag(language).Split('-')[0]));
+        }
+    }
 
     [Fact]
     public void TheLexerSeesOnlyLiterals()
@@ -146,9 +162,9 @@ public sealed partial class CatalogTests
         }
     }
 
-    private static Dictionary<string, string> Catalog(string project)
+    private static Dictionary<string, string> Catalog(string project, string code)
     {
-        using var json = JsonDocument.Parse(File.ReadAllText(Path.Combine(Root, project, Loc.CatalogName)));
+        using var json = JsonDocument.Parse(File.ReadAllText(Path.Combine(Root, project, $"Strings.{code}.json")));
         return json.RootElement.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetString() ?? "");
     }
 
@@ -180,4 +196,7 @@ public sealed partial class CatalogTests
 
     [GeneratedRegex(@"\{(\d+)[^{}]*\}")]
     private static partial Regex Placeholder();
+
+    [GeneratedRegex(@"\{[A-Za-z][A-Za-z0-9]*\}")]
+    private static partial Regex NamedPlaceholder();
 }

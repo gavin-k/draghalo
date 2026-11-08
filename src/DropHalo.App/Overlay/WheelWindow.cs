@@ -50,11 +50,11 @@ internal sealed class WheelWindow
 
     /// <summary>A sector's label block: icon, label, sub-label, centred on the sector; the band is 88 DIPs deep.</summary>
     private const double SectorLabelWidth = 84;
-    private const double SectorLabelHeight = 70;
+    private const double SectorLabelHeight = 80;
 
     /// <summary>A ring item's label block; the ring band is 80 DIPs deep.</summary>
     private const double ChildLabelWidth = 80;
-    private const double ChildLabelHeight = 60;
+    private const double ChildLabelHeight = 70;
 
     /// <summary>From the first frame to the screen copy: Rendered fires before DWM presents the frame.</summary>
     private const int FrameCheckDelayMs = 100;
@@ -481,10 +481,12 @@ internal sealed class WheelWindow
 
     /// <summary>
     /// Shows the window once off-screen and waits for its first frame, so the first real drag does not
-    /// pay for XAML's first layout and the compositor's first surface (spike finding 4).
+    /// pay for XAML's first layout, translated text shaping and the compositor's first surface.
     /// </summary>
-    public async Task PrewarmAsync()
+    public async Task PrewarmAsync(WheelModel model)
     {
+        var previous = _model;
+        SetModel(model);
         var frame = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         void OnRendered(object? sender, RenderedEventArgs e) => frame.TrySetResult();
         CompositionTarget.Rendered += OnRendered;
@@ -506,6 +508,7 @@ internal sealed class WheelWindow
             {
                 _generation++;
                 HideNow();
+                SetModel(previous);
             }
         }
 
@@ -875,6 +878,11 @@ internal sealed class WheelWindow
     /// <summary>A fixed-size block whose icon and two lines stay centred on (<paramref name="cx"/>, <paramref name="cy"/>) whatever is collapsed.</summary>
     private static Grid LabelPanel(TextBlock glyph, TextBlock label, TextBlock subLabel, double width, double height, double cx, double cy)
     {
+        label.MaxWidth = subLabel.MaxWidth = width;
+        label.TextWrapping = TextWrapping.Wrap;
+        label.TextAlignment = TextAlignment.Center;
+        label.MaxLines = 2;
+        label.TextTrimming = subLabel.TextTrimming = TextTrimming.CharacterEllipsis;
         var stack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         stack.Children.Add(glyph);
         stack.Children.Add(label);

@@ -15,6 +15,7 @@ DropHalo.Acceptance.exe source
 DropHalo.Acceptance.exe app --exe C:\path\DropHalo.exe --explorer
 DropHalo.Acceptance.exe archives --exe C:\path\DropHalo.exe --iterations 30
 DropHalo.Acceptance.exe performance --exe C:\path\DropHalo.exe --iterations 100
+DropHalo.Acceptance.exe language --exe C:\path\DropHalo.exe
 ```
 
 `source` verifies that a window covering Explorer receives no mouse press. `archives` repeats image conversion and undo, cancellation, edge placement, subtitle conversion, and ZIP repacking using fresh files. `performance` also accepts `--reopen-explorer` and `--grouped`.

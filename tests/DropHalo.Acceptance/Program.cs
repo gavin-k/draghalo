@@ -21,6 +21,8 @@ internal static class Program
                                                    --grouped opens Tools with a real group and ring-sized footprint
           DropHalo.Acceptance archives --exe <DropHalo.exe> [--iterations 30]
                                                    repeated subtitle and ZIP conversions through real Explorer drags
+          DropHalo.Acceptance language --exe <DropHalo.exe>
+                                                   language confirmation, cancel, save failure and automatic restart
           DropHalo.Acceptance --dragsource <file> --at X,Y   (internal) WinForms drag source
           DropHalo.Acceptance --locate <file>                (internal) hook-free Explorer item locator
         """;
@@ -62,6 +64,9 @@ internal static class Program
             case "app" when ArgValue(args, "--exe") is { } exe:
                 Log.Open("app");
                 return AppScenario.Run(Path.GetFullPath(exe), explorer, ArgValue(args, "--root"));
+            case "language" when ArgValue(args, "--exe") is { } languageExe:
+                Log.Open("language");
+                return AppScenario.RunLanguage(Path.GetFullPath(languageExe));
             case "performance" when ArgValue(args, "--exe") is { } performanceExe:
                 if (!int.TryParse(ArgValue(args, "--iterations") ?? "30", out var iterations) || iterations < 1)
                 {

@@ -6,11 +6,11 @@ using System.Text.RegularExpressions;
 namespace DropHalo.Core.Localization;
 
 /// <summary>The language DropHalo speaks to the user in.</summary>
-public enum UiLanguage { Chinese, English }
+public enum UiLanguage { Chinese, English, Korean, Japanese, German, French, Spanish }
 
 /// <summary>
 /// User-facing text is written in Chinese where it is used, through the assembly's own <c>L.T</c>, and the Chinese is
-/// also the key into the English catalog the assembly embeds as Strings.en.json. <see cref="Current"/> stays Chinese
+/// also the key into the translated catalogs the assembly embeds. <see cref="Current"/> stays Chinese
 /// until the app sets it, once, at startup; the libraries and their tests speak Chinese unless told otherwise.
 /// </summary>
 public static partial class Loc
@@ -19,14 +19,33 @@ public static partial class Loc
 
     public static UiLanguage Current { get; set; } = UiLanguage.Chinese;
 
-    /// <summary>The language for a Windows display language: Chinese for any Chinese, English for the rest.</summary>
-    public static UiLanguage For(CultureInfo culture) =>
-        culture.TwoLetterISOLanguageName == "zh" ? UiLanguage.Chinese : UiLanguage.English;
-
-    /// <summary>The English catalog <paramref name="assembly"/> embeds, Chinese to English; empty when it has none.</summary>
-    public static IReadOnlyDictionary<string, string> Catalog(Assembly assembly)
+    /// <summary>Supported display languages, with English for other Windows languages.</summary>
+    public static UiLanguage For(CultureInfo culture) => culture.TwoLetterISOLanguageName switch
     {
-        using var stream = assembly.GetManifestResourceStream(CatalogName);
+        "zh" => UiLanguage.Chinese,
+        "ko" => UiLanguage.Korean,
+        "ja" => UiLanguage.Japanese,
+        "de" => UiLanguage.German,
+        "fr" => UiLanguage.French,
+        "es" => UiLanguage.Spanish,
+        _ => UiLanguage.English,
+    };
+
+    public static string Tag(UiLanguage language) => language switch
+    {
+        UiLanguage.Chinese => "zh-CN",
+        UiLanguage.Korean => "ko-KR",
+        UiLanguage.Japanese => "ja-JP",
+        UiLanguage.German => "de-DE",
+        UiLanguage.French => "fr-FR",
+        UiLanguage.Spanish => "es-ES",
+        _ => "en-US",
+    };
+
+    /// <summary>The catalog for <paramref name="language"/>; empty when the assembly has none.</summary>
+    public static IReadOnlyDictionary<string, string> Catalog(Assembly assembly, UiLanguage language = UiLanguage.English)
+    {
+        using var stream = assembly.GetManifestResourceStream($"Strings.{Tag(language).Split('-')[0]}.json");
         if (stream is null)
         {
             return new Dictionary<string, string>();
@@ -37,19 +56,24 @@ public static partial class Loc
     }
 
     /// <summary>
-    /// <paramref name="chinese"/>, or its English in <paramref name="english"/> when there is one, with
-    /// <paramref name="args"/> put in as <see cref="string.Format(IFormatProvider, string, object[])"/> does. English
-    /// can say <c>{0|file|files}</c> for the first word when argument 0 is 1 and the second otherwise.
+    /// <paramref name="chinese"/>, or its translation in <paramref name="catalog"/> when there is one, with
+    /// <paramref name="args"/> put in as <see cref="string.Format(IFormatProvider, string, object[])"/> does. Translations
+    /// can say <c>{0|file|files}</c> for singular and plural forms, chosen using the language's count rule.
     /// </summary>
-    public static string Text(string chinese, IReadOnlyDictionary<string, string>? english, params object?[] args)
+    public static string Text(string chinese, IReadOnlyDictionary<string, string>? catalog, params object?[] args) =>
+        Text(chinese, catalog, UiLanguage.English, args);
+
+    public static string Text(string chinese, IReadOnlyDictionary<string, string>? catalog, UiLanguage language, params object?[] args)
     {
         var template = chinese;
-        if (english is not null && english.TryGetValue(chinese, out var translated))
+        if (catalog is not null && catalog.TryGetValue(chinese, out var translated))
         {
             template = Plural().Replace(translated, m =>
-                args[int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture)] is { } n && Convert.ToDouble(n, CultureInfo.InvariantCulture) == 1
-                    ? m.Groups[2].Value
-                    : m.Groups[3].Value);
+            {
+                var value = args[int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture)];
+                var n = value is null ? double.NaN : Math.Abs(Convert.ToDouble(value, CultureInfo.InvariantCulture));
+                return (language == UiLanguage.French ? n < 2 : n == 1) ? m.Groups[2].Value : m.Groups[3].Value;
+            });
         }
 
         return args.Length == 0 ? template : string.Format(CultureInfo.CurrentCulture, template, args);

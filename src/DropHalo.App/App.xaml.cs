@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using DropHalo.App.Diagnostics;
@@ -97,7 +98,7 @@ public partial class App : Application
             var settings = new SettingsStore(Path.Combine(dataDir, "settings.json"));
             // Before anything builds text: the libraries' text is fixed when it is built, some of it when a type first loads.
             Loc.Current = settings.Current.LanguageFor(CultureInfo.CurrentUICulture);
-            UseLanguage(settings.Current.Language);
+            UseLanguage(settings.Current.Language == LanguageSetting.System ? null : Loc.Current);
             FileLog.Info($"language: {Loc.Current} (setting {settings.Current.Language}, Windows {CultureInfo.CurrentUICulture.Name})");
 
             var ui = DispatcherQueue.GetForCurrentThread();
@@ -142,7 +143,7 @@ public partial class App : Application
             _host = new DropTargetHost();
 
             var skillPath = Path.Combine(AppContext.BaseDirectory, "skills", "drophalo-tool", "SKILL.md");
-            var settingsWindow = _settingsWindow = new SettingsWindow(settings, operations, catalog, layout, skillPath, _network, ui);
+            var settingsWindow = _settingsWindow = new SettingsWindow(settings, operations, catalog, layout, skillPath, _network, ui, Restart);
             var queueWindow = _queueWindow = new QueueWindow(_queue, ui, settingsWindow.Show);
             queueWindow.ShowKeys(settings.Current.Keys.KeysFor(WheelMode.Convert));
             settings.Changed += changed =>
@@ -195,7 +196,11 @@ public partial class App : Application
             // startup task in Package.appxmanifest, or the Run value without a package): then only the tray.
             var atSignIn = AppInstance.GetCurrent().GetActivatedEventArgs().Kind == ExtendedActivationKind.StartupTask
                 || commandLine.Contains(SignInRun.Switch);
-            if (atSignIn)
+            if (commandLine.Contains("--settings"))
+            {
+                settingsWindow.Show();
+            }
+            else if (atSignIn)
             {
                 FileLog.Info("started by Windows at sign-in");
             }
@@ -204,7 +209,7 @@ public partial class App : Application
                 onboarding.Show();
             }
 
-            await _wheel.PrewarmAsync().ConfigureAwait(true);
+            await _wheel.PrewarmAsync(builder.Build(["preview.jpg"], WheelMode.Tools, settings.Current)).ConfigureAwait(true);
             FileLog.Info($"ready: hooks and drop target up, log {FileLog.CurrentFile}, settings {dataDir}, "
                 + $"mouse in pointer {(Windows.Win32.PInvoke.IsMouseInPointerEnabled() ? "on" : "off")}");
 
@@ -254,14 +259,9 @@ public partial class App : Application
     /// override from one start to the next, so following Windows clears one left from before; an unpackaged app
     /// never keeps it and refuses an empty one, so there is nothing to clear.
     /// </summary>
-    private static void UseLanguage(LanguageSetting language)
+    private static void UseLanguage(UiLanguage? language)
     {
-        var tag = language switch
-        {
-            LanguageSetting.Chinese => "zh-CN",
-            LanguageSetting.English => "en-US",
-            _ => "",
-        };
+        var tag = language is { } selected ? Loc.Tag(selected) : "";
         try
         {
             if (tag.Length > 0 || Microsoft.Windows.Globalization.ApplicationLanguages.PrimaryLanguageOverride.Length > 0)
@@ -305,6 +305,24 @@ public partial class App : Application
         }
 
         _knownTools = ids;
+    }
+
+    private void Restart()
+    {
+        var start = new ProcessStartInfo(Environment.ProcessPath!)
+        {
+            UseShellExecute = false,
+            WorkingDirectory = AppContext.BaseDirectory,
+            ArgumentList =
+            {
+                "--data-dir", Path.GetFullPath(DataDir(Environment.GetCommandLineArgs())),
+                "--restart-from", Environment.ProcessId.ToString(CultureInfo.InvariantCulture),
+                "--settings",
+            },
+        };
+        using var next = Process.Start(start) ?? throw new InvalidOperationException("Could not start DropHalo.");
+        FileLog.Info("restarting to apply language");
+        Shutdown();
     }
 
     private void Shutdown()

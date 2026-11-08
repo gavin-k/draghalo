@@ -189,16 +189,29 @@ public sealed class SettingsStoreTests : IDisposable
     [InlineData(LanguageSetting.System, "en-US", UiLanguage.English)]
     [InlineData(LanguageSetting.English, "zh-CN", UiLanguage.English)]
     [InlineData(LanguageSetting.Chinese, "en-US", UiLanguage.Chinese)]
+    [InlineData(LanguageSetting.Korean, "en-US", UiLanguage.Korean)]
+    [InlineData(LanguageSetting.Japanese, "en-US", UiLanguage.Japanese)]
+    [InlineData(LanguageSetting.German, "en-US", UiLanguage.German)]
+    [InlineData(LanguageSetting.French, "en-US", UiLanguage.French)]
+    [InlineData(LanguageSetting.Spanish, "en-US", UiLanguage.Spanish)]
+    [InlineData(LanguageSetting.System, "es-MX", UiLanguage.Spanish)]
+    [InlineData(LanguageSetting.System, "ko-KR", UiLanguage.Korean)]
     public void The_language_follows_Windows_unless_one_was_picked(LanguageSetting setting, string display, UiLanguage expected) =>
         (AppSettings.Default with { Language = setting }).LanguageFor(CultureInfo.GetCultureInfo(display)).Should().Be(expected);
 
-    [Fact]
-    public void The_picked_language_is_saved_by_name_and_a_file_without_one_follows_Windows()
+    [Theory]
+    [InlineData(LanguageSetting.English)]
+    [InlineData(LanguageSetting.Korean)]
+    [InlineData(LanguageSetting.Japanese)]
+    [InlineData(LanguageSetting.German)]
+    [InlineData(LanguageSetting.French)]
+    [InlineData(LanguageSetting.Spanish)]
+    public void The_picked_language_is_saved_by_name_and_a_file_without_one_follows_Windows(LanguageSetting language)
     {
-        new SettingsStore(File_).Update(s => s with { Language = LanguageSetting.English });
+        new SettingsStore(File_).Update(s => s with { Language = language });
 
-        File.ReadAllText(File_).Should().Contain("\"language\": \"English\"");
-        new SettingsStore(File_).Current.Language.Should().Be(LanguageSetting.English);
+        File.ReadAllText(File_).Should().Contain($"\"language\": \"{language}\"");
+        new SettingsStore(File_).Current.Language.Should().Be(language);
         AppSettings.Default.Language.Should().Be(LanguageSetting.System);
     }
 

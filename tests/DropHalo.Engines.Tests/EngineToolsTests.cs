@@ -1,5 +1,6 @@
 using DropHalo.Core.Actions;
 using DropHalo.Core.Conversion;
+using DropHalo.Core.Localization;
 using DropHalo.Core.Settings;
 using DropHalo.Core.Tools;
 using DropHalo.Core.Wheel;
@@ -17,6 +18,15 @@ public sealed class EngineToolsTests
         new ConversionGraph(), new RecentItems(), new DefaultRecommender(new ConversionGraph()), EngineTools.Create(new SharpCompressArchiveConverter(), new FfmpegConverter()));
 
     private static WheelModel Wheel(params string[] paths) => Builder.Build(paths, WheelMode.Tools, AppSettings.Default);
+
+    [Theory]
+    [InlineData(UiLanguage.Korean, "이미지 압축")]
+    [InlineData(UiLanguage.Japanese, "画像を圧縮")]
+    [InlineData(UiLanguage.German, "Bilder komprimieren")]
+    [InlineData(UiLanguage.French, "Compresser les images")]
+    [InlineData(UiLanguage.Spanish, "Comprimir imágenes")]
+    public void Engine_translations_are_embedded(UiLanguage language, string expected) =>
+        Loc.Catalog(typeof(EngineTools).Assembly, language)["压缩图片"].Should().Be(expected);
 
     [Fact]
     public void Each_kind_of_file_sees_its_own_tools_in_a_fixed_order()

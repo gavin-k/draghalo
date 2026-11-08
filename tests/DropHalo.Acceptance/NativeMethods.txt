@@ -27,6 +27,7 @@ ReleaseDC
 BitBlt
 IUIAutomationTogglePattern
 IUIAutomationSelectionItemPattern
+IUIAutomationSelectionPattern
 IUIAutomationValuePattern
 IUIAutomationExpandCollapsePattern
 GetClassName

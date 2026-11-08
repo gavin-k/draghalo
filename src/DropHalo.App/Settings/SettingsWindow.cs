@@ -26,7 +26,7 @@ namespace DropHalo.App.Settings;
 /// must be, the wheel background opacity; which items
 /// the Actions wheel offers, where results go, what they are called and what happens when the name is taken, and whether Windows starts it at sign-in; and what this computer keeps or sends:
 /// the network requests counted since start, and the logs, which name the files converted, to open or
-/// clear; the user's own tools, a script with the switch that lets it run, a recipe with its steps; and the language, which takes effect at the next start. Each change is saved as it is made,
+/// clear; the user's own tools, a script with the switch that lets it run, a recipe with its steps; and the language, which asks before saving and restarting. Each other change is saved as it is made,
 /// the file name a moment after typing stops. Keys that <see cref="ConflictChecker"/> calls an error are
 /// shown with the reason and not saved, so the Convert wheel is never left without a way to open it.
 /// Closing only hides the window.
@@ -40,8 +40,11 @@ internal sealed class SettingsWindow
 {
     private const string StartupTaskId = "DropHaloStartup"; // the TaskId in Package.appxmanifest
     private static readonly Modifiers[] KeyOrder = [Modifiers.Shift, Modifiers.Ctrl, Modifiers.Alt, Modifiers.Win];
+    private static readonly LanguageSetting[] Languages = Enum.GetValues<LanguageSetting>();
     private readonly Window _window;
     private readonly SettingsStore _settings;
+    private readonly Action _restart;
+    private bool _changingLanguage;
     private readonly Dictionary<(WheelMode Mode, Modifiers Key), CheckBox> _keys = [];
     private readonly Dictionary<FileAction, CheckBox> _actions = [];
     private readonly InfoBar _keyProblem = new() { IsClosable = false };
@@ -68,7 +71,7 @@ internal sealed class SettingsWindow
     private readonly TextBlock _preview = new() { TextWrapping = TextWrapping.Wrap, Opacity = 0.75 };
     private readonly ComboBox _conflict = new() { Header = L.T("同名文件已经存在时"), Items = { L.T("自动编号，例如 photo (1).png"), L.T("跳过，不转换这个文件"), L.T("替换，旧的移到回收站"), L.T("每次询问") } };
     private readonly InfoBar _saveProblem = new() { Severity = InfoBarSeverity.Error, Title = L.T("设置没有保存") };
-    private readonly ComboBox _language = new() { Items = { L.T("跟随 Windows"), "简体中文", "English" } };
+    private readonly ComboBox _language = new() { Items = { L.T("跟随 Windows"), "简体中文", "English", "한국어", "日本語", "Deutsch", "Français", "Español" } };
     private readonly ToggleSwitch _startup = new() { Header = L.T("登录 Windows 时启动"), OnContent = L.T("开"), OffContent = L.T("关") };
     private readonly TextBlock _startupNote = new() { TextWrapping = TextWrapping.Wrap, Opacity = 0.75 };
     private readonly StackPanel _startupSection;
@@ -104,9 +107,10 @@ internal sealed class SettingsWindow
     /// <param name="layout">Says which items some wheel leaves off, so 我的工具 can name them.</param>
     /// <param name="skillPath">Where the shipped SKILL.md is, to show the user what to hand their agent.</param>
     /// <param name="network">What 隐私与离线 counts; its count is shown live.</param>
-    public SettingsWindow(SettingsStore settings, IReadOnlyList<IWheelOperation> operations, UserToolCatalog catalog, LayoutStore layout, string skillPath, NetworkWatch network, DispatcherQueue ui)
+    public SettingsWindow(SettingsStore settings, IReadOnlyList<IWheelOperation> operations, UserToolCatalog catalog, LayoutStore layout, string skillPath, NetworkWatch network, DispatcherQueue ui, Action restart)
     {
         _settings = settings;
+        _restart = restart;
         _networkWatch = network;
         _catalog = catalog;
         _layout = layout;
@@ -133,7 +137,7 @@ internal sealed class SettingsWindow
         foreach (var mode in WheelController.Modes)
         {
             var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
-            row.Children.Add(new TextBlock { Text = WheelName(mode), Width = 48, VerticalAlignment = VerticalAlignment.Center });
+            row.Children.Add(new TextBlock { Text = WheelName(mode), Width = 112, VerticalAlignment = VerticalAlignment.Center });
             foreach (var key in KeyOrder)
             {
                 var box = new CheckBox { Content = ModifierNames.Of(key), MinWidth = 88 };
@@ -212,7 +216,8 @@ internal sealed class SettingsWindow
             _namingPause.Start();
         };
         _conflict.SelectionChanged += (_, _) => ConflictChanged();
-        _language.SelectionChanged += (_, _) => LanguageChanged();
+        // Let the picker finish its selection before the modal dialog takes focus.
+        _language.SelectionChanged += (_, _) => ui.TryEnqueue(async () => await LanguageChangedAsync().ConfigureAwait(true));
         _startup.Toggled += async (_, _) => await StartupToggledAsync().ConfigureAwait(true);
         var openLogs = new Button { Content = L.T("打开日志文件夹") };
         openLogs.Click += (_, _) => OpenLogs();
@@ -314,7 +319,7 @@ internal sealed class SettingsWindow
         page.Children.Add(Section(L.T("隐私与离线"), L.T("读取、转换和写入都在这台电脑上完成，文件不会上传。DropHalo 没有账号，不收集使用数据，也不自己联网检查更新。"),
             _network, _logNote, logButtons));
 
-        page.Children.Add(Section(L.T("语言"), L.T("跟随 Windows 时，Windows 的显示语言是中文就用简体中文，是其他语言就用英文。换了语言要退出 DropHalo 再打开才生效。"), _language));
+        page.Children.Add(Section(L.T("语言"), L.T("跟随 Windows 时，会使用 Windows 的显示语言；不支持的语言使用英文。切换语言后，确认即可自动重启并应用。"), _language));
 
         _startupSection = Section(L.T("启动"), null, _startup, _startupNote);
         page.Children.Add(_startupSection);
@@ -434,13 +439,7 @@ internal sealed class SettingsWindow
             ConflictPolicy.Ask => 3,
             _ => -1, // a number only a hand-edited file can hold; shown as unset
         };
-        _language.SelectedIndex = current.Language switch
-        {
-            LanguageSetting.System => 0,
-            LanguageSetting.Chinese => 1,
-            LanguageSetting.English => 2,
-            _ => -1,
-        };
+        ShowLanguage();
         ShowNetwork();
         ShowTools();
         _logNote.Text = L.T("日志记下了转换过的文件路径，用来排查问题，只留最近 {0} 天，不会发给任何人。", LogRetention.KeepDays);
@@ -888,14 +887,12 @@ internal sealed class SettingsWindow
         return true;
     }
 
-    private void SaveNaming()
+    private bool SaveNaming()
     {
         _namingPause.Stop();
         var naming = _naming.Text.Trim() is { Length: > 0 } text ? text : NamingTemplate.Default;
-        if (naming != _settings.Current.Output.Naming)
-        {
-            Save($"naming {naming}", s => s with { Output = s.Output with { Naming = naming } });
-        }
+        return naming == _settings.Current.Output.Naming
+            || Save($"naming {naming}", s => s with { Output = s.Output with { Naming = naming } });
     }
 
     private async Task LoadStartupAsync()
@@ -1011,35 +1008,80 @@ internal sealed class SettingsWindow
         }
     }
 
-    /// <summary>Saved for the next start; the windows already built keep the language they were built in.</summary>
-    private void LanguageChanged()
+    private void ShowLanguage() => _language.SelectedIndex = Array.IndexOf(Languages, _settings.Current.Language);
+
+    private async Task LanguageChangedAsync()
     {
-        var language = _language.SelectedIndex switch
+        if (_changingLanguage)
         {
-            0 => LanguageSetting.System,
-            1 => LanguageSetting.Chinese,
-            2 => LanguageSetting.English,
-            _ => (LanguageSetting?)null,
-        };
+            return;
+        }
+
+        var index = _language.SelectedIndex;
+        var language = index >= 0 && index < Languages.Length ? Languages[index] : (LanguageSetting?)null;
         if (language is { } l && l != _settings.Current.Language)
         {
-            Save($"language {l}", s => s with { Language = l });
+            _changingLanguage = true;
+            try
+            {
+                var confirm = new ContentDialog
+                {
+                    XamlRoot = _window.Content.XamlRoot,
+                    Title = L.T("重启以切换语言？"),
+                    Content = L.T("需要重启 DropHalo 才能应用新语言。现在重启会取消未完成的任务，并清空任务列表。"),
+                    PrimaryButtonText = L.T("重启并应用"),
+                    CloseButtonText = L.T("取消"),
+                    DefaultButton = ContentDialogButton.Close,
+                };
+                if (await confirm.ShowAsync().AsTask().ConfigureAwait(true) != ContentDialogResult.Primary
+                    || !SaveNaming() || !Save($"language {l}", s => s with { Language = l }))
+                {
+                    return;
+                }
+
+                try
+                {
+                    _restart();
+                }
+                catch (Exception ex)
+                {
+                    FileLog.Error("settings: could not restart for the language change", ex);
+                    await new ContentDialog
+                    {
+                        XamlRoot = _window.Content.XamlRoot,
+                        Title = L.T("无法重启 DropHalo"),
+                        Content = L.T("语言已保存，但未能重启 DropHalo。请退出后重新打开。\n{0}", ex.Message),
+                        CloseButtonText = L.T("知道了"),
+                    }.ShowAsync().AsTask().ConfigureAwait(true);
+                }
+            }
+            finally
+            {
+                if (!Quitting)
+                {
+                    ShowLanguage();
+                }
+
+                _changingLanguage = false;
+            }
         }
     }
 
-    private void Save(string what, Func<AppSettings, AppSettings> change)
+    private bool Save(string what, Func<AppSettings, AppSettings> change)
     {
         try
         {
             _settings.Update(change);
             _saveProblem.IsOpen = false;
             FileLog.Info($"settings: saved {what}");
+            return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             FileLog.Error($"settings: could not save {what}", ex);
             _saveProblem.Message = ex.Message;
             _saveProblem.IsOpen = true;
+            return false;
         }
     }
 }

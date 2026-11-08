@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using DropHalo.Core.Localization;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 
@@ -27,15 +28,26 @@ internal static partial class AppScenario
         try
         {
             var ready = log.WaitFor(30000, "ready:");
-            var guide = PInvoke.FindWindow(null, GuideTitle);
-            var queue = PInvoke.FindWindow(null, QueueTitle);
+            var windows = CultureInfo.CurrentUICulture;
+            var spoken = Loc.For(windows);
+            var (guideTitle, queueTitle) = spoken switch
+            {
+                UiLanguage.Chinese => (GuideTitle, QueueTitle),
+                UiLanguage.Korean => ("DropHalo 시작하기", "DropHalo 작업"),
+                UiLanguage.Japanese => ("DropHalo はじめに", "DropHalo タスク"),
+                UiLanguage.German => ("DropHalo Erste Schritte", "DropHalo Aufgaben"),
+                UiLanguage.French => ("DropHalo Premiers pas", "DropHalo Tâches"),
+                UiLanguage.Spanish => ("DropHalo Primeros pasos", "DropHalo Tareas"),
+                _ => ("DropHalo Getting Started", EnglishQueueTitle),
+            };
+            var guide = PInvoke.FindWindow(null, guideTitle);
+            var queue = PInvoke.FindWindow(null, queueTitle);
             var shown = (!guide.IsNull && PInvoke.IsWindowVisible(guide)) || (!queue.IsNull && PInvoke.IsWindowVisible(queue));
             var signIn = log.FindSinceStart("started by Windows at sign-in");
             checks.Check("started with --at-sign-in and no settings yet, DropHalo stays in the tray", ready is not null && signIn is not null && !shown,
                 $"{(ready is null ? "no 'ready:' line within 30 s" : signIn ?? "no 'started by Windows at sign-in' line")}; guide or task window visible={shown}");
 
-            var windows = CultureInfo.CurrentUICulture;
-            var expected = $"language: {(windows.TwoLetterISOLanguageName == "zh" ? "Chinese" : "English")} (setting System, Windows {windows.Name})";
+            var expected = $"language: {spoken} (setting System, Windows {windows.Name})";
             var language = log.FindSinceStart(expected);
             var refused = log.FindSinceStart("language: Windows refused");
             checks.Check("with no language picked, DropHalo speaks the language Windows shows", language is not null && refused is null,

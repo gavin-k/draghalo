@@ -66,6 +66,18 @@ public sealed class ToolManifestReaderTests : IDisposable
         new LocalizedText("复制一份", "Copy").Pick(UiLanguage.Chinese).Should().Be("复制一份");
     }
 
+    [Theory]
+    [InlineData(UiLanguage.Korean)]
+    [InlineData(UiLanguage.Japanese)]
+    [InlineData(UiLanguage.German)]
+    [InlineData(UiLanguage.French)]
+    [InlineData(UiLanguage.Spanish)]
+    public void User_content_uses_English_when_available_and_keeps_Chinese_otherwise(UiLanguage language)
+    {
+        new LocalizedText("复制一份", "Copy").Pick(language).Should().Be("Copy");
+        new LocalizedText("复制一份").Pick(language).Should().Be("复制一份");
+    }
+
     [Fact]
     public void Every_field_is_read()
     {

@@ -35,7 +35,7 @@ Change these bindings in Settings. The default tap gesture is separate from hold
 - **A task queue.** View progress, cancel, retry, reveal output files, and undo supported operations. Undoing a conversion sends its output to the Recycle Bin.
 - **Output control.** Choose an output folder, a naming template, and what happens when a name already exists: number the new file, skip, replace, or ask.
 - **A native interface.** WinUI 3 windows use light, dark, and Windows high-contrast colors. The wheel uses a solid-color surface with adjustable opacity; its animations follow the Windows animation setting.
-- **English and Simplified Chinese.** The interface follows the Windows display language, or you can choose a language in Settings and restart.
+- **Seven interface languages.** Simplified Chinese, English, Korean, Japanese, German, French, and Spanish. Follow the Windows display language or choose one in Settings, then confirm to restart and apply it.
 
 Under **Settings → Wheel appearance**, background opacity ranges from 0 to 100% and updates immediately. Labels, icons, outlines, and selection states remain visible. High-contrast mode keeps the background opaque; leaving high contrast restores your chosen opacity. The setting is stored as `wheel.backgroundOpacity` in `settings.json`.
 

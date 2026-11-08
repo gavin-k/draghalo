@@ -8,7 +8,7 @@ namespace DropHalo.Core.Settings;
 public enum OutputLocation { NextToSource, Folder }
 
 /// <summary>The language the user picked; <see cref="System"/> follows the Windows display language.</summary>
-public enum LanguageSetting { System, Chinese, English }
+public enum LanguageSetting { System, Chinese, English, Korean, Japanese, German, French, Spanish }
 
 /// <summary>Where results are written and what they are called.</summary>
 public sealed record OutputSettings(
@@ -72,6 +72,11 @@ public sealed record AppSettings
     {
         LanguageSetting.Chinese => UiLanguage.Chinese,
         LanguageSetting.English => UiLanguage.English,
+        LanguageSetting.Korean => UiLanguage.Korean,
+        LanguageSetting.Japanese => UiLanguage.Japanese,
+        LanguageSetting.German => UiLanguage.German,
+        LanguageSetting.French => UiLanguage.French,
+        LanguageSetting.Spanish => UiLanguage.Spanish,
         _ => Loc.For(display),
     };
 

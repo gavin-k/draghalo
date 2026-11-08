@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
+using DropHalo.App.Diagnostics;
 using DropHalo.Core.Actions;
 using DropHalo.Core.Tools;
 using DropHalo.Core.Wheel;
@@ -28,6 +30,26 @@ internal static class Program
         if (ToolCommandLine.Handles(args))
         {
             return RunTools(args);
+        }
+
+        // The replacement must wait for normal shutdown and the single-instance mutex to be released.
+        if (Array.IndexOf(args, "--restart-from") is var restart and >= 0
+            && int.TryParse(args.ElementAtOrDefault(restart + 1), out var previousId))
+        {
+            try
+            {
+                using var previous = Process.GetProcessById(previousId);
+                if (!previous.WaitForExit(15000))
+                {
+                    FileLog.Error("restart: the previous instance did not exit");
+                    FileLog.Flush(TimeSpan.FromSeconds(1));
+                    return 1;
+                }
+            }
+            catch (ArgumentException)
+            {
+                // The previous instance has already exited.
+            }
         }
 
         XamlCheckProcessRequirements();

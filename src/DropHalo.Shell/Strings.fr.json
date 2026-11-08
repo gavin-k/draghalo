@@ -1,0 +1,10 @@
+{
+  "DropHalo 同名文件": "DropHalo — Conflit de nom",
+  "「{0}」已经存在": "« {0} » existe déjà",
+  "位置：{0}\n替换会把原来的文件夹移到回收站，之后撤销这个任务也不会把它移回来。保留两个会给新的加上编号。": "Emplacement : {0}\nRemplacer place le dossier existant dans la Corbeille. Annuler cette tâche ne le restaure pas. Conserver les deux ajoute un numéro au nouvel élément.",
+  "位置：{0}\n替换会把原来的文件移到回收站，之后撤销这个任务也不会把它移回来。保留两个会给新的加上编号。": "Emplacement : {0}\nRemplacer place le fichier existant dans la Corbeille. Annuler cette tâche ne le restaure pas. Conserver les deux ajoute un numéro au nouvel élément.",
+  "保留两个": "Conserver les deux",
+  "后面的同名项也这样处理": "Appliquer aux conflits suivants",
+  "替换": "Remplacer",
+  "跳过": "Ignorer"
+}

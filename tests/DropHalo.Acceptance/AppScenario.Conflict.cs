@@ -123,9 +123,9 @@ internal static partial class AppScenario
     }
 
     /// <summary>Opens the combo box with id <paramref name="id"/> in the settings window and selects its item named <paramref name="option"/>.</summary>
-    private static bool Pick(string id, string option, out string how)
+    private static bool Pick(string id, string option, out string how, string title = SettingsTitle)
     {
-        if (Element(SettingsTitle, id, out how, byId: true) is not { } combo)
+        if (Element(title, id, out how, byId: true) is not { } combo)
         {
             return false;
         }
