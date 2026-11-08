@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Drawing.Imaging;
 using System.Text.Json;
+using Windows.Win32;
 using Windows.Win32.UI.Accessibility;
 
 namespace DropHalo.Acceptance;
@@ -54,10 +55,19 @@ internal static partial class AppScenario
                 checks.Check($"{source} checks the real public release", complete && (status.StartsWith("You are up to date", StringComparison.Ordinal) || status.StartsWith("New version available", StringComparison.Ordinal)), status.Length > 0 ? status : detail);
                 if (status.StartsWith("New version available", StringComparison.Ordinal))
                 {
+                    var version = status["New version available:".Length..].Trim();
                     var prompted = Invoke(EnglishSettingsTitle, "Download and install", out detail)
-                        && Element(EnglishSettingsTitle, "Cancel", out _) is not null;
+                        && Element(EnglishSettingsTitle, $"Install DropHalo {version}?", out _) is not null;
                     checks.Check($"{source} asks before downloading or exiting", prompted && !app.HasExited, detail);
-                    checks.Check($"{source} install cancellation keeps the current app", prompted && Invoke(EnglishSettingsTitle, "Cancel", out detail) && !app.HasExited, detail);
+                    var uia = (IUIAutomation)new CUIAutomation8();
+                    var enabledCancel = uia.CreateAndCondition(uia.CreatePropertyCondition(UIA_PROPERTY_ID.UIA_NamePropertyId, "Cancel"), uia.CreatePropertyCondition(UIA_PROPERTY_ID.UIA_IsEnabledPropertyId, true));
+                    var cancel = uia.ElementFromHandle(PInvoke.FindWindow(null, EnglishSettingsTitle)).FindFirst(TreeScope.TreeScope_Descendants, enabledCancel);
+                    if (prompted && cancel is not null)
+                    {
+                        ((IUIAutomationInvokePattern)cancel.GetCurrentPattern(UIA_PATTERN_ID.UIA_InvokePatternId)).Invoke();
+                    }
+
+                    checks.Check($"{source} install cancellation keeps the current app", prompted && cancel is not null && !app.HasExited, detail);
                 }
             }
 
