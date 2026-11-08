@@ -60,11 +60,19 @@ internal static partial class AppScenario
     /// Drags <paramref name="jpg"/> and drops it on the dock that appears, then checks the dock
     /// keeps it while the folder stays as it was.
     /// </summary>
-    private static bool DropOnDock(Checks checks, AppLog log, string jpg, bool explorer)
+    private static bool DropOnDock(Checks checks, AppLog log, string jpg, bool explorer, int count = 1, bool selectAll = false)
     {
         var dir = Path.GetDirectoryName(jpg)!;
         var before = Directory.GetFiles(dir);
         using var source = DragSource.Open(jpg, explorer);
+        if (selectAll)
+        {
+            Input.Key(VIRTUAL_KEY.VK_CONTROL, up: false);
+            Input.Key(VIRTUAL_KEY.VK_A, up: false);
+            Input.Key(VIRTUAL_KEY.VK_A, up: true);
+            Input.Key(VIRTUAL_KEY.VK_CONTROL, up: true);
+            Thread.Sleep(200);
+        }
         if (StartDockDrag(checks, log, source, out var mid) is not { } dock)
         {
             Input.MoveSmooth(mid, source.Grab, 12, 30);
@@ -88,8 +96,8 @@ internal static partial class AppScenario
         var added = log.WaitFor(3000, "dock: added ");
         Thread.Sleep(500);
         var after = Directory.GetFiles(dir);
-        var kept = added?.Contains("dock: added 1 file(s), 1 in the dock", StringComparison.Ordinal) == true && DockVisible();
-        checks.Check("a JPG dropped on the dock is kept there, and nothing is copied or moved",
+        var kept = added?.Contains($"dock: added {count} file(s), {count} in the dock", StringComparison.Ordinal) == true && DockVisible();
+        checks.Check($"{count} file(s) dropped on the dock are kept there, and nothing is copied or moved",
             kept && File.Exists(jpg) && after.Length == before.Length,
             $"{entered ?? "no 'dock: entered'"}; {added ?? "no 'dock: added' within 3 s"}; dock {(DockVisible() ? "shown" : "hidden")}; "
             + $"source {(File.Exists(jpg) ? "there" : "gone")}; files {before.Length} -> {after.Length}");
