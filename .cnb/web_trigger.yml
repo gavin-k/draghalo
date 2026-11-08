@@ -1,0 +1,9 @@
+branch:
+  - reg: ^main$
+    buttons:
+      - name: 同步 GitHub 镜像
+        event: web_trigger
+        permissions:
+          roles:
+            - master
+            - owner
