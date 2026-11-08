@@ -22,4 +22,4 @@ main:
             git -c credential.helper= -c 'credential.helper=!f() { echo username=cnb; echo password=$CNB_TOKEN; }; f' push https://cnb.cool/shhield-ai/drophalo --tags
             python3 scripts/sync-cnb-release.py
             git -c credential.helper= -c 'credential.helper=!f() { echo username=cnb; echo password=$CNB_TOKEN; }; f' push https://cnb.cool/shhield-ai/drophalo HEAD:main --tags
-  "crontab: 17 * * * *": *mirror
+  "crontab: */5 * * * *": *mirror
