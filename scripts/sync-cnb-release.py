@@ -96,7 +96,7 @@ def mirror():
     if pointer.exists() and json.loads(pointer.read_text()) == manifest:
         # Re-check the published attachment identities, without transferring unchanged installers every hour.
         current = api("GET", f"{API}/tags/{tag}")
-        if not current["draft"] and not current["prerelease"] and {a["name"]: a["size"] for a in current["assets"]} == {n: a["size"] for n, a in assets.items()}:
+        if not current["draft"] and not current["prerelease"] and {a["name"]: a["size"] for a in (current.get("assets") or [])} == {n: a["size"] for n, a in assets.items()}:
             print(f"{tag}: mirror already complete")
             return
     try:
@@ -123,7 +123,7 @@ def mirror():
             digest = sums_hash if name == sums.name else download(asset["browser_download_url"], path, expected_size=asset["size"])
             if digest != checksums[name] or asset.get("digest") not in (None, "sha256:" + digest):
                 raise ValueError(f"GitHub checksum mismatch: {name}")
-            existing = next((a for a in release["assets"] if a["name"] == name), None)
+            existing = next((a for a in (release.get("assets") or []) if a["name"] == name), None)
             if existing is None:
                 upload = api("POST", f"{API}/{release['id']}/asset-upload-url", {"asset_name": name, "size": asset["size"], "ttl": 0, "overwrite": False})
                 with path.open("rb") as body, open_url(upload["upload_url"], method="PUT", data=body, headers={"Content-Length": str(asset["size"]), "Content-Type": "application/octet-stream"}):
