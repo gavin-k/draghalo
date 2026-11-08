@@ -25,7 +25,7 @@ internal static class Program
                                                    language confirmation, cancel, save failure and automatic restart
           DropHalo.Acceptance updates --exe <DropHalo.exe>
                                                    offline startup, source persistence, real checks and install cancellation
-          DropHalo.Acceptance dock --exe <DropHalo.exe> [--iterations 10]
+          DropHalo.Acceptance dock --exe <DropHalo.exe> [--iterations 10] [--copy-first]
                                                    multi-file Explorer drops, 全部拖出 cancellation and copying
           DropHalo.Acceptance --dragsource <file> --at X,Y   (internal) WinForms drag source
           DropHalo.Acceptance --locate <file>                (internal) hook-free Explorer item locator
@@ -82,7 +82,7 @@ internal static class Program
                 }
 
                 Log.Open("dock");
-                return AppScenario.RunDockBatch(Path.GetFullPath(dockExe), dockIterations);
+                return AppScenario.RunDockBatch(Path.GetFullPath(dockExe), dockIterations, cancelBeforeCopy: !args.Contains("--copy-first"));
             case "performance" when ArgValue(args, "--exe") is { } performanceExe:
                 if (!int.TryParse(ArgValue(args, "--iterations") ?? "30", out var iterations) || iterations < 1)
                 {
