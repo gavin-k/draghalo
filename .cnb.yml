@@ -15,6 +15,8 @@ main:
             set -eu
             git config user.name 'DropHalo mirror'
             git config user.email 'mirror@users.noreply.cnb.cool'
+            git fetch https://cnb.cool/shhield-ai/drophalo main
+            git merge --ff-only FETCH_HEAD
             git fetch https://github.com/gavin-k/draghalo.git main --tags
             git merge --allow-unrelated-histories -X theirs --no-edit FETCH_HEAD
             git -c credential.helper= -c 'credential.helper=!f() { echo username=cnb; echo password=$CNB_TOKEN; }; f' push https://cnb.cool/shhield-ai/drophalo --tags
