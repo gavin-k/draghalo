@@ -23,6 +23,10 @@ mono_crash.*
 [Rr]elease/
 [Rr]eleases/
 
+# Public verification receipts are release metadata, not build output.
+!/updates/releases/
+!/updates/releases/*.json
+
 [Dd]ebug/x64/
 [Dd]ebugPublic/x64/
 [Rr]elease/x64/
