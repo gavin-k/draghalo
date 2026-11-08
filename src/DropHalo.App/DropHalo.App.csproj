@@ -87,6 +87,7 @@
   <ItemGroup>
     <Compile Include="../Shared/L.cs" Link="L.cs" />
     <EmbeddedResource Include="Strings.*.json" LogicalName="%(Filename)%(Extension)" WithCulture="false" />
+    <EmbeddedResource Include="Updates/InstallUpdate.ps1" LogicalName="InstallUpdate.ps1" />
   </ItemGroup>
 
   <ItemGroup>

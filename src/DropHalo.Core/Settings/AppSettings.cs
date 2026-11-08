@@ -24,6 +24,8 @@ public sealed record OutputSettings(
 /// <param name="StrictOffline">Refuse every network request, including the update check and optional module downloads.</param>
 public sealed record PrivacySettings(bool StrictOffline = false, bool CheckForUpdates = true);
 
+public enum UpdateSource { Cnb, GitHub }
+
 /// <summary>The wheel's background strength; labels, icons and hover highlights keep their contrast.</summary>
 public sealed record WheelSettings
 {
@@ -54,6 +56,8 @@ public sealed record AppSettings
     public FileActionSettings Actions { get; init; } = FileActionSettings.Default;
 
     public PrivacySettings Privacy { get; init; } = new();
+
+    public UpdateSource UpdateSource { get; init; } = UpdateSource.Cnb;
 
     public UserToolSettings Tools { get; init; } = UserToolSettings.Default;
 

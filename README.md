@@ -84,7 +84,9 @@ The Tools and Actions wheel layouts are stored in `%LOCALAPPDATA%\DropHalo\layou
 
 ## Privacy and local data
 
-Built-in processing stays offline, and DropHalo currently makes no automatic update checks or optional-module downloads. User-installed scripts run as separate processes and can make their own network requests. The counter in Settings observes the app's .NET network activity; it does not cover separate processes or native libraries' own connections.
+Built-in file processing stays offline, without uploading files or collecting usage data. The app checks for stable updates after startup and every 24 hours. After your confirmation, it downloads, verifies the publisher's signature, installs, and reopens. Updates use the [official CNB mirror](https://cnb.cool/shhield-ai/drophalo) by default; Settings can select GitHub, disable automatic checks, or enable strict offline mode to prevent checks and downloads. MSI updates require administrator approval. Settings and tools are kept; the task list is cleared. Version 0.1.5 and earlier require one manual installation of a version containing the updater.
+
+User-installed scripts run as separate processes and can make their own network requests. The counter in Settings observes the app's .NET network activity; it does not cover separate processes or native libraries' own connections.
 
 Settings, tools, wheel layouts, recent choices, and logs are stored under `%LOCALAPPDATA%\DropHalo`. Logs include processed file paths, are retained for seven days, and can be opened or cleared from Settings. Configurations from the older DropWheel and DragHalo names are not migrated automatically.
 

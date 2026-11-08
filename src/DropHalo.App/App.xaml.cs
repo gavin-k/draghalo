@@ -212,6 +212,8 @@ public partial class App : Application
             await _wheel.PrewarmAsync(builder.Build(["preview.jpg"], WheelMode.Tools, settings.Current)).ConfigureAwait(true);
             FileLog.Info($"ready: hooks and drop target up, log {FileLog.CurrentFile}, settings {dataDir}, "
                 + $"mouse in pointer {(Windows.Win32.PInvoke.IsMouseInPointerEnabled() ? "on" : "off")}");
+            settingsWindow.StartUpdates(ui, () => _queue.Jobs.Any(j => j.State is JobState.Pending or JobState.Running), Shutdown,
+                version => _tray?.Notify(L.T("发现新版本：{0}", version), L.T("打开设置中的“应用更新”即可下载并安装。")));
 
             if (Array.IndexOf(commandLine, "--wheel-preview") is var preview and >= 0)
             {

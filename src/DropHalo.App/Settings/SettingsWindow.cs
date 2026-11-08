@@ -36,7 +36,7 @@ namespace DropHalo.App.Settings;
 /// WinUI raises some change events (TextChanged) after the code that set the value has returned, so a
 /// "loading" flag cannot tell the user's edits from <see cref="Load"/>.
 /// </remarks>
-internal sealed class SettingsWindow
+internal sealed partial class SettingsWindow
 {
     private const string StartupTaskId = "DropHaloStartup"; // the TaskId in Package.appxmanifest
     private static readonly Modifiers[] KeyOrder = [Modifiers.Shift, Modifiers.Ctrl, Modifiers.Alt, Modifiers.Win];
@@ -316,8 +316,9 @@ internal sealed class SettingsWindow
                 Opacity = 0.75,
             }));
 
-        page.Children.Add(Section(L.T("隐私与离线"), L.T("读取、转换和写入都在这台电脑上完成，文件不会上传。DropHalo 没有账号，不收集使用数据，也不自己联网检查更新。"),
-            _network, _logNote, logButtons));
+        page.Children.Add(BuildUpdates());
+        page.Children.Add(Section(L.T("隐私与离线"), L.T("文件处理在本机完成，不上传文件，也不收集使用数据。更新检查和下载只连接所选的官方更新源；严格离线时不会连接。外部脚本工具的联网行为由脚本决定。"),
+            _strictOffline, _network, _logNote, logButtons));
 
         page.Children.Add(Section(L.T("语言"), L.T("跟随 Windows 时，会使用 Windows 的显示语言；不支持的语言使用英文。切换语言后，确认即可自动重启并应用。"), _language));
 
@@ -356,6 +357,9 @@ internal sealed class SettingsWindow
     public void Close()
     {
         Quitting = true;
+        _updateTimer?.Stop();
+        _updateCancellation?.Cancel();
+        _updateHttp.Dispose();
         _window.Close();
     }
 
@@ -440,6 +444,7 @@ internal sealed class SettingsWindow
             _ => -1, // a number only a hand-edited file can hold; shown as unset
         };
         ShowLanguage();
+        ShowUpdateSettings();
         ShowNetwork();
         ShowTools();
         _logNote.Text = L.T("日志记下了转换过的文件路径，用来排查问题，只留最近 {0} 天，不会发给任何人。", LogRetention.KeepDays);
@@ -1012,7 +1017,7 @@ internal sealed class SettingsWindow
 
     private async Task LanguageChangedAsync()
     {
-        if (_changingLanguage)
+        if (_changingLanguage || _updateBusy)
         {
             return;
         }

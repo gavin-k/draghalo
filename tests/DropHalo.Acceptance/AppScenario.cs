@@ -126,7 +126,7 @@ internal static partial class AppScenario
 
         // In Chinese whatever Windows speaks: the scenarios find the windows and buttons by their Chinese names.
         File.WriteAllText(Path.Combine(profile, "settings.json"),
-            $$"""{ "version": 1, "onboardingDone": true, "language": "Chinese", "output": { "folder": "{{folder.Replace(@"\", @"\\", StringComparison.Ordinal)}}" } }""");
+            $$"""{ "version": 1, "onboardingDone": true, "language": "Chinese", "privacy": { "strictOffline": true }, "output": { "folder": "{{folder.Replace(@"\", @"\\", StringComparison.Ordinal)}}" } }""");
 
         var log = new AppLog();
         var started = Log.NowMs;
