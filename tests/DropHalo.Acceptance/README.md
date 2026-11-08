@@ -16,9 +16,12 @@ DropHalo.Acceptance.exe app --exe C:\path\DropHalo.exe --explorer
 DropHalo.Acceptance.exe archives --exe C:\path\DropHalo.exe --iterations 30
 DropHalo.Acceptance.exe performance --exe C:\path\DropHalo.exe --iterations 100
 DropHalo.Acceptance.exe language --exe C:\path\DropHalo.exe
+DropHalo.Acceptance.exe dock --exe C:\path\DropHalo.exe --iterations 10
 ```
 
 `source` verifies that a window covering Explorer receives no mouse press. `archives` repeats image conversion and undo, cancellation, edge placement, subtitle conversion, and ZIP repacking using fresh files. `performance` also accepts `--reopen-explorer` and `--grouped`.
+
+`dock` alternates a four-item Explorer drop and four separate drops into the occupied dock, then clicks 全部拖出, cancels a drag, and copies the full batch to a new folder. It checks that every file and nested folder arrives, the originals stay in place, and the app remains responsive. It owns a unique profile and test directory and refuses to run while another instance is open.
 
 Every first-frame sample must satisfy the original **show time + first-frame time <= 150 ms** limit. Modifier taps retain their **300 ms** contract. In `performance`, file entry and its model-rendered acknowledgement share one **2-second** deadline; pixel inspection follows that acknowledgement so the deliberate “reading files” placeholder is not mistaken for the populated wheel. Missing frames remain failures, and the existing pixel assertions are unchanged. A source-window precondition failure occurs before the mouse is pressed; it is reported as a failure, never skipped or retried as an already-started drag.
 
