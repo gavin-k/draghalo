@@ -100,6 +100,7 @@ def github(path):
     except urllib.error.HTTPError as error:
         if error.code != 403 or authenticated or not path.startswith("/tags/"):
             raise
+        error.close()
         # CNB's shared anonymous quota can block tag endpoints while the public release listing is cached.
         page = 1
         while True:
