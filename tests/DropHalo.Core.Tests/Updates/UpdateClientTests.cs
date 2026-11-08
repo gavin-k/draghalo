@@ -64,6 +64,7 @@ public sealed class UpdateClientTests
     [InlineData("v0.2.0-beta.1", false)]
     [InlineData("v0.2.0", true)]
     [InlineData("v0.2.0/../../evil", false)]
+    [InlineData("v0.2.0\n", false)]
     public async Task RejectsUnstableOrMalformedTags(string tag, bool prerelease)
     {
         using var handler = new Responses { Tag = tag, Prerelease = prerelease };

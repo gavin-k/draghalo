@@ -215,12 +215,12 @@ public sealed partial class UpdateClient(HttpClient http)
     private static bool Allowed(Uri uri) => uri.Scheme == "https" && uri.IsDefaultPort && uri.UserInfo.Length == 0
         && (uri.Host is "api.github.com" or "github.com" or "release-assets.githubusercontent.com" or "cnb.cool" or "asset.cnb.cool");
 
-    [GeneratedRegex(@"^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")]
+    [GeneratedRegex(@"\Av(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\z")]
     private static partial Regex StableTag();
 
-    [GeneratedRegex(@"^[A-Fa-f0-9]{64}$")]
+    [GeneratedRegex(@"\A[A-Fa-f0-9]{64}\z")]
     private static partial Regex Hash();
 
-    [GeneratedRegex(@"^DropHalo-\d+\.\d+\.\d+-(x64|arm64)\.(msi|msix)$")]
+    [GeneratedRegex(@"\ADropHalo-\d+\.\d+\.\d+-(x64|arm64)\.(msi|msix)\z")]
     private static partial Regex InstallerName();
 }
