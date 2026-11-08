@@ -1,0 +1,23 @@
+main:
+  web_trigger: &mirror
+    - name: mirror-github-release
+      docker:
+        image: python:3.13-bookworm
+      lock:
+        key: drophalo-mirror
+        expires: 3600
+        timeout: 60
+        wait: true
+        cancel-in-progress: false
+      stages:
+        - name: Mirror public source and original signed installers
+          script: |
+            set -eu
+            git config user.name 'DropHalo mirror'
+            git config user.email 'mirror@users.noreply.cnb.cool'
+            git fetch https://github.com/gavin-k/draghalo.git main --tags
+            git merge --allow-unrelated-histories -X theirs --no-edit FETCH_HEAD
+            git -c credential.helper= -c 'credential.helper=!f() { echo username=cnb; echo password=$CNB_TOKEN; }; f' push https://cnb.cool/shhield-ai/drophalo --tags
+            python3 scripts/sync-cnb-release.py
+            git -c credential.helper= -c 'credential.helper=!f() { echo username=cnb; echo password=$CNB_TOKEN; }; f' push https://cnb.cool/shhield-ai/drophalo HEAD:main --tags
+  "crontab: 17 * * * *": *mirror
