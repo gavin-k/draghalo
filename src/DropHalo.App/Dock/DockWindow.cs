@@ -49,7 +49,8 @@ internal sealed class DockWindow
     private readonly DispatcherQueueTimer _idleGrace;
     private bool _draggingOut;
     private volatile bool _dragImage;
-    private bool _dropping;
+    private int _dropGeneration;
+    private int _pendingDrops;
     private bool _over;
 
     public DockWindow(DispatcherQueue ui, DragMonitor monitor, Func<bool> wheelOpen)
@@ -167,7 +168,7 @@ internal sealed class DockWindow
         _idleGrace.IsRepeating = false;
         _idleGrace.Tick += (_, _) =>
         {
-            if (_files.Count == 0 && !_dropping && !_draggingOut)
+            if (_files.Count == 0 && _pendingDrops == 0 && !_draggingOut)
             {
                 Hide("the drag ended without a drop");
             }
@@ -199,6 +200,8 @@ internal sealed class DockWindow
     public void Close()
     {
         Quitting = true;
+        _idleGrace.Stop();
+        InvalidateDrops();
         _window.Close();
     }
 
@@ -210,7 +213,7 @@ internal sealed class DockWindow
     private void Open(DockSide side, int x, int y)
     {
         _idleGrace.Stop();
-        if (IsVisible || _wheelOpen())
+        if (Quitting || IsVisible || _wheelOpen())
         {
             return;
         }
@@ -235,7 +238,7 @@ internal sealed class DockWindow
     private void DragEnded()
     {
         _over = false;
-        if (IsVisible && _files.Count == 0)
+        if (!Quitting && IsVisible && _files.Count == 0)
         {
             _idleGrace.Start();
         }
@@ -244,12 +247,21 @@ internal sealed class DockWindow
     private void Hide(string why)
     {
         _idleGrace.Stop();
+        InvalidateDrops();
+        _over = false;
+        _dropSurface.BorderBrush = Brush("DwBorderBrush");
         Render();
         if (IsVisible)
         {
             _window.AppWindow.Hide();
             FileLog.Info($"dock: hidden ({why})");
         }
+    }
+
+    private void InvalidateDrops()
+    {
+        _dropGeneration++;
+        _pendingDrops = 0;
     }
 
     // ---- drops onto the dock ------------------------------------------------------------------------
@@ -281,16 +293,23 @@ internal sealed class DockWindow
     {
         _over = false;
         _dropSurface.BorderBrush = Brush("DwBorderBrush");
-        if (_draggingOut || !e.DataView.Contains(StandardDataFormats.StorageItems))
+        e.AcceptedOperation = DataPackageOperation.None;
+        if (Quitting || !IsVisible || _draggingOut || !e.DataView.Contains(StandardDataFormats.StorageItems))
         {
             return;
         }
 
-        _dropping = true;
         var deferral = e.GetDeferral();
+        var generation = _dropGeneration;
+        _pendingDrops++;
         try
         {
             var items = await e.DataView.GetStorageItemsAsync();
+            if (generation != _dropGeneration)
+            {
+                return;
+            }
+
             var added = 0;
             foreach (var item in items.Where(i => i.Path.Length > 0))
             {
@@ -309,14 +328,17 @@ internal sealed class DockWindow
         }
         finally
         {
+            if (generation == _dropGeneration)
+            {
+                _pendingDrops--;
+            }
+
             deferral.Complete();
-            _dropping = false;
         }
 
-        Render();
-        if (_files.Count == 0)
+        if (generation == _dropGeneration)
         {
-            Hide("nothing to keep");
+            Settle("nothing to keep");
         }
     }
 
@@ -403,7 +425,7 @@ internal sealed class DockWindow
     private void Settle(string why)
     {
         Render();
-        if (_files.Count == 0)
+        if (_files.Count == 0 && _pendingDrops == 0)
         {
             Hide(why);
         }
