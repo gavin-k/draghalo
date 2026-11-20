@@ -336,7 +336,16 @@ internal sealed class WheelWindow
     /// z-order, so the drop target host can be raised above it afterwards.
     /// </summary>
     public void ShowAt(int centerX, int centerY, double scale, bool ring = false)
-        => ShowAt(centerX, centerY, scale, ring, reportFirstFrame: true);
+    {
+        // A new drag can take the window back before the previous fade clears its model.
+        if (_model is not null)
+        {
+            SetRing(-1, null);
+            SetModel(null);
+        }
+
+        ShowAt(centerX, centerY, scale, ring, reportFirstFrame: true);
+    }
 
     private void ShowAt(int centerX, int centerY, double scale, bool ring, bool reportFirstFrame)
     {
