@@ -11,6 +11,7 @@ internal static class Program
                                                    on the centre, on a disabled sector
           DropHalo.Acceptance hooks [--explorer]  DragMonitor: drag phases, Shift / Ctrl+Alt / Win taps, long hold
           DropHalo.Acceptance fileops             ShellFileOperations: recycle, move with a collision
+          DropHalo.Acceptance dialogs             Native folder and conflict dialog cancellation
           DropHalo.Acceptance source              verifies that an obscured Explorer source is never pressed
           DropHalo.Acceptance app --exe <DropHalo.exe> [--root <folder>] [--explorer]
                                                    the M0 flow against the real app: JPG to PNG, Undo,
@@ -62,6 +63,9 @@ internal static class Program
             case "fileops":
                 Log.Open("fileops");
                 return FileOpsScenario.Run();
+            case "dialogs":
+                Log.Open("dialogs");
+                return DialogsScenario.Run();
             case "source":
                 Log.Open("source");
                 return SourceScenario.Run();

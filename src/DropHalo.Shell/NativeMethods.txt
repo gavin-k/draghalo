@@ -78,12 +78,12 @@ FILEOPERATION_FLAGS
 // Folder picker for 移动到 / 复制到, brought to the front by an empty input event
 FileOpenDialog
 IFileOpenDialog
+IFileDialogEvents
+IOleWindow
 FILEOPENDIALOGOPTIONS
 SIGDN
 SendInput
 INPUT
-EnumThreadWindows
-GetClassName
 WM_CLOSE
 
 // Same-name question for 每次询问; needs Common Controls 6 from the app manifest
@@ -91,6 +91,7 @@ TaskDialogIndirect
 TASKDIALOGCONFIG
 TASKDIALOG_BUTTON
 TASKDIALOG_FLAGS
+TASKDIALOG_NOTIFICATIONS
 
 // Settings: warn about Ctrl+Alt when a layout has AltGr
 GetKeyboardLayoutList
