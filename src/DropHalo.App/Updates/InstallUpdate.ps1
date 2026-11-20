@@ -3,8 +3,10 @@ $ErrorActionPreference = 'Stop'
 $r = Get-Content -LiteralPath $Request -Raw | ConvertFrom-Json
 $directory = Split-Path -Parent $Request
 $ready = Join-Path $directory 'ready'
+$approval = Join-Path $directory 'install'
 $result = Join-Path $r.DataDirectory 'update-result.json'
 $lock = $null
+$previous = $null
 $restart = $false
 $installed = $false
 function Quote([string]$value) { '"' + (($value -replace '(\\*)"', '$1$1\"') -replace '(\\+)$', '$1$1') + '"' }
@@ -16,6 +18,8 @@ function Property($database, [string]$name) {
     $record.StringData(1)
 }
 try {
+    $previous = [Diagnostics.Process]::GetProcessById([int]$r.ParentId)
+    $null = $previous.Handle # Keep the original process identity through the handoff.
     # Hold a read-only handle through installation so verified bytes cannot be replaced.
     $lock = [IO.File]::Open($r.Installer, 'Open', 'Read', 'Read')
     if ($lock.Length -ne $r.Size -or (Get-FileHash -LiteralPath $r.Installer -Algorithm SHA256).Hash -ne $r.Sha256) { throw 'Installer checksum mismatch' }
@@ -38,9 +42,18 @@ try {
             if ((Property $database 'UpgradeCode') -ne '{844E4C2C-7018-4368-A79A-002B046C41B8}' -or (Property $database 'ProductVersion') -ne $r.Version -or (Property $database 'ProductName') -cne 'DropHalo') { throw 'MSI identity mismatch' }
         } finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($database); [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($installer) }
     }
-    Set-Content -LiteralPath $ready -Value 'verified' -Encoding ASCII
-    $previous = Get-Process -Id $r.ParentId -ErrorAction SilentlyContinue
-    if ($previous -and -not $previous.WaitForExit(30000)) { throw 'DropHalo did not exit; installation canceled' }
+    [IO.File]::WriteAllText("$ready.tmp", 'verified')
+    [IO.File]::Move("$ready.tmp", $ready)
+    $deadline = [Diagnostics.Stopwatch]::StartNew()
+    while (-not [IO.File]::Exists($approval)) {
+        if ($previous.HasExited) {
+            if ([IO.File]::Exists($approval)) { break }
+            throw 'DropHalo exited without approving installation'
+        }
+        if ($deadline.Elapsed.TotalSeconds -ge 30) { throw 'DropHalo did not approve installation' }
+        Start-Sleep -Milliseconds 100
+    }
+    if (-not $previous.WaitForExit(30000)) { throw 'DropHalo did not exit; installation canceled' }
     $restart = $true
     $reboot = $false
     if ($r.Packaged) {
@@ -57,6 +70,7 @@ try {
     @{ Success=$false; Version=$r.Version; Error=$_.Exception.Message } | ConvertTo-Json | Set-Content -LiteralPath $result -Encoding UTF8
 } finally {
     if ($lock) { $lock.Dispose() }
+    if ($previous) { $previous.Dispose() }
     if ($restart) {
         $executable = $r.Executable
         if ($r.Packaged) {
