@@ -120,7 +120,7 @@ internal static class HostScenario
                 var result = explorer ? null : source.Result(TimeSpan.FromSeconds(5));
                 checks.Check("replacement never hit-tests the old DragEnter data", !usedOldPaths, $"new DragEnter={nextEntered}");
                 checks.Check("replacement cannot drop on an enabled sector of the old showing", dropped is null && (explorer || result?.Contains("None", StringComparison.Ordinal) == true),
-                    $"dropped={dropped is not null}, source={result ?? \"Explorer\"}");
+                    $"dropped={dropped is not null}, source={result ?? "Explorer"}");
             }
             finally
             {
