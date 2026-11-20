@@ -7,7 +7,8 @@ namespace DropHalo.Core.Jobs;
 public sealed class UndoLedger(IFileOperations files)
 {
     private readonly List<Job> _entries = [];
-    private readonly Dictionary<Guid, Dictionary<string, OutputSnapshot?>> _snapshots = [];
+    // A null snapshot set claims the undo without moving its entry in completion order.
+    private readonly Dictionary<Guid, Dictionary<string, OutputSnapshot?>?> _snapshots = [];
 
     /// <summary>What it reverses through; jobs recycle the items they replace through it too.</summary>
     public IFileOperations Files => files;
@@ -20,7 +21,7 @@ public sealed class UndoLedger(IFileOperations files)
         {
             lock (_gate)
             {
-                return _entries.Count > 0 ? _entries[^1] : null;
+                return _entries.FindLast(job => _snapshots[job.Id] is not null);
             }
         }
     }
@@ -38,8 +39,10 @@ public sealed class UndoLedger(IFileOperations files)
         var snapshots = paths.ToDictionary(p => p, p => written.GetValueOrDefault(p) ?? OutputSnapshot.Capture(p), StringComparer.OrdinalIgnoreCase);
         lock (_gate)
         {
-            _snapshots[job.Id] = snapshots;
-            _entries.Add(job);
+            if (_snapshots.TryAdd(job.Id, snapshots))
+            {
+                _entries.Add(job);
+            }
         }
     }
 
@@ -49,12 +52,13 @@ public sealed class UndoLedger(IFileOperations files)
         Dictionary<string, OutputSnapshot?> snapshots;
         lock (_gate)
         {
-            if (!_entries.Remove(job))
+            if (!_snapshots.TryGetValue(job.Id, out var available) || available is null)
             {
                 return false;
             }
 
-            snapshots = _snapshots[job.Id];
+            snapshots = available;
+            _snapshots[job.Id] = null;
         }
 
         try
@@ -78,7 +82,7 @@ public sealed class UndoLedger(IFileOperations files)
         {
             lock (_gate)
             {
-                _entries.Add(job);
+                _snapshots[job.Id] = snapshots;
             }
 
             throw;
@@ -86,6 +90,7 @@ public sealed class UndoLedger(IFileOperations files)
 
         lock (_gate)
         {
+            _entries.Remove(job);
             _snapshots.Remove(job.Id);
         }
 

@@ -172,6 +172,30 @@ public sealed class JobQueueTests : IDisposable
     }
 
     [Fact]
+    public async Task A_failed_undo_keeps_the_original_order_of_available_jobs()
+    {
+        var olderOutput = Output("older.png");
+        var newerOutput = Output("newer.png");
+        var ledger = new UndoLedger(_files);
+        var graph = new ConversionGraph();
+        graph.Register(new TestConverter([new("jpg", "png")], (request, _, _) =>
+            Task.FromResult(new ConversionResult(true, [Path.GetFileName(request.SourcePaths[0]) == "a.jpg" ? olderOutput : newerOutput]))));
+        await using var queue = new JobQueue(graph, ledger);
+        var older = queue.Enqueue(Jpg("a"), "older");
+        var newer = queue.Enqueue(Jpg("b"), "newer");
+        await queue.WhenIdleAsync();
+        _files.FailNext = true;
+
+        await Assert.ThrowsAsync<IOException>(() => queue.UndoAsync(older.Id));
+
+        ledger.Latest.Should().BeSameAs(newer);
+        (await queue.UndoAsync(newer.Id)).Should().BeTrue();
+        ledger.Latest.Should().BeSameAs(older);
+        (await queue.UndoAsync(older.Id)).Should().BeTrue();
+        ledger.Latest.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Failed_undo_leaves_the_job_done_and_retryable()
     {
         var output = Output("a.png");
