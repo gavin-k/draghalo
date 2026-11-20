@@ -11,6 +11,7 @@ internal static class Program
                                                    on the centre, on a disabled sector
           DropHalo.Acceptance hooks [--explorer]  DragMonitor: drag phases, Shift / Ctrl+Alt / Win taps, long hold
           DropHalo.Acceptance fileops             ShellFileOperations: recycle, move with a collision
+          DropHalo.Acceptance dialogs             Native folder and conflict dialog cancellation
           DropHalo.Acceptance source              verifies that an obscured Explorer source is never pressed
           DropHalo.Acceptance app --exe <DropHalo.exe> [--root <folder>] [--explorer]
                                                    the M0 flow against the real app: JPG to PNG, Undo,
@@ -25,6 +26,8 @@ internal static class Program
                                                    language confirmation, cancel, save failure and automatic restart
           DropHalo.Acceptance updates --exe <DropHalo.exe>
                                                    offline startup, source persistence, real checks and install cancellation
+          DropHalo.Acceptance dock --exe <DropHalo.exe> [--iterations 10] [--copy-first]
+                                                   multi-file Explorer drops, 全部拖出 cancellation and copying
           DropHalo.Acceptance --dragsource <file> --at X,Y   (internal) WinForms drag source
           DropHalo.Acceptance --locate <file>                (internal) hook-free Explorer item locator
         """;
@@ -60,6 +63,9 @@ internal static class Program
             case "fileops":
                 Log.Open("fileops");
                 return FileOpsScenario.Run();
+            case "dialogs":
+                Log.Open("dialogs");
+                return DialogsScenario.Run();
             case "source":
                 Log.Open("source");
                 return SourceScenario.Run();
@@ -72,6 +78,15 @@ internal static class Program
             case "updates" when ArgValue(args, "--exe") is { } updateExe:
                 Log.Open("updates");
                 return AppScenario.RunUpdates(Path.GetFullPath(updateExe));
+            case "dock" when ArgValue(args, "--exe") is { } dockExe:
+                if (!int.TryParse(ArgValue(args, "--iterations") ?? "10", out var dockIterations) || dockIterations < 1)
+                {
+                    Console.Error.WriteLine("--iterations must be a positive integer.");
+                    return 2;
+                }
+
+                Log.Open("dock");
+                return AppScenario.RunDockBatch(Path.GetFullPath(dockExe), dockIterations, cancelBeforeCopy: !args.Contains("--copy-first"));
             case "performance" when ArgValue(args, "--exe") is { } performanceExe:
                 if (!int.TryParse(ArgValue(args, "--iterations") ?? "30", out var iterations) || iterations < 1)
                 {

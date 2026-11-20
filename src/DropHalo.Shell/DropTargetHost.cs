@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using DropHalo.Core.Settings;
 using DropHalo.Core.Wheel;
 using Windows.Win32;
 using Windows.Win32.Foundation;
@@ -17,6 +18,13 @@ namespace DropHalo.Shell;
 /// <param name="Ring">The ring open on a group sector, if one is; its items are hit-tested too.</param>
 public sealed record WheelPlacement(int CenterX, int CenterY, double Scale, IReadOnlyList<bool> EnabledSectors, bool StartsOnHub = true, RingPlacement? Ring = null)
 {
+    /// <summary>Fresh for each showing; record copies retain it when the model or ring changes.</summary>
+    public object Showing { get; } = new();
+
+    /// <summary>The drop decision is made against this exact model and settings snapshot.</summary>
+    public WheelModel? Model { get; init; }
+    public AppSettings? Settings { get; init; }
+
     /// <summary>What is under a screen point, enabled or not; no sector or ring item while <paramref name="gate"/> is shut.</summary>
     public WheelHit HitAt(int x, int y, SectorGate gate, out bool opened) => gate.HitAt((x - CenterX) / Scale, (y - CenterY) / Scale, Ring, out opened);
 
@@ -40,8 +48,7 @@ public sealed record WheelPlacement(int CenterX, int CenterY, double Scale, IRea
 /// </summary>
 public sealed unsafe class DropTargetHost : IDisposable
 {
-    private const uint ShowMessage = PInvoke.WM_APP + 1;
-    private const uint HideMessage = PInvoke.WM_APP + 2;
+    private const uint PlacementChanged = PInvoke.WM_APP + 1;
     private const string ClassName = "DropHalo.DropTargetHost";
 
     private readonly Target _target;
@@ -49,11 +56,12 @@ public sealed unsafe class DropTargetHost : IDisposable
     private HWND _hwnd;
     private WNDPROC? _wndProc;
     private volatile WheelPlacement? _placement;
+    private object? _shown; // host thread only
 
     public DropTargetHost() => _target = new Target(this);
 
     /// <summary>A drag entered while the host was shown. Paths are empty when the data names no file.</summary>
-    public event Action<IReadOnlyList<string>>? Entered;
+    public event Action<WheelPlacement, IReadOnlyList<string>>? Entered;
 
     /// <summary>
     /// A line for the log about the drag that entered: its data had no CF_HDROP, and either the Shell's item
@@ -62,16 +70,16 @@ public sealed unsafe class DropTargetHost : IDisposable
     public event Action<string>? Noted;
 
     /// <summary>The sector or ring item under the pointer changed, enabled or not, so a disabled one can say why.</summary>
-    public event Action<WheelHit>? Hovered;
+    public event Action<WheelPlacement, WheelHit>? Hovered;
 
     /// <summary>The pointer reached the hub of a wheel that opened off-centre, so sectors respond from now on.</summary>
-    public event Action? HubReached;
+    public event Action<WheelPlacement>? HubReached;
 
     /// <summary>Files were released on an enabled sector or ring item.</summary>
-    public event Action<IReadOnlyList<string>, WheelHit>? Dropped;
+    public event Action<WheelPlacement, IReadOnlyList<string>, WheelHit>? Dropped;
 
     /// <summary>The drag left without dropping on a sector: released elsewhere, Esc, or the source gave up.</summary>
-    public event Action? Canceled;
+    public event Action<WheelPlacement>? Canceled;
 
     public bool IsVisible => _placement is not null;
 
@@ -100,13 +108,13 @@ public sealed unsafe class DropTargetHost : IDisposable
     public void Show(WheelPlacement placement)
     {
         _placement = placement;
-        PInvoke.PostMessage(_hwnd, ShowMessage, default, default);
+        PInvoke.PostMessage(_hwnd, PlacementChanged, default, default);
     }
 
     public void Hide()
     {
         _placement = null;
-        PInvoke.PostMessage(_hwnd, HideMessage, default, default);
+        PInvoke.PostMessage(_hwnd, PlacementChanged, default, default);
     }
 
     public void Dispose()
@@ -189,7 +197,24 @@ public sealed unsafe class DropTargetHost : IDisposable
     {
         switch (msg)
         {
-            case ShowMessage:
+            case PlacementChanged:
+                var placement = _placement;
+                if (_shown != placement?.Showing)
+                {
+                    _target.Reset();
+                    if (_shown is not null)
+                    {
+                        PInvoke.ShowWindow(hwnd, SHOW_WINDOW_CMD.SW_HIDE);
+                    }
+
+                    _shown = placement?.Showing;
+                }
+
+                if (placement is null)
+                {
+                    return default;
+                }
+
                 PInvoke.SetWindowPos(
                     hwnd,
                     HWND.HWND_TOPMOST,
@@ -198,10 +223,6 @@ public sealed unsafe class DropTargetHost : IDisposable
                     PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_CXVIRTUALSCREEN),
                     PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_CYVIRTUALSCREEN),
                     SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE | SET_WINDOW_POS_FLAGS.SWP_SHOWWINDOW);
-                return default;
-            case HideMessage:
-                PInvoke.ShowWindow(hwnd, SHOW_WINDOW_CMD.SW_HIDE);
-                _target.Reset();
                 return default;
             case PInvoke.WM_DESTROY:
                 PInvoke.RevokeDragDrop(hwnd);
@@ -339,7 +360,9 @@ public sealed unsafe class DropTargetHost : IDisposable
     {
         private List<string> _paths = [];
         private WheelHit _hovered = WheelHit.None;
-        private bool _inside;
+        private WheelPlacement? _hoveredPlacement;
+        private WheelPlacement? _entered;
+        private object? _finishedShowing;
         private SectorGate? _gate;
 
         /// <summary>Forget the drag. Runs when the host hides, so the next showing gets a fresh gate.</summary>
@@ -347,45 +370,58 @@ public sealed unsafe class DropTargetHost : IDisposable
         {
             _paths = [];
             _hovered = WheelHit.None;
-            _inside = false;
+            _hoveredPlacement = null;
+            _entered = null;
             _gate = null;
         }
 
         public void DragEnter(IDataObject pDataObj, MODIFIERKEYS_FLAGS grfKeyState, POINTL pt, DROPEFFECT* pdwEffect)
         {
+            if (host._placement is not { } placement || host._shown != placement.Showing || _finishedShowing == placement.Showing)
+            {
+                *pdwEffect = DROPEFFECT.DROPEFFECT_NONE;
+                return;
+            }
+
             _paths = host.FilePaths(pDataObj);
-            _inside = true;
+            _entered = placement;
             _hovered = WheelHit.None;
-            host.Entered?.Invoke(_paths);
-            *pdwEffect = Effect(pt, *pdwEffect);
+            _hoveredPlacement = null;
+            host.Entered?.Invoke(placement, _paths);
+            *pdwEffect = Effect(pt, *pdwEffect, out _, out _);
         }
 
         public void DragOver(MODIFIERKEYS_FLAGS grfKeyState, POINTL pt, DROPEFFECT* pdwEffect) =>
-            *pdwEffect = Effect(pt, *pdwEffect);
+            *pdwEffect = Effect(pt, *pdwEffect, out _, out _);
 
         public void DragLeave()
         {
-            if (_inside)
+            if (_entered is { } entered)
             {
+                _finishedShowing = entered.Showing;
                 Reset();
-                host.Canceled?.Invoke();
+                host.Canceled?.Invoke(entered);
             }
         }
 
         public void Drop(IDataObject pDataObj, MODIFIERKEYS_FLAGS grfKeyState, POINTL pt, DROPEFFECT* pdwEffect)
         {
-            *pdwEffect = Effect(pt, *pdwEffect);
-            var hit = _hovered;
-            var paths = _paths.Count > 0 ? _paths : host.FilePaths(pDataObj);
-            Reset();
-            if (*pdwEffect == DROPEFFECT.DROPEFFECT_COPY && paths.Count > 0)
+            *pdwEffect = Effect(pt, *pdwEffect, out var placement, out var hit);
+            var entered = _entered;
+            var paths = _paths;
+            if (entered is not null)
             {
-                host.Dropped?.Invoke(paths, hit);
+                _finishedShowing = entered.Showing;
             }
-            else
+
+            Reset();
+            if (*pdwEffect == DROPEFFECT.DROPEFFECT_COPY && placement is not null)
             {
-                *pdwEffect = DROPEFFECT.DROPEFFECT_NONE;
-                host.Canceled?.Invoke();
+                host.Dropped?.Invoke(placement, paths, hit);
+            }
+            else if (entered is not null)
+            {
+                host.Canceled?.Invoke(entered);
             }
         }
 
@@ -393,31 +429,31 @@ public sealed unsafe class DropTargetHost : IDisposable
         /// Copy over an enabled sector when the source allows it, otherwise none. Never Move: the
         /// source deletes the original after a Move.
         /// </summary>
-        private DROPEFFECT Effect(POINTL pt, DROPEFFECT allowed)
+        private DROPEFFECT Effect(POINTL pt, DROPEFFECT allowed, out WheelPlacement? placement, out WheelHit hit)
         {
-            var hit = WheelHit.None;
-            var enabled = false;
-            if (host._placement is { } placement)
+            placement = host._placement;
+            hit = WheelHit.None;
+            if (placement is null || _entered?.Showing != placement.Showing)
             {
-                // One gate per showing: Show is called again with the enabled sectors once the files are
-                // known, and again with a ring when a group opens, and that must not shut a gate the
-                // pointer already opened.
-                _gate ??= new SectorGate(placement.StartsOnHub);
-                hit = placement.HitAt(pt.x, pt.y, _gate, out var opened);
-                enabled = placement.IsEnabled(hit);
-                if (opened)
-                {
-                    host.HubReached?.Invoke();
-                }
+                return DROPEFFECT.DROPEFFECT_NONE;
             }
 
-            if (hit != _hovered)
+            _gate ??= new SectorGate(placement.StartsOnHub);
+            hit = placement.HitAt(pt.x, pt.y, _gate, out var opened);
+            if (opened)
+            {
+                host.HubReached?.Invoke(placement);
+            }
+
+            if (hit != _hovered || !ReferenceEquals(placement, _hoveredPlacement))
             {
                 _hovered = hit;
-                host.Hovered?.Invoke(hit);
+                _hoveredPlacement = placement;
+                host.Hovered?.Invoke(placement, hit);
             }
 
-            return enabled && _paths.Count > 0 && (allowed & DROPEFFECT.DROPEFFECT_COPY) != 0
+            return host._placement?.Showing == placement.Showing && placement.IsEnabled(hit)
+                && _paths.Count > 0 && (allowed & DROPEFFECT.DROPEFFECT_COPY) != 0
                 ? DROPEFFECT.DROPEFFECT_COPY
                 : DROPEFFECT.DROPEFFECT_NONE;
         }

@@ -1017,7 +1017,7 @@ internal sealed partial class SettingsWindow
 
     private async Task LanguageChangedAsync()
     {
-        if (_changingLanguage || _updateBusy)
+        if (_changingLanguage || UpdateBusy)
         {
             return;
         }

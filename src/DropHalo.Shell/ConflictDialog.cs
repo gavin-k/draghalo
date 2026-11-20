@@ -22,41 +22,9 @@ public static class ConflictDialog
     public const int Skip = 103;
 
     public static Task<ConflictAnswer> AskAsync(string target, bool more, CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        var done = new TaskCompletionSource<ConflictAnswer>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var thread = new Thread(() =>
-        {
-            try
-            {
-                var thread = PInvoke.GetCurrentThreadId();
-                ConflictAnswer answer;
-                using (cancellationToken.Register(() => FolderDialog.Close(thread)))
-                {
-                    answer = Ask(target, more);
-                }
+        => FolderDialog.OnStaAsync("ConflictDialog", () => Ask(target, more, cancellationToken), cancellationToken);
 
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    done.SetCanceled(cancellationToken);
-                }
-                else
-                {
-                    done.SetResult(answer);
-                }
-            }
-            catch (Exception ex)
-            {
-                done.SetException(ex);
-            }
-        })
-        { IsBackground = true, Name = "ConflictDialog" };
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        return done.Task;
-    }
-
-    private static unsafe ConflictAnswer Ask(string target, bool more)
+    private static unsafe ConflictAnswer Ask(string target, bool more, CancellationToken cancellationToken)
     {
         var instruction = L.T("「{0}」已经存在", Path.GetFileName(target));
         var content = Directory.Exists(target)
@@ -64,6 +32,7 @@ public static class ConflictDialog
             : L.T("位置：{0}\n替换会把原来的文件移到回收站，之后撤销这个任务也不会把它移回来。保留两个会给新的加上编号。", Path.GetDirectoryName(target));
         fixed (char* title = Title, main = instruction, text = content, replace = L.T("替换"), keep = L.T("保留两个"), skip = L.T("跳过"), rest = L.T("后面的同名项也这样处理"))
         {
+            using var close = new FolderDialog.CloseOnCancellation(cancellationToken);
             var buttons = stackalloc TASKDIALOG_BUTTON[]
             {
                 new() { nButtonID = Replace, pszButtonText = replace },
@@ -81,10 +50,20 @@ public static class ConflictDialog
                 pButtons = buttons,
                 nDefaultButton = KeepBoth,
                 pszVerificationText = more ? rest : null,
+                pfCallback = (hwnd, message, _, _, _) =>
+                {
+                    if (message == TASKDIALOG_NOTIFICATIONS.TDN_CREATED)
+                    {
+                        close.Attach(hwnd);
+                    }
+
+                    return default;
+                },
             };
 
             // See FolderDialog: the empty input event lets the dialog come up in front.
             PInvoke.SendInput([new INPUT { type = INPUT_TYPE.INPUT_MOUSE }], sizeof(INPUT));
+            cancellationToken.ThrowIfCancellationRequested();
             int pressed;
             BOOL forTheRest;
             PInvoke.TaskDialogIndirect(in config, &pressed, null, &forTheRest).ThrowOnFailure();

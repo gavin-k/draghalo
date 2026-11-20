@@ -47,6 +47,7 @@ public sealed unsafe class DragMonitor(ModifierTapper tapper, WinKeyGate winKeys
     private RECT _monitor;
     private int _edgeZone;
     private long _pointer;
+    private long _dragId;
     private volatile DragPhase _phase;
 
     /// <summary>Raised on the hook thread, inside the hook callback.</summary>
@@ -62,6 +63,9 @@ public sealed unsafe class DragMonitor(ModifierTapper tapper, WinKeyGate winKeys
     public event Action<Exception>? Faulted;
 
     public DragPhase Phase => _phase;
+
+    /// <summary>Identifies the most recent drag, including its final Idle notification.</summary>
+    public long DragId => Volatile.Read(ref _dragId);
 
     /// <summary>The last pointer position the mouse hook saw, in physical pixels.</summary>
     public (int X, int Y) LastPoint
@@ -375,6 +379,11 @@ public sealed unsafe class DragMonitor(ModifierTapper tapper, WinKeyGate winKeys
         if (_phase == next)
         {
             return;
+        }
+
+        if (_phase == DragPhase.Idle)
+        {
+            Interlocked.Increment(ref _dragId);
         }
 
         _phase = next;

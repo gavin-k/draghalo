@@ -28,8 +28,7 @@ namespace DropHalo.App;
 ///
 /// Threads: the Invoked events, Typed and PhaseChanged come from the hook thread, Entered / Hovered / Dropped /
 /// Canceled from the host thread. Everything that touches a window is queued to the UI thread; the session
-/// is only replaced on the UI thread. The model is rebuilt on the host thread when the files arrive and on
-/// the UI thread when the search changes, under the session's lock.
+/// is only replaced on the UI thread. The host can publish a model only while its session is current.
 /// </summary>
 internal sealed class WheelController : IDisposable
 {
@@ -51,14 +50,15 @@ internal sealed class WheelController : IDisposable
     private readonly ModifierTapper _tapper;
     private readonly LongPress _longPress;
     private readonly TypeAhead _typeAhead;
-    private readonly DispatcherQueueTimer _idleGrace;
+    private readonly WheelDelay _idleGrace;
     private readonly DispatcherQueueTimer _watchdog;
-    private readonly DispatcherQueueTimer _dwell;
-    private readonly DispatcherQueueTimer _ringClose;
+    private readonly WheelDelay _dwell;
+    private readonly WheelDelay _ringClose;
     private readonly LayoutStore? _layout;
+    private readonly Lock _sessionGate = new();
     private volatile Session? _session;
     private int _buttonUpReadings;
-    private int _pendingGroup = -1;
+    private bool _disposed;
 
     public WheelController(
         DispatcherQueue ui,
@@ -87,21 +87,12 @@ internal sealed class WheelController : IDisposable
         _typeAhead = typeAhead;
         _layout = layout;
 
-        _idleGrace = ui.CreateTimer();
-        _idleGrace.Interval = IdleGrace;
-        _idleGrace.IsRepeating = false;
-        _idleGrace.Tick += (_, _) => Close("button up without a drop");
+        _idleGrace = new(ui, IdleGrace);
         _watchdog = ui.CreateTimer();
         _watchdog.Interval = WatchdogPeriod;
         _watchdog.Tick += (_, _) => CheckButton();
-        _dwell = ui.CreateTimer();
-        _dwell.Interval = DwellDelay;
-        _dwell.IsRepeating = false;
-        _dwell.Tick += (_, _) => OpenRing();
-        _ringClose = ui.CreateTimer();
-        _ringClose.Interval = RingCloseDelay;
-        _ringClose.IsRepeating = false;
-        _ringClose.Tick += (_, _) => CloseRing("pointer left it");
+        _dwell = new(ui, DwellDelay);
+        _ringClose = new(ui, RingCloseDelay);
 
         _tapper.Invoked += OnTapped;
         _longPress.Invoked += OnHeld;
@@ -123,6 +114,7 @@ internal sealed class WheelController : IDisposable
 
     public void Dispose()
     {
+        _disposed = true;
         _tapper.Invoked -= OnTapped;
         _longPress.Invoked -= OnHeld;
         _typeAhead.Typed -= OnTyped;
@@ -133,10 +125,7 @@ internal sealed class WheelController : IDisposable
         _host.HubReached -= OnHubReached;
         _host.Dropped -= OnDropped;
         _host.Canceled -= OnCanceled;
-        _idleGrace.Stop();
-        _watchdog.Stop();
-        _dwell.Stop();
-        _ringClose.Stop();
+        Close("shutdown");
     }
 
     // ---- hook thread ------------------------------------------------------------------------------
@@ -149,20 +138,32 @@ internal sealed class WheelController : IDisposable
     {
         var tappedAt = Stopwatch.GetTimestamp();
         var point = _monitor.LastPoint;
-        _ui.TryEnqueue(() => Open(mode, point, tappedAt, by));
+        var dragId = _monitor.DragId;
+        _ui.TryEnqueue(() => Open(mode, point, dragId, tappedAt, by));
     }
 
-    private void OnTyped(char c) => _ui.TryEnqueue(() => Type(c));
+    private void OnTyped(char c)
+    {
+        var session = _session;
+        _ui.TryEnqueue(() =>
+        {
+            if (session is not null && _session == session && session.DragId == _monitor.DragId)
+            {
+                Type(session, c);
+            }
+        });
+    }
 
     private void OnPhaseChanged(DragPhase phase)
     {
         if (phase == DragPhase.Idle)
         {
+            var dragId = _monitor.DragId;
             _ui.TryEnqueue(() =>
             {
-                if (_session is not null)
+                if (_session is { } session && session.DragId == dragId)
                 {
-                    _idleGrace.Start();
+                    _idleGrace.Start(() => CloseShowing(session.View, "button up without a drop"));
                 }
             });
         }
@@ -170,60 +171,72 @@ internal sealed class WheelController : IDisposable
 
     // ---- host thread ------------------------------------------------------------------------------
 
-    private void OnEntered(IReadOnlyList<string> paths)
+    private void OnEntered(WheelPlacement placement, IReadOnlyList<string> paths)
     {
-        var session = _session;
-        if (session is null || paths.Count == 0)
+        Session session;
+        lock (_sessionGate)
         {
-            return;
+            if (_session is not { } current || current.View.Showing != placement.Showing || paths.Count == 0)
+            {
+                return;
+            }
+
+            session = current;
+            session.Paths = paths;
         }
 
         // Built here, before DragEnter computes its first effect, so the very first DragOver already
         // hit-tests against the real enabled sectors. Anything typed since the tap is searched already.
-        session.Paths = paths;
-        var model = Rebuild(session)!;
+        if (Rebuild(session) is not { } model)
+        {
+            return;
+        }
+
         FileLog.Info($"wheel: {paths.Count} file(s) entered +{Stopwatch.GetElapsedTime(session.TappedAt).TotalMilliseconds:F0} ms after {session.By}, slots {Slots(model)}");
         _ui.TryEnqueue(() =>
         {
             // A search typed meanwhile has already shown a newer model.
-            if (_session == session && session.Model == model)
+            if (_session == session && session.View.Model == model)
             {
                 _wheel.SetModel(model);
-            }
-            else if (_session is { Paths: null } switched)
-            {
-                // The user switched wheels in the few ms before DragEnter: the new session takes the files.
-                switched.Paths = paths;
-                _wheel.SetModel(Rebuild(switched));
             }
         });
     }
 
     private void OnNoted(string note) => FileLog.Info($"wheel: {note}");
 
-    private void OnHovered(WheelHit hit) => _ui.TryEnqueue(() => Hover(hit));
-
-    private void OnHubReached()
+    private void OnHovered(WheelPlacement placement, WheelHit hit) => _ui.TryEnqueue(() =>
     {
-        var session = _session;
-        FileLog.Info("wheel: pointer reached the hub, sectors are live");
+        if (_session is { } session && ReferenceEquals(session.View, placement))
+        {
+            Hover(session, placement, hit);
+        }
+    });
+
+    private void OnHubReached(WheelPlacement placement)
+    {
         _ui.TryEnqueue(() =>
         {
-            if (_session == session)
+            if (_session?.View.Showing == placement.Showing)
             {
+                FileLog.Info("wheel: pointer reached the hub, sectors are live");
                 _wheel.SetHubHint(false);
             }
         });
     }
 
-    private void OnDropped(IReadOnlyList<string> paths, WheelHit hit)
+    private void OnDropped(WheelPlacement placement, IReadOnlyList<string> paths, WheelHit hit)
     {
-        var session = _session;
-        var slot = SlotUnder(session, hit);
+        var slot = SlotUnder(placement, hit);
         _ui.TryEnqueue(() =>
         {
-            Close($"dropped on {hit}");
-            if (slot is null)
+            if (_disposed)
+            {
+                return;
+            }
+
+            CloseShowing(placement, $"dropped on {hit}");
+            if (slot is null || placement.Settings is not { } settings || placement.Model is not { } model)
             {
                 FileLog.Error($"wheel: drop on {hit} without a slot");
                 return;
@@ -239,22 +252,22 @@ internal sealed class WheelController : IDisposable
             var label = paths.Count == 1 ? $"{Path.GetFileName(paths[0])} → {slot.Label}" : L.T("{0} 项 → {1}", paths.Count, slot.Label);
 
             // File actions never count against the daily quota, and only conversions have recent items.
-            _queue.Enqueue(session!.Settings.Request(paths, slot.ItemId), label, slot.Operation, countsTowardQuota: session.Mode != WheelMode.Actions);
-            if (session.Mode == WheelMode.Convert)
+            _queue.Enqueue(settings.Request(paths, slot.ItemId), label, slot.Operation, countsTowardQuota: model.Mode != WheelMode.Actions);
+            if (model.Mode == WheelMode.Convert)
             {
-                _recent.Touch(FormatRegistry.FromPath(paths[0])?.Kind ?? MediaKind.Unknown, session.Mode, slot.ItemId);
+                _recent.Touch(FormatRegistry.FromPath(paths[0])?.Kind ?? MediaKind.Unknown, model.Mode, slot.ItemId);
             }
 
             FileLog.Info($"wheel: enqueued {label}");
         });
     }
 
-    private void OnCanceled() => _ui.TryEnqueue(() => Close("canceled"));
+    private void OnCanceled(WheelPlacement placement) => _ui.TryEnqueue(() => CloseShowing(placement, "canceled"));
 
     /// <summary>The slot a hit lands on: a sector's, or an item of the ring open at the time.</summary>
-    private static WheelSlot? SlotUnder(Session? session, WheelHit hit)
+    private static WheelSlot? SlotUnder(WheelPlacement placement, WheelHit hit)
     {
-        if (session?.Model is not { } model)
+        if (placement.Model is not { } model)
         {
             return null;
         }
@@ -262,7 +275,7 @@ internal sealed class WheelController : IDisposable
         return hit.Ring switch
         {
             WheelRing.Sector => model.SlotAt(hit.Index),
-            WheelRing.Child => model.SlotAt(session.OpenGroup)?.Children is { } children && hit.Index >= 0 && hit.Index < children.Count ? children[hit.Index] : null,
+            WheelRing.Child when placement.Ring is { } ring => model.SlotAt(ring.Parent)?.Children is { } children && hit.Index >= 0 && hit.Index < children.Count ? children[hit.Index] : null,
             _ => null,
         };
     }
@@ -270,11 +283,16 @@ internal sealed class WheelController : IDisposable
     // ---- UI thread --------------------------------------------------------------------------------
 
     /// <param name="by">What opened it, for the log: "tap" or "long press".</param>
-    private void Open(WheelMode mode, (int X, int Y) point, long tappedAt, string by)
+    private void Open(WheelMode mode, (int X, int Y) point, long dragId, long tappedAt, string by)
     {
-        if (_monitor.Phase == DragPhase.Idle)
+        if (_disposed || _monitor.Phase == DragPhase.Idle || _monitor.DragId != dragId)
         {
             return;
+        }
+
+        if (_session is { } previous && previous.DragId != dragId)
+        {
+            Close("new drag started");
         }
 
         if (_session is { } current)
@@ -293,10 +311,13 @@ internal sealed class WheelController : IDisposable
         var ring = _layout?.HasGroups(mode) == true;
         var (x, y, scale) = Place(point, WheelWindow.SizeFor(ring));
         var onHub = WheelGeometry.OnHub((point.X - x) / scale, (point.Y - y) / scale);
-        var placement = new WheelPlacement(x, y, scale, new bool[WheelModel.SlotCount], onHub);
-        _session = new Session(mode, placement, tappedAt, by, _settings.Current) { RingSized = ring };
+        var placement = new WheelPlacement(x, y, scale, new bool[WheelModel.SlotCount], onHub) { Settings = _settings.Current };
+        lock (_sessionGate)
+        {
+            _session = new Session(mode, placement, dragId, tappedAt, by) { RingSized = ring };
+        }
+
         _typeAhead.Listening = mode == WheelMode.Convert;
-        _pendingGroup = -1;
 
         // Order matters: the host has to end up above the wheel. If the wheel were on top, OLE would see
         // the drag leave the host and the host would report a cancel.
@@ -318,15 +339,20 @@ internal sealed class WheelController : IDisposable
     {
         _dwell.Stop();
         _ringClose.Stop();
-        _pendingGroup = -1;
         var ring = _layout?.HasGroups(mode) == true;
-        var next = new Session(mode, current.Placement, tappedAt, by, current.Settings) { Paths = current.Paths, RingSized = ring };
-        _session = next;
+        var placement = current.View with { Model = null, Ring = null, EnabledSectors = new bool[WheelModel.SlotCount] };
+        Session next;
+        lock (_sessionGate)
+        {
+            next = new Session(mode, placement, current.DragId, tappedAt, by) { Paths = current.Paths, RingSized = ring };
+            _session = next;
+        }
+
         _typeAhead.Listening = mode == WheelMode.Convert;
         _wheel.SetRing(-1, null);
         if (ring != current.RingSized)
         {
-            _wheel.Resize(current.Placement.CenterX, current.Placement.CenterY, current.Placement.Scale, ring);
+            _wheel.Resize(placement.CenterX, placement.CenterY, placement.Scale, ring);
         }
 
         var model = Rebuild(next);
@@ -335,7 +361,14 @@ internal sealed class WheelController : IDisposable
             // No files yet: the host still has to forget the old wheel's sectors and ring.
             lock (next.Gate)
             {
-                ShowHost(next);
+                if (next.View.Model is null)
+                {
+                    Publish(next, placement);
+                }
+                else
+                {
+                    model = next.View.Model;
+                }
             }
         }
 
@@ -349,22 +382,33 @@ internal sealed class WheelController : IDisposable
         _watchdog.Stop();
         _dwell.Stop();
         _ringClose.Stop();
-        if (_session is null)
+        lock (_sessionGate)
         {
-            return;
+            if (_session is null)
+            {
+                return;
+            }
+
+            _session = null;
+            _host.Hide();
         }
 
-        _session = null;
         _typeAhead.Listening = false;
-        _host.Hide();
         _wheel.Hide();
         FileLog.Info($"wheel: closed ({why})");
     }
 
-    private void Type(char c)
+    private void CloseShowing(WheelPlacement placement, string why)
     {
-        var session = _session;
-        if (session is null || session.Mode != WheelMode.Convert)
+        if (_session?.View.Showing == placement.Showing)
+        {
+            Close(why);
+        }
+    }
+
+    private void Type(Session session, char c)
+    {
+        if (session.Mode != WheelMode.Convert)
         {
             return;
         }
@@ -396,78 +440,76 @@ internal sealed class WheelController : IDisposable
     /// leaving the group and its ring for anywhere but the hub closes the ring after <see cref="RingCloseDelay"/>,
     /// so a pointer cutting across the gap between them does not shut it; the hub closes it at once.
     /// </summary>
-    private void Hover(WheelHit hit)
+    private void Hover(Session session, WheelPlacement view, WheelHit hit)
     {
-        var session = _session;
-        if (session is null)
-        {
-            return;
-        }
-
         _wheel.SetHovered(hit);
-        var group = hit.Ring == WheelRing.Sector && session.Model?.SlotAt(hit.Index) is { IsGroup: true } ? hit.Index : -1;
-        var stays = hit.Ring == WheelRing.Child || (hit.Ring == WheelRing.Sector && hit.Index == session.OpenGroup);
+        var openGroup = view.Ring?.Parent ?? -1;
+        var group = hit.Ring == WheelRing.Sector && view.Model?.SlotAt(hit.Index) is { IsGroup: true } ? hit.Index : -1;
+        var stays = hit.Ring == WheelRing.Child || (hit.Ring == WheelRing.Sector && hit.Index == openGroup);
         _dwell.Stop();
         _ringClose.Stop();
         if (hit.Ring == WheelRing.Hub)
         {
-            CloseRing("pointer on the hub");
+            CloseRing(session, "pointer on the hub");
             return;
         }
 
-        if (group >= 0 && group != session.OpenGroup)
+        if (group >= 0 && group != openGroup)
         {
-            _pendingGroup = group;
-            _dwell.Start();
+            _dwell.Start(() => OpenRing(session, group));
         }
 
-        if (session.OpenGroup >= 0 && !stays)
+        if (openGroup >= 0 && !stays)
         {
-            _ringClose.Start();
+            _ringClose.Start(() => CloseRing(session, "pointer left it"));
         }
     }
 
-    private void OpenRing()
+    private void OpenRing(Session session, int index)
     {
-        var session = _session;
-        var index = _pendingGroup;
-        if (session is null || session.Model?.SlotAt(index) is not { Children: { } children } slot)
-        {
-            return;
-        }
-
         lock (session.Gate)
         {
-            session.OpenGroup = index;
-            session.Ring = new RingPlacement(index, [.. children.Select(c => c.Availability.IsAvailable)]);
-            ShowHost(session);
-        }
+            var view = session.View;
+            if (view.Model?.SlotAt(index) is not { Children: { } children } slot
+                || !Publish(session, view with { Ring = new RingPlacement(index, [.. children.Select(c => c.Availability.IsAvailable)]) }))
+            {
+                return;
+            }
 
-        _wheel.SetRing(index, children);
-        FileLog.Info($"wheel: ring open on sector {index} ({slot.Label}): {string.Join(",", children.Select(c => $"{c.Index}={c.ItemId}{(c.Availability.IsAvailable ? "" : "(off)")}"))}");
+            _wheel.SetRing(index, children);
+            FileLog.Info($"wheel: ring open on sector {index} ({slot.Label}): {string.Join(",", children.Select(c => $"{c.Index}={c.ItemId}{(c.Availability.IsAvailable ? "" : "(off)")}"))}");
+        }
     }
 
-    private void CloseRing(string why)
+    private void CloseRing(Session session, string why)
     {
-        var session = _session;
-        if (session is null || session.OpenGroup < 0)
-        {
-            return;
-        }
-
         lock (session.Gate)
         {
-            session.OpenGroup = -1;
-            session.Ring = null;
-            ShowHost(session);
+            if (session.View.Ring is null || !Publish(session, session.View with { Ring = null }))
+            {
+                return;
+            }
         }
 
         _wheel.SetRing(-1, null);
         FileLog.Info($"wheel: ring closed ({why})");
     }
 
-    /// <summary>Tells the host what is live now: the enabled sectors and the open ring. Under the session's lock.</summary>
-    private void ShowHost(Session session) => _host.Show(session.Placement with { EnabledSectors = session.Enabled, Ring = session.Ring });
+    /// <summary>Publishes under the same lock that replaces or closes the session.</summary>
+    private bool Publish(Session session, WheelPlacement view)
+    {
+        lock (_sessionGate)
+        {
+            if (_session != session)
+            {
+                return false;
+            }
+
+            session.View = view;
+            _host.Show(view);
+            return true;
+        }
+    }
 
     /// <summary>
     /// Builds the session's model for its files and search and tells the host which sectors are live. Null
@@ -483,18 +525,15 @@ internal sealed class WheelController : IDisposable
                 return null;
             }
 
-            var model = _builder.Build(paths, session.Mode, session.Settings, session.Query);
-            session.Model = model;
+            var view = session.View;
+            var model = _builder.Build(paths, session.Mode, view.Settings!, session.Query);
 
             // A group sector is never enabled: a release on it cancels, and its ring is where the drop goes.
-            session.Enabled = Enumerable.Range(0, WheelModel.SlotCount).Select(i => model.SlotAt(i) is { Availability.IsAvailable: true, IsGroup: false }).ToArray();
-            if (session.OpenGroup >= 0)
-            {
-                session.Ring = model.SlotAt(session.OpenGroup)?.Children is { } children ? new RingPlacement(session.OpenGroup, [.. children.Select(c => c.Availability.IsAvailable)]) : null;
-            }
+            var enabled = Enumerable.Range(0, WheelModel.SlotCount).Select(i => model.SlotAt(i) is { Availability.IsAvailable: true, IsGroup: false }).ToArray();
+            var ring = view.Ring is { } oldRing && model.SlotAt(oldRing.Parent)?.Children is { } children
+                ? new RingPlacement(oldRing.Parent, [.. children.Select(c => c.Availability.IsAvailable)]) : null;
 
-            ShowHost(session);
-            return model;
+            return Publish(session, view with { Model = model, EnabledSectors = enabled, Ring = ring }) ? model : null;
         }
     }
 
@@ -504,6 +543,17 @@ internal sealed class WheelController : IDisposable
 
     private void CheckButton()
     {
+        if (_session is not { } session)
+        {
+            return;
+        }
+
+        if (session.DragId != _monitor.DragId)
+        {
+            Close("new drag started");
+            return;
+        }
+
         var button = PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_SWAPBUTTON) != 0 ? VIRTUAL_KEY.VK_RBUTTON : VIRTUAL_KEY.VK_LBUTTON;
         var down = (PInvoke.GetAsyncKeyState((int)button) & 0x8000) != 0;
         _buttonUpReadings = down ? 0 : _buttonUpReadings + 1;
@@ -532,33 +582,75 @@ internal sealed class WheelController : IDisposable
             scale);
     }
 
-    /// <param name="settings">The snapshot the wheel was built with; the drop uses the same one.</param>
-    private sealed class Session(WheelMode mode, WheelPlacement placement, long tappedAt, string by, AppSettings settings)
+    private sealed class Session(WheelMode mode, WheelPlacement placement, long dragId, long tappedAt, string by)
     {
-        public AppSettings Settings { get; } = settings;
         public WheelMode Mode { get; } = mode;
-        public WheelPlacement Placement { get; } = placement;
+        public long DragId { get; } = dragId;
         public long TappedAt { get; } = tappedAt;
         public string By { get; } = by;
-        public volatile WheelModel? Model;
+
+        public volatile WheelPlacement View = placement;
 
         /// <summary>The files, once DragEnter said which.</summary>
         public volatile IReadOnlyList<string>? Paths;
 
-        /// <summary>Which sectors take a drop, from the last build; see <see cref="Rebuild"/>.</summary>
-        public IReadOnlyList<bool> Enabled { get; set; } = placement.EnabledSectors;
-
-        /// <summary>The sector whose ring is open, or -1, and the ring the host hit-tests. UI thread writes, under <see cref="Gate"/>.</summary>
-        public volatile int OpenGroup = -1;
-
-        public volatile RingPlacement? Ring;
-
         /// <summary>Whether the window was sized for a ring when this wheel was shown.</summary>
         public bool RingSized { get; init; }
 
-        /// <summary>Guards <see cref="Query"/> and each rebuild of <see cref="Model"/>.</summary>
+        /// <summary>Guards the query and serializes builds and ring changes for this mode.</summary>
         public Lock Gate { get; } = new();
 
         public string Query { get; set; } = "";
+    }
+
+    /// <summary>One UI deadline. A late native tick cannot consume a newly scheduled action early.</summary>
+    private sealed class WheelDelay
+    {
+        private readonly DispatcherQueueTimer _timer;
+        private readonly TimeSpan _delay;
+        private long _started;
+        private Action? _fire;
+
+        public WheelDelay(DispatcherQueue ui, TimeSpan delay)
+        {
+            _delay = delay;
+            _timer = ui.CreateTimer();
+            _timer.IsRepeating = false;
+            _timer.Tick += (_, _) => Tick();
+        }
+
+        public void Start(Action fire)
+        {
+            _timer.Stop();
+            _fire = fire;
+            _started = Stopwatch.GetTimestamp();
+            _timer.Interval = _delay;
+            _timer.Start();
+        }
+
+        public void Stop()
+        {
+            _fire = null;
+            _timer.Stop();
+        }
+
+        private void Tick()
+        {
+            if (_fire is not { } fire)
+            {
+                return;
+            }
+
+            var remaining = _delay - Stopwatch.GetElapsedTime(_started);
+            if (remaining > TimeSpan.Zero)
+            {
+                _timer.Interval = remaining;
+                _timer.Start();
+                return;
+            }
+
+            _fire = null;
+            fire();
+        }
     }
 }

@@ -39,7 +39,7 @@ internal sealed class DockWindow
     private readonly Window _window;
     private readonly DispatcherQueue _ui;
     private readonly Func<bool> _wheelOpen;
-    private readonly List<string> _files = [];
+    private readonly Dictionary<string, IStorageItem> _files = new(StringComparer.OrdinalIgnoreCase);
     private readonly StackPanel _rows = new() { Spacing = 8 };
     private readonly TextBlock _title = new() { FontSize = 20, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Foreground = Brush("DwTextBrush") };
     private readonly Border _empty;
@@ -49,7 +49,8 @@ internal sealed class DockWindow
     private readonly DispatcherQueueTimer _idleGrace;
     private bool _draggingOut;
     private volatile bool _dragImage;
-    private bool _dropping;
+    private int _dropGeneration;
+    private int _pendingDrops;
     private bool _over;
 
     public DockWindow(DispatcherQueue ui, DragMonitor monitor, Func<bool> wheelOpen)
@@ -106,7 +107,7 @@ internal sealed class DockWindow
             Child = new TextBlock { Text = L.T("全部拖出"), FontWeight = FontWeights.SemiBold, Foreground = Brush("DwAccentBrush"), HorizontalAlignment = HorizontalAlignment.Center },
         };
         AutomationProperties.SetName(_all, L.T("全部拖出"));
-        DragsOut(_all, () => [.. _files]);
+        DragsOut(_all, () => [.. _files.Keys]);
         var footer = new StackPanel
         {
             Spacing = 10,
@@ -167,7 +168,7 @@ internal sealed class DockWindow
         _idleGrace.IsRepeating = false;
         _idleGrace.Tick += (_, _) =>
         {
-            if (_files.Count == 0 && !_dropping && !_draggingOut)
+            if (_files.Count == 0 && _pendingDrops == 0 && !_draggingOut)
             {
                 Hide("the drag ended without a drop");
             }
@@ -199,6 +200,8 @@ internal sealed class DockWindow
     public void Close()
     {
         Quitting = true;
+        _idleGrace.Stop();
+        InvalidateDrops();
         _window.Close();
     }
 
@@ -210,7 +213,7 @@ internal sealed class DockWindow
     private void Open(DockSide side, int x, int y)
     {
         _idleGrace.Stop();
-        if (IsVisible || _wheelOpen())
+        if (Quitting || IsVisible || _wheelOpen())
         {
             return;
         }
@@ -235,7 +238,7 @@ internal sealed class DockWindow
     private void DragEnded()
     {
         _over = false;
-        if (IsVisible && _files.Count == 0)
+        if (!Quitting && IsVisible && _files.Count == 0)
         {
             _idleGrace.Start();
         }
@@ -244,12 +247,21 @@ internal sealed class DockWindow
     private void Hide(string why)
     {
         _idleGrace.Stop();
+        InvalidateDrops();
+        _over = false;
+        _dropSurface.BorderBrush = Brush("DwBorderBrush");
         Render();
         if (IsVisible)
         {
             _window.AppWindow.Hide();
             FileLog.Info($"dock: hidden ({why})");
         }
+    }
+
+    private void InvalidateDrops()
+    {
+        _dropGeneration++;
+        _pendingDrops = 0;
     }
 
     // ---- drops onto the dock ------------------------------------------------------------------------
@@ -281,22 +293,28 @@ internal sealed class DockWindow
     {
         _over = false;
         _dropSurface.BorderBrush = Brush("DwBorderBrush");
-        if (_draggingOut || !e.DataView.Contains(StandardDataFormats.StorageItems))
+        e.AcceptedOperation = DataPackageOperation.None;
+        if (Quitting || !IsVisible || _draggingOut || !e.DataView.Contains(StandardDataFormats.StorageItems))
         {
             return;
         }
 
-        _dropping = true;
         var deferral = e.GetDeferral();
+        var generation = _dropGeneration;
+        _pendingDrops++;
         try
         {
             var items = await e.DataView.GetStorageItemsAsync();
-            var added = 0;
-            foreach (var path in items.Select(i => i.Path).Where(p => p.Length > 0))
+            if (generation != _dropGeneration)
             {
-                if (!_files.Contains(path, StringComparer.OrdinalIgnoreCase))
+                return;
+            }
+
+            var added = 0;
+            foreach (var item in items.Where(i => i.Path.Length > 0))
+            {
+                if (_files.TryAdd(item.Path, item))
                 {
-                    _files.Add(path);
                     added++;
                 }
             }
@@ -310,14 +328,17 @@ internal sealed class DockWindow
         }
         finally
         {
+            if (generation == _dropGeneration)
+            {
+                _pendingDrops--;
+            }
+
             deferral.Complete();
-            _dropping = false;
         }
 
-        Render();
-        if (_files.Count == 0)
+        if (generation == _dropGeneration)
         {
-            Hide("nothing to keep");
+            Settle("nothing to keep");
         }
     }
 
@@ -329,16 +350,20 @@ internal sealed class DockWindow
     /// </summary>
     private void DragsOut(UIElement element, Func<IReadOnlyList<string>> paths)
     {
-        IReadOnlyList<string> dragged = [];
+        List<string> dragged = [];
         element.CanDrag = true;
-        element.DragStarting += async (_, e) =>
+        element.DragStarting += (_, e) =>
         {
             dragged = [];
             var all = paths();
             var gone = all.Where(p => !File.Exists(p) && !Directory.Exists(p)).ToList();
             if (gone.Count > 0)
             {
-                _files.RemoveAll(gone.Contains);
+                foreach (var path in gone)
+                {
+                    _files.Remove(path);
+                }
+
                 FileLog.Info($"dock: forgot {gone.Count} file(s) that are no longer there");
             }
 
@@ -350,15 +375,10 @@ internal sealed class DockWindow
                 return;
             }
 
-            var deferral = e.GetDeferral();
             try
             {
-                var items = new List<IStorageItem>(present.Count);
-                foreach (var path in present)
-                {
-                    items.Add(Directory.Exists(path) ? await StorageFolder.GetFolderFromPathAsync(path) : await StorageFile.GetFileFromPathAsync(path));
-                }
-
+                // Reuse the incoming items: awaiting WinRT here can outlive DragStarting and stall the native drag.
+                var items = present.Select(path => _files[path]).ToArray();
                 e.Data.SetStorageItems(items, true);
                 e.Data.RequestedOperation = DataPackageOperation.Copy;
                 e.AllowedOperations = DataPackageOperation.Copy | DataPackageOperation.Link;
@@ -370,10 +390,6 @@ internal sealed class DockWindow
             {
                 FileLog.Error("dock: could not start the drag out", ex);
                 e.Cancel = true;
-            }
-            finally
-            {
-                deferral.Complete();
             }
         };
         element.DropCompleted += (_, e) =>
@@ -394,7 +410,10 @@ internal sealed class DockWindow
             FileLog.Info($"dock: dragged out {dragged.Count} file(s), {outcome}{(_dragImage ? "" : ", no drag image seen")}");
             if (e.DropResult != DataPackageOperation.None)
             {
-                _files.RemoveAll(dragged.Contains);
+                foreach (var path in dragged)
+                {
+                    _files.Remove(path);
+                }
             }
 
             dragged = [];
@@ -406,7 +425,7 @@ internal sealed class DockWindow
     private void Settle(string why)
     {
         Render();
-        if (_files.Count == 0)
+        if (_files.Count == 0 && _pendingDrops == 0)
         {
             Hide(why);
         }
@@ -421,7 +440,7 @@ internal sealed class DockWindow
             _rows.Children.Add(_empty);
         }
 
-        foreach (var path in _files)
+        foreach (var path in _files.Keys)
         {
             var text = new StackPanel
             {

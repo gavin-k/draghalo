@@ -20,21 +20,23 @@ internal static class HostScenario
         var events = new ConcurrentQueue<string>();
         IReadOnlyList<string>? entered = null;
         IReadOnlyList<string>? dropped = null;
+        WheelPlacement? droppedPlacement = null;
         var droppedSector = -1;
         var hovered = -1;
         var canceled = 0;
 
         using var host = new DropTargetHost();
         host.Start();
-        host.Entered += p => { entered = p; events.Enqueue($"entered {p.Count}"); };
-        host.Hovered += h => { hovered = h.Ring == WheelRing.Sector ? h.Index : -1; events.Enqueue($"hover {h}"); };
-        host.Dropped += (p, h) => { dropped = p; droppedSector = h.Ring == WheelRing.Sector ? h.Index : -1; events.Enqueue($"drop {h}"); };
-        host.Canceled += () => { Interlocked.Increment(ref canceled); events.Enqueue("cancel"); };
+        host.Entered += (_, p) => { entered = p; events.Enqueue($"entered {p.Count}"); };
+        host.Hovered += (_, h) => { hovered = h.Ring == WheelRing.Sector ? h.Index : -1; events.Enqueue($"hover {h}"); };
+        host.Dropped += (placement, p, h) => { droppedPlacement = placement; droppedSector = h.Ring == WheelRing.Sector ? h.Index : -1; dropped = p; events.Enqueue($"drop {h}"); };
+        host.Canceled += _ => { Interlocked.Increment(ref canceled); events.Enqueue("cancel"); };
 
         void Reset()
         {
             entered = null;
             dropped = null;
+            droppedPlacement = null;
             droppedSector = -1;
             hovered = -1;
             canceled = 0;
@@ -47,18 +49,22 @@ internal static class HostScenario
             using var source = DragSource.Open(file, explorer);
             var mid = source.PressAndDrag();
             var scale = DragSource.ScaleAt(mid);
-            host.Show(new WheelPlacement(mid.X, mid.Y, scale, [true, true, true, true, true, true]));
+            var first = new WheelPlacement(mid.X, mid.Y, scale, [true, true, true, true, true, true]);
+            host.Show(first);
             var (cx, cy) = WheelGeometry.SectorCenter(TargetSector);
             var target = new Point(mid.X + (int)(cx * scale), mid.Y + (int)(cy * scale));
             Input.MoveSmooth(mid, target, 8, 30);
             Thread.Sleep(200);
             checks.Check("host got DragEnter with the file", entered is [var e] && Same(e, file), $"entered=[{string.Join(", ", entered ?? [])}] (scale {scale:F2})");
             checks.Check("hovered sector tracked", hovered == TargetSector, $"hovered={hovered}");
+            var revised = first with { EnabledSectors = [false, false, true, false, false, false] };
+            host.Show(revised);
             var t0 = Log.NowMs;
             Input.LeftUp();
             var got = Checks.Wait(() => dropped is not null, 3000);
             checks.Check("drop delivered to the sector", got && droppedSector == TargetSector && dropped is [var d] && Same(d, file),
                 got ? $"sector {droppedSector}, [{string.Join(", ", dropped!)}], {Log.NowMs - t0:F0} ms after button up" : "no Dropped within 3 s");
+            checks.Check("drop carries the exact placement used for hit-testing", ReferenceEquals(droppedPlacement, revised), "current model revision");
             host.Hide();
             Thread.Sleep(300);
             checks.Check("source file still in place", File.Exists(file), file);
@@ -66,6 +72,62 @@ internal static class HostScenario
             {
                 var result = source.Result(TimeSpan.FromSeconds(5));
                 checks.Check("source saw Copy (never Move)", result?.Contains("Copy", StringComparison.Ordinal) == true, result ?? "no RESULT");
+            }
+        });
+
+        Reset();
+        Attempt(checks, "replace a showing during DragEnter", () =>
+        {
+            using var source = DragSource.Open(file, explorer);
+            var mid = source.PressAndDrag();
+            var scale = DragSource.ScaleAt(mid);
+            var old = new WheelPlacement(mid.X, mid.Y, scale, [true, true, true, true, true, true]);
+            var next = new WheelPlacement(mid.X, mid.Y, scale, [false, false, false, false, false, false]);
+            using var arrived = new ManualResetEventSlim();
+            using var resume = new ManualResetEventSlim();
+            var nextEntered = false;
+            var usedOldPaths = false;
+            void Pause(WheelPlacement placement, IReadOnlyList<string> paths)
+            {
+                if (ReferenceEquals(placement, next))
+                {
+                    nextEntered = true;
+                }
+
+                if (ReferenceEquals(placement, old))
+                {
+                    arrived.Set();
+                    resume.Wait(TimeSpan.FromSeconds(5));
+                }
+            }
+
+            void TrackHover(WheelPlacement placement, WheelHit hit) => usedOldPaths |= ReferenceEquals(placement, next) && !nextEntered;
+
+            host.Entered += Pause;
+            host.Hovered += TrackHover;
+            try
+            {
+                host.Show(old);
+                Input.MoveSmooth(mid, new Point(mid.X + 5, mid.Y), 3, 20);
+                checks.Check("old showing entered before replacement", arrived.Wait(TimeSpan.FromSeconds(3)), "DragEnter paused on the host thread");
+                host.Hide();
+                host.Show(next);
+                resume.Set();
+
+                var (cx, cy) = WheelGeometry.SectorCenter(TargetSector);
+                Input.MoveSmooth(mid, new Point(mid.X + (int)(cx * scale), mid.Y + (int)(cy * scale)), 8, 30);
+                Input.LeftUp();
+                var result = explorer ? null : source.Result(TimeSpan.FromSeconds(5));
+                checks.Check("replacement never hit-tests the old DragEnter data", !usedOldPaths, $"new DragEnter={nextEntered}");
+                checks.Check("replacement cannot drop on an enabled sector of the old showing", dropped is null && (explorer || result?.Contains("None", StringComparison.Ordinal) == true),
+                    $"dropped={dropped is not null}, source={result ?? "Explorer"}");
+            }
+            finally
+            {
+                resume.Set();
+                host.Entered -= Pause;
+                host.Hovered -= TrackHover;
+                host.Hide();
             }
         });
 

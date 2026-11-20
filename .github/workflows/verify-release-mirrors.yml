@@ -6,7 +6,7 @@ on:
       tag:
         description: 'Existing stable release to verify without rebuilding or publishing'
         required: true
-        default: v0.1.6
+        default: v0.1.7
         type: string
 
 permissions:

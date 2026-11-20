@@ -13,6 +13,8 @@ namespace DropHalo.App.Settings;
 
 internal sealed partial class SettingsWindow
 {
+    private enum UpdatePhase { Idle, Checking, Confirming, Downloading, Rechecking, VerifyingInstaller, HandedOff }
+
     private readonly HttpClient _updateHttp = UpdateClient.CreateHttpClient();
     private readonly ToggleSwitch _strictOffline = new() { Header = L.T("严格离线"), OnContent = L.T("开"), OffContent = L.T("关") };
     private readonly ToggleSwitch _autoUpdates = new() { Header = L.T("自动检查更新"), OnContent = L.T("开"), OffContent = L.T("关") };
@@ -24,7 +26,8 @@ internal sealed partial class SettingsWindow
     private UpdateRelease? _availableUpdate;
     private CancellationTokenSource? _updateCancellation;
     private DispatcherQueueTimer? _updateTimer;
-    private bool _updateBusy;
+    private UpdatePhase _updatePhase;
+    private int _updatePreferencesVersion;
     private bool _showingUpdateSettings;
     private Func<bool> _hasJobs = () => false;
     private Action _updateShutdown = () => { };
@@ -32,6 +35,7 @@ internal sealed partial class SettingsWindow
     private static string UpdateArchitecture => RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant();
     private string UpdateDataDirectory => App.DataDir(Environment.GetCommandLineArgs());
     private static Version CurrentVersion => typeof(App).Assembly.GetName().Version!;
+    private bool UpdateBusy => _updatePhase != UpdatePhase.Idle;
 
     private StackPanel BuildUpdates()
     {
@@ -118,6 +122,7 @@ internal sealed partial class SettingsWindow
 
         if (Save("update preferences", s => s with { Privacy = privacy, UpdateSource = source }))
         {
+            _updatePreferencesVersion++;
             _updateCancellation?.Cancel();
             _availableUpdate = null;
             _updateStatus.Text = privacy.StrictOffline ? L.T("严格离线已开启，不会检查或下载更新。") : L.T("更新设置已保存。点击“检查更新”可立即检查。");
@@ -129,28 +134,41 @@ internal sealed partial class SettingsWindow
     private void UpdateControls()
     {
         var offline = _settings.Current.Privacy.StrictOffline;
-        _autoUpdates.IsEnabled = !offline;
-        _checkUpdate.IsEnabled = !_updateBusy && !offline;
-        _installUpdate.IsEnabled = !_updateBusy && !offline;
+        var handedOff = _updatePhase == UpdatePhase.HandedOff;
+        _strictOffline.IsEnabled = _updateSource.IsEnabled = !handedOff;
+        _autoUpdates.IsEnabled = !offline && !handedOff;
+        _checkUpdate.IsEnabled = _installUpdate.IsEnabled = !UpdateBusy && !offline;
         _installUpdate.Visibility = _availableUpdate is null ? Visibility.Collapsed : Visibility.Visible;
-        _cancelUpdate.Visibility = _updateBusy ? Visibility.Visible : Visibility.Collapsed;
-        _language.IsEnabled = !_updateBusy;
+        _cancelUpdate.Visibility = _updatePhase is UpdatePhase.Checking or UpdatePhase.Downloading or UpdatePhase.Rechecking or UpdatePhase.VerifyingInstaller
+            ? Visibility.Visible : Visibility.Collapsed;
+        _language.IsEnabled = !UpdateBusy;
     }
+
+    private void SetUpdatePhase(UpdatePhase phase)
+    {
+        _updatePhase = phase;
+        if (!Quitting)
+        {
+            UpdateControls();
+        }
+    }
+
+    private bool CurrentUpdatePreferences(int version) => !Quitting && version == _updatePreferencesVersion;
 
     private async Task CheckUpdatesAsync(bool manual)
     {
-        if (_updateBusy || _settings.Current.Privacy.StrictOffline || _changingLanguage)
+        if (Quitting || UpdateBusy || _settings.Current.Privacy.StrictOffline || _changingLanguage)
         {
             return;
         }
 
-        _updateBusy = true;
-        _updateCancellation = new();
-        var token = _updateCancellation.Token;
+        using var cancellation = _updateCancellation = new();
+        var token = cancellation.Token;
+        var preferences = _updatePreferencesVersion;
         var settings = _settings.Current;
         _availableUpdate = null;
         _updateStatus.Text = L.T("正在检查更新…");
-        UpdateControls();
+        SetUpdatePhase(UpdatePhase.Checking);
         try
         {
             var release = await new UpdateClient(_updateHttp).CheckAsync(settings.UpdateSource, CurrentVersion, UpdateArchitecture, _packaged, settings.Privacy, token).ConfigureAwait(true);
@@ -164,34 +182,38 @@ internal sealed partial class SettingsWindow
         }
         catch (OperationCanceledException)
         {
-            _updateStatus.Text = L.T("更新检查已取消。");
+            if (CurrentUpdatePreferences(preferences))
+            {
+                _updateStatus.Text = L.T("更新检查已取消。");
+            }
         }
         catch (Exception ex)
         {
             FileLog.Error("update: check failed", ex);
-            _updateStatus.Text = L.T("无法检查更新，请稍后重试或切换更新源。");
+            if (CurrentUpdatePreferences(preferences))
+            {
+                _updateStatus.Text = L.T("无法检查更新，请稍后重试或切换更新源。");
+            }
         }
         finally
         {
-            _updateCancellation.Dispose();
             _updateCancellation = null;
-            _updateBusy = false;
-            UpdateControls();
+            SetUpdatePhase(UpdatePhase.Idle);
         }
     }
 
     private async Task InstallUpdateAsync()
     {
-        if (_updateBusy || _changingLanguage || _availableUpdate is not { } release || _settings.Current.Privacy.StrictOffline)
+        if (Quitting || UpdateBusy || _changingLanguage || _availableUpdate is not { } release || _settings.Current.Privacy.StrictOffline)
         {
             return;
         }
 
-        _updateBusy = true;
-        _updateCancellation = new();
-        var token = _updateCancellation.Token;
+        using var cancellation = _updateCancellation = new();
+        var token = cancellation.Token;
+        var preferences = _updatePreferencesVersion;
         string? directory = null;
-        UpdateControls();
+        SetUpdatePhase(UpdatePhase.Confirming);
         try
         {
             if (_hasJobs())
@@ -215,13 +237,24 @@ internal sealed partial class SettingsWindow
             token.ThrowIfCancellationRequested();
             directory = Directory.CreateTempSubdirectory("DropHalo-update-").FullName;
             var installer = Path.Combine(directory, release.FileName);
-            var progress = new Progress<double>(fraction => _updateStatus.Text = L.T("正在下载更新：{0}%", (int)(fraction * 100)));
+            var progress = new Progress<double>(fraction =>
+            {
+                if (ReferenceEquals(_updateCancellation, cancellation) && _updatePhase == UpdatePhase.Downloading && !token.IsCancellationRequested)
+                {
+                    _updateStatus.Text = L.T("正在下载更新：{0}%", (int)(fraction * 100));
+                }
+            });
             var client = new UpdateClient(_updateHttp);
+            SetUpdatePhase(UpdatePhase.Downloading);
             await client.DownloadAsync(release, installer, _settings.Current.Privacy, progress, token).ConfigureAwait(true);
+            token.ThrowIfCancellationRequested();
             _updateStatus.Text = L.T("正在验证安装包…");
+            SetUpdatePhase(UpdatePhase.Rechecking);
             var latest = await client.CheckAsync(release.Source, CurrentVersion, UpdateArchitecture, _packaged, _settings.Current.Privacy, token).ConfigureAwait(true);
+            token.ThrowIfCancellationRequested();
             if (latest != release)
             {
+                _availableUpdate = null;
                 throw new InvalidDataException("The release changed or was withdrawn; check again before installing.");
             }
 
@@ -237,19 +270,31 @@ internal sealed partial class SettingsWindow
                 return;
             }
 
-            _checkUpdate.IsEnabled = _installUpdate.IsEnabled = _strictOffline.IsEnabled = _updateSource.IsEnabled = _cancelUpdate.IsEnabled = false;
-            await UpdateInstaller.StartAsync(release, installer, UpdateArchitecture, _packaged, UpdateDataDirectory, _hasJobs).ConfigureAwait(true);
-            directory = null; // the verified helper owns the installer until Windows finishes with it
-            _updateShutdown();
+            SetUpdatePhase(UpdatePhase.VerifyingInstaller);
+            if (!await UpdateInstaller.StartAsync(release, installer, UpdateArchitecture, _packaged, UpdateDataDirectory, _hasJobs, () =>
+            {
+                directory = null; // The approved helper now owns the installer.
+                SetUpdatePhase(UpdatePhase.HandedOff);
+                _updateShutdown();
+            }, token).ConfigureAwait(true) && CurrentUpdatePreferences(preferences))
+            {
+                _updateStatus.Text = L.T("请等所有任务完成后再安装更新。");
+            }
         }
         catch (OperationCanceledException)
         {
-            _updateStatus.Text = L.T("更新已取消，当前版本保持不变。");
+            if (CurrentUpdatePreferences(preferences))
+            {
+                _updateStatus.Text = L.T("更新已取消，当前版本保持不变。");
+            }
         }
         catch (Exception ex)
         {
             FileLog.Error("update: download or installation failed", ex);
-            _updateStatus.Text = L.T("更新失败，当前版本保持不变。请重试；详情见日志。");
+            if (CurrentUpdatePreferences(preferences))
+            {
+                _updateStatus.Text = L.T("更新失败，当前版本保持不变。请重试；详情见日志。");
+            }
         }
         finally
         {
@@ -260,13 +305,10 @@ internal sealed partial class SettingsWindow
                 catch (UnauthorizedAccessException) { }
             }
 
-            _updateCancellation?.Dispose();
             _updateCancellation = null;
-            _updateBusy = false;
-            if (!Quitting)
+            if (_updatePhase != UpdatePhase.HandedOff)
             {
-                _strictOffline.IsEnabled = _updateSource.IsEnabled = _cancelUpdate.IsEnabled = true;
-                UpdateControls();
+                SetUpdatePhase(UpdatePhase.Idle);
             }
         }
     }

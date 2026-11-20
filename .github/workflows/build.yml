@@ -47,6 +47,10 @@ jobs:
       - run: dotnet build tests/DropHalo.Engines.Tests/DropHalo.Engines.Tests.csproj -c Release --no-restore
       - run: dotnet test tests/DropHalo.Core.Tests/DropHalo.Core.Tests.csproj -c Release --no-build --logger "trx;LogFileName=core.trx"
       - run: dotnet test tests/DropHalo.Engines.Tests/DropHalo.Engines.Tests.csproj -c Release --no-build --logger "trx;LogFileName=engines.trx"
+      - name: Verify the update helper handoff
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./tests/DropHalo.Acceptance/Verify-UpdateHandoff.ps1
       - uses: actions/upload-artifact@v4
         if: always()
         with:
