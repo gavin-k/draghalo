@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Threading.Channels;
 using DropHalo.Core.Conversion;
 
@@ -18,7 +19,7 @@ public sealed class JobQueue : IAsyncDisposable
     private readonly UndoLedger _undo;
     private readonly TimeProvider _time;
     private readonly IConflictPrompt? _prompt;
-    private readonly Dictionary<JobLane, Channel<Job>> _lanes = Enum.GetValues<JobLane>().ToDictionary(lane => lane, _ => Channel.CreateUnbounded<Job>(new UnboundedChannelOptions { SingleReader = true }));
+    private readonly Dictionary<JobLane, Channel<Task<Job>>> _lanes = Enum.GetValues<JobLane>().ToDictionary(lane => lane, _ => Channel.CreateUnbounded<Task<Job>>(new UnboundedChannelOptions { SingleReader = true }));
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _cancels = new();
     private readonly List<Job> _jobs = [];
     private readonly Lock _gate = new();
@@ -37,6 +38,7 @@ public sealed class JobQueue : IAsyncDisposable
         _workers = [.. _lanes.Values.Select(lane => Task.Run(() => RunWorkerAsync(lane)))];
     }
 
+    /// <summary>Observers run inline. Return without waiting for the queue to settle; failures are traced and isolated.</summary>
     public event Action<Job>? JobChanged;
 
     /// <summary>Snapshot, oldest first.</summary>
@@ -56,8 +58,13 @@ public sealed class JobQueue : IAsyncDisposable
     public Job Enqueue(ConversionRequest request, string label, IJobRunner? runner = null, bool countsTowardQuota = true)
     {
         var job = new Job { Request = request, Label = label, Runner = runner, CountsTowardQuota = countsTowardQuota };
+        var writer = _lanes[job.Lane].Writer;
+        // Reserve the FIFO position before notifying, but keep Pending observable until notification returns.
+        var ready = new TaskCompletionSource<Job>(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (_gate)
         {
+            ObjectDisposedException.ThrowIf(!writer.TryWrite(ready.Task), this);
+            _cancels[job.Id] = new CancellationTokenSource();
             _jobs.Add(job);
             if (_outstanding++ == 0)
             {
@@ -65,9 +72,14 @@ public sealed class JobQueue : IAsyncDisposable
             }
         }
 
-        _cancels[job.Id] = new CancellationTokenSource();
-        Raise(job);
-        ObjectDisposedException.ThrowIf(!_lanes[job.Lane].Writer.TryWrite(job), this);
+        try
+        {
+            Raise(job);
+        }
+        finally
+        {
+            ready.SetResult(job);
+        }
 
         return job;
     }
@@ -123,9 +135,12 @@ public sealed class JobQueue : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        foreach (var lane in _lanes.Values)
+        lock (_gate)
         {
-            lane.Writer.TryComplete();
+            foreach (var lane in _lanes.Values)
+            {
+                lane.Writer.TryComplete();
+            }
         }
 
         foreach (var cts in _cancels.Values)
@@ -142,10 +157,11 @@ public sealed class JobQueue : IAsyncDisposable
         await Task.WhenAll(_workers).ConfigureAwait(false);
     }
 
-    private async Task RunWorkerAsync(Channel<Job> lane)
+    private async Task RunWorkerAsync(Channel<Task<Job>> lane)
     {
-        await foreach (var job in lane.Reader.ReadAllAsync().ConfigureAwait(false))
+        await foreach (var ready in lane.Reader.ReadAllAsync().ConfigureAwait(false))
         {
+            var job = await ready.ConfigureAwait(false);
             await RunAsync(job).ConfigureAwait(false);
 
             TaskCompletionSource? idle = null;
@@ -240,5 +256,23 @@ public sealed class JobQueue : IAsyncDisposable
         Raise(job);
     }
 
-    private void Raise(Job job) => JobChanged?.Invoke(job);
+    private void Raise(Job job)
+    {
+        if (JobChanged is not { } changed)
+        {
+            return;
+        }
+
+        foreach (var observer in Delegate.EnumerateInvocationList(changed))
+        {
+            try
+            {
+                observer(job);
+            }
+            catch (Exception ex)
+            {
+                Trace.TraceError("DropHalo JobChanged observer failed: {0}", ex);
+            }
+        }
+    }
 }

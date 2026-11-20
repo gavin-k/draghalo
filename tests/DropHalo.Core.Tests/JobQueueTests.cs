@@ -39,6 +39,64 @@ public sealed class JobQueueTests : IDisposable
     private static ConversionRequest Jpg(string name = "a") => new([$"/in/{name}.jpg"], "png", "");
 
     [Fact]
+    public async Task Enqueue_after_disposal_leaves_the_closed_queue_unchanged()
+    {
+        var (queue, changes) = Create((_, _, _) => throw new InvalidOperationException("must not run"));
+        await queue.DisposeAsync();
+
+        Assert.Throws<ObjectDisposedException>(() => queue.Enqueue(Jpg(), "late"));
+
+        queue.Jobs.Should().BeEmpty();
+        changes.Should().BeEmpty();
+        queue.WhenIdleAsync().IsCompletedSuccessfully.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Disposal_during_pending_notification_can_settle_the_accepted_job()
+    {
+        var ran = false;
+        var (queue, changes) = Create((_, _, _) =>
+        {
+            ran = true;
+            return Task.FromResult(new ConversionResult(true, []));
+        });
+        await using var _q = queue;
+
+        Task? stopping = null;
+        queue.JobChanged += j =>
+        {
+            if (j.State == JobState.Pending)
+            {
+                stopping = queue.DisposeAsync().AsTask();
+            }
+        };
+
+        var job = queue.Enqueue(Jpg(), "accepted");
+        await Assert.IsAssignableFrom<Task>(stopping).WaitAsync(TimeSpan.FromSeconds(5));
+
+        ran.Should().BeFalse();
+        changes.Select(c => c.State).Should().Equal(JobState.Pending, JobState.Canceled);
+        queue.Jobs.Should().Equal(job);
+        queue.WhenIdleAsync().IsCompletedSuccessfully.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_throwing_observer_cannot_stop_a_worker_or_hide_changes_from_other_observers()
+    {
+        var (queue, _) = Create((_, _, _) => Task.FromResult(new ConversionResult(true, [])));
+        await using var _q = queue;
+        queue.JobChanged += _ => throw new IOException("failed observer");
+        var states = new List<JobState>();
+        queue.JobChanged += j => states.Add(j.State);
+
+        var job = queue.Enqueue(Jpg(), "observed");
+        await queue.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(5));
+
+        job.State.Should().Be(JobState.Done);
+        states.Should().Equal(JobState.Pending, JobState.Running, JobState.Done);
+    }
+
+    [Fact]
     public async Task Successful_job_is_done_with_a_recycle_undo_plan()
     {
         var (queue, changes) = Create((r, p, _) =>
