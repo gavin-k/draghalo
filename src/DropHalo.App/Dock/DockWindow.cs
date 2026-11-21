@@ -192,10 +192,19 @@ internal sealed class DockWindow
         };
     }
 
-    /// <summary>Set before <see cref="Close"/> so the close is not turned into a hide.</summary>
+    /// <summary>
+    /// Set once the app is quitting: the dock is not shown again and a close is not turned into a hide.
+    /// </summary>
     public bool Quitting { get; set; }
 
     public bool IsVisible => _window.AppWindow.IsVisible;
+
+    /// <summary>Takes the dock off the screen for good. It lives on until <see cref="Close"/>.</summary>
+    public void Withdraw()
+    {
+        Quitting = true;
+        Hide("quitting");
+    }
 
     public void Close()
     {

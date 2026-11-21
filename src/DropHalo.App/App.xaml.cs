@@ -370,15 +370,22 @@ public partial class App : Application
         try
         {
             FileLog.Info("shutting down");
+
+            // Only Exit, below, ends the message loop. Left at its default, the last window closing would, and
+            // nothing after the await that follows would run: no drain, no flush.
+            DispatcherShutdownMode = DispatcherShutdownMode.OnExplicitShutdown;
             _tray?.Dispose();
+            _tray = null;
             _controller?.Dispose();
             _monitor?.Dispose();
             _host?.Dispose();
-            _wheel?.Close();
-            _dock?.Close();
-            _settingsWindow?.Close();
-            _onboarding?.Close();
-            _queueWindow?.Close();
+
+            // Off the screen at once, but closed only after the drain: while it is awaited this thread goes on
+            // running what is queued for the windows, a cancelled job's last update among it.
+            _dock?.Withdraw();
+            _settingsWindow?.Withdraw();
+            _onboarding?.Withdraw();
+            _queueWindow?.Withdraw();
             if (_queue is not null)
             {
                 var drain = _queue.DisposeAsync().AsTask();
@@ -387,6 +394,12 @@ public partial class App : Application
                     FileLog.Info("a job was still running at exit");
                 }
             }
+
+            _wheel?.Close();
+            _dock?.Close();
+            _settingsWindow?.Close();
+            _onboarding?.Close();
+            _queueWindow?.Close();
         }
         catch (Exception ex)
         {
@@ -394,12 +407,19 @@ public partial class App : Application
         }
         finally
         {
-            _catalog?.Dispose();
-            _layout?.Dispose();
-            _network?.Dispose();
-            FileLog.Flush(TimeSpan.FromSeconds(1));
-            _instance?.Dispose();
-            Exit();
+            try
+            {
+                _catalog?.Dispose();
+                _layout?.Dispose();
+                _network?.Dispose();
+                FileLog.Flush(TimeSpan.FromSeconds(1));
+                _instance?.Dispose();
+            }
+            finally
+            {
+                // Nothing else ends the message loop any more.
+                Exit();
+            }
         }
     }
 }

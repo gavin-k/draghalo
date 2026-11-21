@@ -334,7 +334,7 @@ internal sealed partial class SettingsWindow
 
     public HWND Handle => new(WinRT.Interop.WindowNative.GetWindowHandle(_window));
 
-    /// <summary>Set before <see cref="Close"/> so the close is not turned into a hide.</summary>
+    /// <summary>Set once the app is quitting: nothing new starts and a close is not turned into a hide.</summary>
     public bool Quitting { get; set; }
 
     /// <summary>Shows the window with the saved settings, the first time centred on the primary work area.</summary>
@@ -354,12 +354,22 @@ internal sealed partial class SettingsWindow
         _window.Activate();
     }
 
-    public void Close()
+    /// <summary>
+    /// Takes the window off the screen for good and stops what it had running. It lives on until
+    /// <see cref="Close"/>, for a cancelled update check that still has to unwind into it.
+    /// </summary>
+    public void Withdraw()
     {
         Quitting = true;
         _namingPause.Stop();
         _updateTimer?.Stop();
         _updateCancellation?.Cancel();
+        _window.AppWindow.Hide();
+    }
+
+    public void Close()
+    {
+        Withdraw();
         _updateHttp.Dispose();
         _window.Close();
     }
