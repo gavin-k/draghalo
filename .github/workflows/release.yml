@@ -27,14 +27,36 @@ jobs:
   check:
     name: Version check
     runs-on: ubuntu-latest
+    outputs:
+      artifact_suffix: ${{ steps.meta.outputs.artifact_suffix }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Tag matches Package.appxmanifest and Directory.Build.props
+      - name: Compute safe artifact suffix and verify mirror script
+        id: meta
+        shell: pwsh
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          $safe = ($env:REF_NAME -replace '[^A-Za-z0-9._-]', '_')
+          if (-not $safe) { $safe = 'manual' }
+          "artifact_suffix=$safe" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          python3 scripts/sync-cnb-release.py --self-test
+          python3 -m unittest discover -s tests -p 'test_*.py' -v
+
+      - name: Tag matches main history, Package.appxmanifest, and Directory.Build.props
         if: github.event_name == 'push'
         shell: pwsh
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          $tag = '${{ github.ref_name }}'.TrimStart('v')
+          git fetch origin +refs/heads/main:refs/remotes/origin/main
+          git merge-base --is-ancestor HEAD refs/remotes/origin/main
+          if ($LASTEXITCODE -ne 0) { throw "Release tag $($env:REF_NAME) is not an ancestor of origin/main" }
+          if ($env:REF_NAME -notmatch '^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[A-Za-z0-9.-]+)?$') { throw "Invalid release tag format: $($env:REF_NAME)" }
+          $tag = $env:REF_NAME.Substring(1)
           [xml]$manifest = Get-Content src/DropHalo.App/Package.appxmanifest
           $msix = $manifest.GetElementsByTagName('Identity')[0].GetAttribute('Version')
           [xml]$props = Get-Content Directory.Build.props
@@ -83,10 +105,14 @@ jobs:
         shell: pwsh
         run: ./scripts/fetch-sidecars.ps1
 
-      - name: Core tests
+      - name: Core and Engines tests
+        shell: pwsh
         run: |
+          $env:Path = (Resolve-Path 'tools/sidecars/ffmpeg/x64').Path + ';' + $env:Path
           dotnet restore tests/DropHalo.Core.Tests/DropHalo.Core.Tests.csproj
+          dotnet restore tests/DropHalo.Engines.Tests/DropHalo.Engines.Tests.csproj
           dotnet test tests/DropHalo.Core.Tests/DropHalo.Core.Tests.csproj -c Release --no-restore
+          dotnet test tests/DropHalo.Engines.Tests/DropHalo.Engines.Tests.csproj -c Release --no-restore
 
       # 签名的 MSIX 的 Publisher 必须和证书主题逐字相同。源文件里保留 CN=Gavin Lee 给本地 devcert 用，
       # 只在签名的构建里改；所以发布包的包家族名和本地开发包不同，两者可以并存、不会互相升级。
@@ -180,19 +206,24 @@ jobs:
         if: env.SIGNING == 'true'
         id: verify
         shell: pwsh
+        env:
+          EXPECTED_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
         run: |
           $files = @(Get-ChildItem artifacts -Recurse -Include *.msix,*.msixbundle)
           if ($files.Count -lt 3) { throw "expected x64 + arm64 .msix and a .msixbundle, found $($files.Count) files" }
           foreach ($file in $files) {
             $signature = Get-AuthenticodeSignature $file.FullName
             if ($signature.Status -ne 'Valid') { throw "Signature invalid for $($file.Name): $($signature.Status) $($signature.StatusMessage)" }
+            if ($signature.SignerCertificate.Subject -cne $env:EXPECTED_PUBLISHER) {
+              throw "Unexpected certificate subject for $($file.Name): $($signature.SignerCertificate.Subject) (expected $($env:EXPECTED_PUBLISHER))"
+            }
             "$($file.Name): $($signature.SignerCertificate.Subject) (expires $($signature.SignerCertificate.NotAfter))"
           }
           "subject=$($signature.SignerCertificate.Subject)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - uses: actions/upload-artifact@v4
         with:
-          name: DropHalo-msix-${{ github.ref_name }}
+          name: DropHalo-msix-${{ needs.check.outputs.artifact_suffix }}
           path: |
             artifacts/x64/*.msix
             artifacts/arm64/*.msix
@@ -270,7 +301,7 @@ jobs:
         run: |
           foreach ($plat in 'x64', 'ARM64') {
             $publish = Join-Path $env:RUNNER_TEMP "publish-$plat"
-            dotnet build installer/msi/DropHalo.Msi.wixproj -c Release "-p:Platform=$plat" "-p:PublishDir=$publish\" -o artifacts/msi
+            dotnet build installer/msi/DropHalo.Msi.wixproj -c Release "-p:Platform=$plat" "-p:PublishDir=$publish" -o artifacts/msi
             if ($LASTEXITCODE -ne 0) { throw "MSI $plat failed" }
           }
           Get-ChildItem artifacts/msi -Filter *.msi | Format-Table Name, @{n='MB';e={[math]::Round($_.Length/1MB,1)}}
@@ -288,18 +319,23 @@ jobs:
       - name: Verify signatures
         if: env.SIGNING == 'true'
         shell: pwsh
+        env:
+          EXPECTED_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
         run: |
           $files = @(Get-ChildItem artifacts/msi -Filter *.msi) + @(Get-Item "$env:RUNNER_TEMP/publish-x64/DropHalo.exe", "$env:RUNNER_TEMP/publish-ARM64/DropHalo.exe")
           if ($files.Count -ne 4) { throw "expected two .msi and two DropHalo.exe, found $($files.Count) files" }
           foreach ($file in $files) {
             $signature = Get-AuthenticodeSignature $file.FullName
             if ($signature.Status -ne 'Valid') { throw "Signature invalid for $($file.Name): $($signature.Status) $($signature.StatusMessage)" }
+            if ($signature.SignerCertificate.Subject -cne $env:EXPECTED_PUBLISHER) {
+              throw "Unexpected certificate subject for $($file.Name): $($signature.SignerCertificate.Subject) (expected $($env:EXPECTED_PUBLISHER))"
+            }
             "$($file.Name): $($signature.SignerCertificate.Subject) (expires $($signature.SignerCertificate.NotAfter))"
           }
 
       - uses: actions/upload-artifact@v4
         with:
-          name: DropHalo-msi-${{ github.ref_name }}
+          name: DropHalo-msi-${{ needs.check.outputs.artifact_suffix }}
           path: artifacts/msi/*.msi
           if-no-files-found: error
 
@@ -345,18 +381,23 @@ jobs:
         run: |
           set -euo pipefail
           v="${TAG#v}"
-          cat > notes.md <<NOTES
-          ## 下载
-
-          | 文件 | 给谁 |
-          |---|---|
-          | \`DropHalo-$v.msixbundle\` | 推荐：x64 和 ARM64 通用，双击安装（Windows 10 19041+，需要 Windows App Runtime 2.5） |
-          | \`DropHalo-$v-x64.msix\` / \`DropHalo-$v-arm64.msix\` | 单架构 MSIX，排错或 sideload 用 |
-          | \`DropHalo-$v-x64.msi\` / \`DropHalo-$v-arm64.msi\` | 传统安装包（Intel/AMD 64 位 / ARM64），不依赖 MSIX |
-          | \`SHA256SUMS.txt\` | 校验和：\`Get-FileHash <文件>\` 对照 |
-
-          MSIX、MSIX bundle、MSI 安装包及 MSI 内的 DropHalo.exe 均用 Azure Trusted Signing 签名（签名者 \`$PUBLISHER\`）。
-          NOTES
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          v = os.environ["TAG"].removeprefix("v")
+          pub = os.environ["PUBLISHER"]
+          Path("notes.md").write_text(
+              "## 下载\n\n"
+              "| 文件 | 给谁 |\n"
+              "|---|---|\n"
+              f"| `DropHalo-{v}.msixbundle` | 推荐：x64 和 ARM64 通用，双击安装（Windows 10 19041+，需要 Windows App Runtime 2.5） |\n"
+              f"| `DropHalo-{v}-x64.msix` / `DropHalo-{v}-arm64.msix` | 单架构 MSIX，排错或 sideload 用 |\n"
+              f"| `DropHalo-{v}-x64.msi` / `DropHalo-{v}-arm64.msi` | 传统安装包（Intel/AMD 64 位 / ARM64），不依赖 MSIX |\n"
+              "| `SHA256SUMS.txt` | 校验和：`Get-FileHash <文件>` 对照 |\n\n"
+              f"MSIX、MSIX bundle、MSI 安装包及 MSI 内的 DropHalo.exe 均用 Azure Trusted Signing 签名（签名者 `{pub}`）。\n",
+              encoding="utf-8",
+          )
+          PY
           # 带后缀的标签（v0.2.0-beta.1）是预发布；纯版本号是正式版。
           pre=""; [[ "$v" == *-* ]] && pre="--prerelease"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then

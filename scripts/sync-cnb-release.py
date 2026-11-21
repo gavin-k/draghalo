@@ -2,6 +2,7 @@
 """Mirror original GitHub assets; a CNB job's short-lived token never leaves the API host."""
 import hashlib
 import argparse
+import http.client
 import json
 import os
 from pathlib import Path
@@ -28,15 +29,21 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+ALLOWED_HOSTS = ("github.com", "api.github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com", "cnb.cool", "api.cnb.cool", "asset.cnb.cool")
+REDIRECT_HOSTS = ("github.com", "api.github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com", "cnb.cool", "asset.cnb.cool")
+
+
 def open_url(url, *, method="GET", data=None, authenticated=False, headers=None):
     opener = urllib.request.build_opener(NoRedirect)
-    for _ in range(6):
+    for hop in range(6):
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme != "https" or parsed.username or parsed.password or parsed.port not in (None, 443):
             raise ValueError("Untrusted transport address")
+        if (hop > 0 or method == "GET") and parsed.hostname not in ALLOWED_HOSTS:
+            raise ValueError("Untrusted transport host")
         request_headers = {"User-Agent": "DropHalo-release-mirror", "Cache-Control": "no-cache", **(headers or {})}
         if authenticated:
-            token = {"api.cnb.cool": "CNB_TOKEN", "api.github.com": "GH_TOKEN"}.get(parsed.netloc)
+            token = {"api.cnb.cool": "CNB_TOKEN", "api.github.com": "GH_TOKEN"}.get(parsed.hostname)
             if token is None:
                 raise ValueError("Refusing to send credentials outside the API host")
             request_headers["Authorization"] = "Bearer " + os.environ[token]
@@ -45,8 +52,10 @@ def open_url(url, *, method="GET", data=None, authenticated=False, headers=None)
         except urllib.error.HTTPError as error:
             if error.code not in (301, 302, 303, 307, 308) or method != "GET":
                 raise
-            url = urllib.parse.urljoin(url, error.headers["Location"])
-            if urllib.parse.urlparse(url).hostname not in ("github.com", "api.github.com", "release-assets.githubusercontent.com", "cnb.cool", "asset.cnb.cool"):
+            location = error.headers["Location"]
+            error.close()
+            url = urllib.parse.urljoin(url, location)
+            if urllib.parse.urlparse(url).hostname not in REDIRECT_HOSTS:
                 raise ValueError("Untrusted download redirect") from None
             authenticated = False
     raise ValueError("Too many redirects")
@@ -152,9 +161,15 @@ def cnb_identity(release):
 
 def reusable(receipt, expected, release):
     fingerprints = cnb_identity(release)
+    expected_hashes = {a["name"]: a["sha256"] for a in expected.get("assets", [])}
     # This caches an earlier full SHA-256 readback, rather than treating equal lengths as equal files.
-    complete = len(fingerprints) == 6 and all(a["id"] and str(a["hash_algo"]).lower() in ("sha256", "sha1", "md5")
-        and re.fullmatch({"sha256": r"[a-fA-F0-9]{64}", "sha1": r"[a-fA-F0-9]{40}", "md5": r"[a-fA-F0-9]{32}"}[str(a["hash_algo"]).lower()], a["hash_value"] or "") for a in fingerprints)
+    complete = len(fingerprints) == 6 and all(
+        a["id"]
+        and str(a["hash_algo"]).lower() in ("sha256", "sha1", "md5")
+        and re.fullmatch({"sha256": r"[a-fA-F0-9]{64}", "sha1": r"[a-fA-F0-9]{40}", "md5": r"[a-fA-F0-9]{32}"}[str(a["hash_algo"]).lower()], a["hash_value"] or "")
+        and (str(a["hash_algo"]).lower() != "sha256" or str(a["hash_value"]).lower() == expected_hashes.get(a["name"]))
+        for a in fingerprints
+    )
     return complete and not release["draft"] and not release["prerelease"] and upstream_identity(receipt) == expected and receipt.get("cnb_assets") == fingerprints
 
 
@@ -189,14 +204,25 @@ def mirror_release(upstream, directory):
             if digest != hashes[name]:
                 raise ValueError(f"GitHub checksum mismatch: {name}")
             existing = next((a for a in (release.get("assets") or []) if a["name"] == name), None)
-            if existing is None:
-                upload = api("POST", f"{API}/{release['id']}/asset-upload-url", {"asset_name": name, "size": asset["size"], "ttl": 0, "overwrite": False})
+            def upload_asset(overwrite=False):
+                upload = api("POST", f"{API}/{release['id']}/asset-upload-url", {"asset_name": name, "size": asset["size"], "ttl": 0, "overwrite": overwrite})
                 with path.open("rb") as body, open_url(upload["upload_url"], method="PUT", data=body, headers={"Content-Length": str(asset["size"]), "Content-Type": "application/octet-stream"}):
                     pass
                 api("POST", upload["verify_url"])
+            if existing is None:
+                upload_asset(overwrite=False)
             elif existing["size"] != asset["size"]:
-                raise ValueError(f"Refusing to overwrite a different published asset: {name}")
-            verified = download(f"{API}/download/{tag}/{name}", directory / "verify.tmp", authenticated=True, expected_size=asset["size"])
+                if not release["draft"]:
+                    raise ValueError(f"Refusing to overwrite a different published asset: {name}")
+                upload_asset(overwrite=True)
+            verify_tmp = directory / "verify.tmp"
+            try:
+                verified = download(f"{API}/download/{tag}/{name}", verify_tmp, authenticated=True, expected_size=asset["size"])
+                if verified != digest and release["draft"] and existing is not None:
+                    upload_asset(overwrite=True)
+                    verified = download(f"{API}/download/{tag}/{name}", verify_tmp, authenticated=True, expected_size=asset["size"])
+            finally:
+                verify_tmp.unlink(missing_ok=True)
             if verified != digest:
                 raise ValueError(f"CNB readback mismatch: {name}")
             print(f"Verified {name}: {digest}")
@@ -230,14 +256,17 @@ def mirror():
             break
         page += 1
     latest = github("/latest")
-    releases[latest["tag_name"]] = latest
+    latest_tag = latest["tag_name"]
+    if latest.get("draft") or latest.get("prerelease") or not re.fullmatch(STABLE_TAG, latest_tag) or tuple(map(int, latest_tag[1:].split('.'))) < MIN_VERSION:
+        raise ValueError(f"Unexpected GitHub latest release: {latest_tag}")
+    releases[latest_tag] = latest
     with tempfile.TemporaryDirectory(prefix="drophalo-mirror-") as temporary:
         directory = Path(temporary)
         verified = {tag: mirror_release(release, directory) for tag, release in sorted(releases.items(), key=lambda pair: tuple(map(int, pair[0][1:].split('.'))))}
         latest = github("/latest")
         expected = identity(latest, directory)
         tag = latest["tag_name"]
-        if verified.get(tag) == expected:
+        if tuple(map(int, tag[1:].split('.'))) >= MIN_VERSION and verified.get(tag) == expected:
             current = api("GET", f"{API}/tags/{tag}")
             if not current.get("is_latest"):
                 api("PATCH", f"{API}/{current['id']}", {"make_latest": "true"})
@@ -282,12 +311,16 @@ def verify(tag, assets_directory=None, wait_seconds=0, *, existing_only=False):
                 if upstream_identity(receipt) != expected:
                     raise ValueError("CNB receipt does not match the frozen GitHub release")
                 break
-            except (urllib.error.URLError, ValueError) as error:
+            except (OSError, urllib.error.URLError, http.client.HTTPException, ValueError) as error:
                 if time.monotonic() >= deadline:
                     raise RuntimeError(f"{tag}: CNB mirror not ready; release verification failed") from error
-                time.sleep(min(15, deadline - time.monotonic()))
+                time.sleep(max(0.0, min(15.0, deadline - time.monotonic())))
+        verify_tmp = directory / "verify.tmp"
         for asset in expected["assets"]:
-            digest = download(f"https://cnb.cool/{REPOSITORY}/-/releases/download/{tag}/{asset['name']}", directory / "verify.tmp", expected_size=asset["size"])
+            try:
+                digest = download(f"https://cnb.cool/{REPOSITORY}/-/releases/download/{tag}/{asset['name']}", verify_tmp, expected_size=asset["size"])
+            finally:
+                verify_tmp.unlink(missing_ok=True)
             if digest != asset["sha256"]:
                 raise ValueError(f"CNB published bytes differ: {asset['name']}")
             print(f"Verified public CNB {asset['name']}: {digest}")
@@ -301,10 +334,10 @@ def verify(tag, assets_directory=None, wait_seconds=0, *, existing_only=False):
                 if current != canonical:
                     raise ValueError("The latest update pointers have not converged")
                 break
-            except (urllib.error.URLError, ValueError) as error:
+            except (OSError, urllib.error.URLError, http.client.HTTPException, ValueError) as error:
                 if time.monotonic() >= deadline:
                     raise RuntimeError("Latest update pointers differ; release verification failed") from error
-                time.sleep(min(15, deadline - time.monotonic()))
+                time.sleep(max(0.0, min(15.0, deadline - time.monotonic())))
         print(f"{tag}: both update sources have the same six files and SHA-256 hashes")
 
 

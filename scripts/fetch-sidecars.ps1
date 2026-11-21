@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Downloads the sidecar binaries pinned in scripts/sidecars.lock, checks their SHA-256 and unpacks
     ffmpeg.exe, ffprobe.exe, their DLLs and the license into tools/sidecars/<name>/<arch>/.
@@ -34,7 +34,7 @@ foreach ($line in Get-Content (Join-Path $RepoRoot 'scripts/sidecars.lock')) {
 
     $dest = Join-Path $Root "$name/$lineArch"
     $marker = Join-Path $dest '.sha256'
-    if ((Test-Path $marker) -and (Get-Content $marker -Raw).Trim() -eq $sum) {
+    if ((Test-Path $marker) -and (Get-Content $marker -Raw).Trim() -eq $sum -and (Test-Path (Join-Path $dest 'ffmpeg.exe')) -and (Test-Path (Join-Path $dest 'ffprobe.exe'))) {
         Write-Output "==> $name/$lineArch up to date"
         continue
     }
@@ -52,23 +52,26 @@ foreach ($line in Get-Content (Join-Path $RepoRoot 'scripts/sidecars.lock')) {
     if ($actual -ne $sum) { throw "SHA-256 mismatch for ${zip}: expected $sum, got $actual" }
 
     $work = Join-Path $Cache ("unpack." + [Guid]::NewGuid().ToString('N'))
-    Expand-Archive -LiteralPath $zip -DestinationPath $work
-    $top = Get-ChildItem -LiteralPath $work -Directory | Select-Object -First 1
-    if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
-    New-Item -ItemType Directory -Force -Path $dest | Out-Null
-    $bin = Join-Path $top.FullName 'bin'
-    Copy-Item (Join-Path $bin 'ffmpeg.exe'), (Join-Path $bin 'ffprobe.exe') $dest
-    Copy-Item (Join-Path $bin '*.dll') $dest
-    Copy-Item (Join-Path $top.FullName 'LICENSE.txt') (Join-Path $dest 'LICENSE.txt')
-    $commit = $top.Name -replace '^ffmpeg-n?[^-]*-[0-9]+-g([0-9a-f]+)-.*$', '$1'
-    # WriteAllLines writes UTF-8 without a BOM in both editions; Set-Content cannot in 5.1.
-    [IO.File]::WriteAllLines((Join-Path $dest 'SOURCE.txt'), [string[]]@(
-        "Binary: $url"
-        "SHA-256: $sum"
-        'Built by: https://github.com/BtbN/FFmpeg-Builds (LGPL variant, shared libraries)'
-        "FFmpeg source: https://github.com/FFmpeg/FFmpeg/commit/$commit"
-    ))
-    Remove-Item -Recurse -Force $work
-    Set-Content -NoNewline -Encoding ascii $marker $sum
-    Write-Output "==> $name/$lineArch ready in $dest"
+    try {
+        Expand-Archive -LiteralPath $zip -DestinationPath $work
+        $top = Get-ChildItem -LiteralPath $work -Directory | Select-Object -First 1
+        if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
+        New-Item -ItemType Directory -Force -Path $dest | Out-Null
+        $bin = Join-Path $top.FullName 'bin'
+        Copy-Item (Join-Path $bin 'ffmpeg.exe'), (Join-Path $bin 'ffprobe.exe') $dest
+        Copy-Item (Join-Path $bin '*.dll') $dest
+        Copy-Item (Join-Path $top.FullName 'LICENSE.txt') (Join-Path $dest 'LICENSE.txt')
+        $commit = $top.Name -replace '^ffmpeg-n?[^-]*-[0-9]+-g([0-9a-f]+)-.*$', '$1'
+        # WriteAllLines writes UTF-8 without a BOM in both editions; Set-Content cannot in 5.1.
+        [IO.File]::WriteAllLines((Join-Path $dest 'SOURCE.txt'), [string[]]@(
+            "Binary: $url"
+            "SHA-256: $sum"
+            'Built by: https://github.com/BtbN/FFmpeg-Builds (LGPL variant, shared libraries)'
+            "FFmpeg source: https://github.com/FFmpeg/FFmpeg/commit/$commit"
+        ))
+        Set-Content -NoNewline -Encoding ascii $marker $sum
+        Write-Output "==> $name/$lineArch ready in $dest"
+    } finally {
+        if (Test-Path -LiteralPath $work) { Remove-Item -Recurse -Force -LiteralPath $work -ErrorAction SilentlyContinue }
+    }
 }
