@@ -198,4 +198,49 @@ public class ModifierTapperTests
 
         _invoked.Should().Equal(WheelMode.Actions);
     }
+
+    [Fact]
+    public void Pruning_a_released_key_recovers_from_a_missed_key_up()
+    {
+        var t = Tapper();
+        // Win (vk 0x5B) went down, then Win+L switched to the secure desktop so its key-up never reached the hook.
+        t.OnModifier(Modifiers.Win, true, false, 0x5B);
+        t.OnOtherKey();
+
+        // Next Shift tap (vk 0xA0) prunes keys no longer physically down, so Shift is not misread as Win+Shift.
+        t.PruneReleased(vk => vk == 0xA0);
+        t.OnModifier(Modifiers.Shift, true, true, 0xA0);
+        After(50);
+        t.OnModifier(Modifiers.Shift, false, true, 0xA0);
+
+        _invoked.Should().Equal(WheelMode.Convert);
+    }
+
+    [Fact]
+    public void Held_key_flags_stay_false_when_idle_and_clear_on_release_or_prune()
+    {
+        var tapper = Tapper();
+        var winGate = new WinKeyGate(KeyBindings.Default);
+        var typeAhead = new TypeAhead { Listening = true };
+
+        tapper.HasHeldKeys.Should().BeFalse();
+        winGate.HasHeldKeys.Should().BeFalse();
+        typeAhead.HasHeldKeys.Should().BeFalse();
+
+        tapper.OnModifier(Modifiers.Shift, true, true, 0xA0);
+        winGate.Swallow(true, true, 0x5B).Should().BeTrue();
+        typeAhead.Swallow(0x41, true, Modifiers.None).Should().BeTrue();
+
+        tapper.HasHeldKeys.Should().BeTrue();
+        winGate.HasHeldKeys.Should().BeTrue();
+        typeAhead.HasHeldKeys.Should().BeTrue();
+
+        tapper.PruneReleased(_ => false);
+        winGate.PruneReleased(_ => false);
+        typeAhead.PruneReleased(_ => false);
+
+        tapper.HasHeldKeys.Should().BeFalse();
+        winGate.HasHeldKeys.Should().BeFalse();
+        typeAhead.HasHeldKeys.Should().BeFalse();
+    }
 }
