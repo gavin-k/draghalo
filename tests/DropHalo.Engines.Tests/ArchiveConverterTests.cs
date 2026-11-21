@@ -176,6 +176,56 @@ public sealed class ArchiveConverterTests : IDisposable
 
         Path.GetFileName(output).Should().Be("notes.txt.zip");
         Read(output).Should().ContainKey("notes.txt").WhoseValue.Text.Should().Be("line");
+
+        var tarOut = await Convert(gz, "tar");
+        Path.GetFileName(tarOut).Should().Be("notes.txt.tar");
+        Read(tarOut).Should().ContainKey("notes.txt").WhoseValue.Text.Should().Be("line");
+    }
+
+    [Fact]
+    public void Buffer_seekable_keeps_small_streams_in_memory_and_spills_large_ones_to_delete_on_close_disk()
+    {
+        var smallBytes = Encoding.UTF8.GetBytes("small payload");
+        using (var small = SharpCompressArchiveConverter.BufferSeekable(new NonSeekableReadStream(smallBytes), memoryLimitBytes: 1024))
+        {
+            small.Should().BeOfType<MemoryStream>();
+            small.Length.Should().Be(smallBytes.Length);
+        }
+
+        var largeBytes = Enumerable.Range(0, 16_384).Select(i => (byte)(i % 251)).ToArray();
+        string? spilledPath;
+        using (var spilled = SharpCompressArchiveConverter.BufferSeekable(new NonSeekableReadStream(largeBytes), memoryLimitBytes: 1024))
+        {
+            var fs = spilled.Should().BeOfType<FileStream>().Subject;
+            spilledPath = fs.Name;
+            File.Exists(spilledPath).Should().BeTrue();
+            var roundtrip = new byte[largeBytes.Length];
+            fs.ReadExactly(roundtrip);
+            roundtrip.Should().Equal(largeBytes);
+        }
+
+        File.Exists(spilledPath).Should().BeFalse("DeleteOnClose removes the temporary spill file immediately on Dispose");
+    }
+
+    private sealed class NonSeekableReadStream(byte[] data) : Stream
+    {
+        private int _pos;
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var n = Math.Min(count, data.Length - _pos);
+            Array.Copy(data, _pos, buffer, offset, n);
+            _pos += n;
+            return n;
+        }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     [Fact]

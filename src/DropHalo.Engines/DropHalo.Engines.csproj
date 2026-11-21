@@ -11,6 +11,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="DropHalo.Engines.Tests" />
     <Compile Include="../Shared/L.cs" Link="L.cs" />
     <EmbeddedResource Include="Strings.*.json" LogicalName="%(Filename)%(Extension)" WithCulture="false" />
   </ItemGroup>
