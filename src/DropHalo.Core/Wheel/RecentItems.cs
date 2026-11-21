@@ -23,15 +23,22 @@ public sealed class RecentItems : IRecentItems
             return;
         }
 
-        var (saved, problem) = JsonFile.Load(path, SettingsJson.Default.DictionaryStringListString, []);
-        LoadProblem = problem;
-        foreach (var (key, items) in saved)
+        try
         {
-            var parts = key.Split('.');
-            if (parts.Length == 2 && Enum.TryParse<MediaKind>(parts[0], out var kind) && Enum.TryParse<WheelMode>(parts[1], out var mode))
+            var (saved, problem) = JsonFile.Load(path, SettingsJson.Default.DictionaryStringListString, []);
+            LoadProblem = problem;
+            foreach (var (key, items) in saved)
             {
-                _lists[(kind, mode)] = [.. items.Distinct().Take(capacity)];
+                var parts = key.Split('.');
+                if (parts.Length == 2 && Enum.TryParse<MediaKind>(parts[0], out var kind) && Enum.TryParse<WheelMode>(parts[1], out var mode))
+                {
+                    _lists[(kind, mode)] = [.. items.Distinct().Take(capacity)];
+                }
             }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            LoadProblem = $"{Path.GetFileName(path)} could not be read ({ex.Message}); using defaults";
         }
     }
 
@@ -65,7 +72,13 @@ public sealed class RecentItems : IRecentItems
             if (_path is not null)
             {
                 var snapshot = _lists.ToDictionary(e => $"{e.Key.Item1}.{e.Key.Item2}", e => e.Value.ToList());
-                JsonFile.Save(_path, snapshot, SettingsJson.Default.DictionaryStringListString);
+                try
+                {
+                    JsonFile.Save(_path, snapshot, SettingsJson.Default.DictionaryStringListString);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                }
             }
         }
     }
