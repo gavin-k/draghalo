@@ -23,10 +23,14 @@ public sealed class TypeAhead
     private const byte Taken = 2;
 
     private readonly byte[] _keys = new byte[256];
+    private int _activeCount;
     private volatile bool _listening;
 
     /// <summary>Raised on the calling thread with a lower-case letter, a digit or <see cref="Backspace"/>, auto-repeats included.</summary>
     public event Action<char>? Typed;
+
+    /// <summary>True when at least one search key is currently tracked between key-down and key-up.</summary>
+    public bool HasHeldKeys => _activeCount > 0;
 
     /// <summary>Whether keys are taken now; set from any thread while the Convert wheel is open.</summary>
     public bool Listening
@@ -48,13 +52,19 @@ public sealed class TypeAhead
         if (!isDown)
         {
             var taken = _keys[vk] == Taken;
-            _keys[vk] = Up;
+            if (_keys[vk] != Up)
+            {
+                _keys[vk] = Up;
+                _activeCount--;
+            }
+
             return taken;
         }
 
         if (_keys[vk] == Up)
         {
             _keys[vk] = _listening && (held & (Modifiers.Ctrl | Modifiers.Alt | Modifiers.Win)) == 0 ? Taken : Passed;
+            _activeCount++;
         }
 
         if (_keys[vk] != Taken)
@@ -68,6 +78,24 @@ public sealed class TypeAhead
         }
 
         return true;
+    }
+
+    /// <summary>Resets keys whose key-up was lost to the secure desktop.</summary>
+    public void PruneReleased(Func<int, bool> isPhysicallyDown)
+    {
+        if (_activeCount == 0)
+        {
+            return;
+        }
+
+        for (var vk = 0; vk < _keys.Length && _activeCount > 0; vk++)
+        {
+            if (_keys[vk] != Up && !isPhysicallyDown(vk))
+            {
+                _keys[vk] = Up;
+                _activeCount--;
+            }
+        }
     }
 
     /// <summary>The character a key types into a search, or null for keys a search ignores.</summary>

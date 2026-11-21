@@ -204,12 +204,23 @@ public sealed unsafe class DragMonitor(ModifierTapper tapper, WinKeyGate winKeys
                 var vk = (VIRTUAL_KEY)((KBDLLHOOKSTRUCT*)lParam.Value)->vkCode;
                 var down = (uint)wParam.Value is PInvoke.WM_KEYDOWN or PInvoke.WM_SYSKEYDOWN;
 
-                // A button-up the hook never saw (it was skipped, or landed on the secure desktop) would leave
-                // the phase stuck, a Shift tap opening the wheel with nothing dragged and every Win press
-                // swallowed. The physical button settles it.
-                if (down && _phase != DragPhase.Idle && !ButtonIsDown())
+                // A button-up or key-up the hook never saw (it was skipped, or landed on the secure desktop)
+                // would leave the phase or held keys stuck. Physical key state settles both on the next press.
+                if (down)
                 {
-                    EndDrag();
+                    if (_phase != DragPhase.Idle && !ButtonIsDown())
+                    {
+                        EndDrag();
+                    }
+
+                    if (tapper.HasHeldKeys || winKeys.HasHeldKeys || typeAhead.HasHeldKeys)
+                    {
+                        var pressedVk = (int)vk;
+                        bool StillDown(int key) => key == pressedVk || (PInvoke.GetAsyncKeyState(key) & 0x8000) != 0;
+                        tapper.PruneReleased(StillDown);
+                        winKeys.PruneReleased(StillDown);
+                        typeAhead.PruneReleased(StillDown);
+                    }
                 }
 
                 var dragging = _phase != DragPhase.Idle;
