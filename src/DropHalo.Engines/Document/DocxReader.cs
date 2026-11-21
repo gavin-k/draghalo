@@ -41,6 +41,8 @@ internal sealed partial class DocxReader
 
     /// <summary>A style chain longer than this is taken for a loop.</summary>
     private const int MaxStyleDepth = 16;
+    private const int MaxNestingDepth = 64;
+    private const int MaxGridSpan = 256;
 
     private sealed record Style(string? Name, string? BasedOn, int? OutlineLevel, (string NumId, int? Level)? Numbering, bool? Bold, bool? Italic);
 
@@ -115,19 +117,24 @@ internal sealed partial class DocxReader
         _ => false,
     });
 
-    private List<DocBlock> Blocks(XElement container, CancellationToken cancellationToken)
+    private List<DocBlock> Blocks(XElement container, CancellationToken cancellationToken, int depth = 0)
     {
         var blocks = new List<DocBlock>();
+        if (depth >= MaxNestingDepth)
+        {
+            return blocks;
+        }
+
         foreach (var e in Content(container))
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (e.Name == W + "p")
             {
-                Paragraph(e, blocks, cancellationToken);
+                Paragraph(e, blocks, depth, cancellationToken);
             }
             else if (e.Name == W + "tbl")
             {
-                blocks.Add(Table(e, cancellationToken));
+                blocks.Add(Table(e, depth + 1, cancellationToken));
             }
         }
 
@@ -139,8 +146,13 @@ internal sealed partial class DocxReader
     /// content controls, custom XML, smart tags, inserted and moved-to text, and the first choice of alternate content.
     /// Deleted and moved-from text is not among them.
     /// </summary>
-    private static IEnumerable<XElement> Content(XElement container)
+    private static IEnumerable<XElement> Content(XElement container, int depth = 0)
     {
+        if (depth >= MaxNestingDepth)
+        {
+            yield break;
+        }
+
         foreach (var e in container.Elements())
         {
             var inner = e.Name == W + "sdt" ? e.Element(W + "sdtContent")
@@ -153,7 +165,7 @@ internal sealed partial class DocxReader
                 continue;
             }
 
-            foreach (var child in Content(inner))
+            foreach (var child in Content(inner, depth + 1))
             {
                 yield return child;
             }
@@ -163,7 +175,7 @@ internal sealed partial class DocxReader
     /// <summary>Word writes the same text box twice, as DrawingML in the choice and VML in the fallback; one is enough.</summary>
     private static XElement? Choice(XElement alternate) => alternate.Element(Mc + "Choice") ?? alternate.Element(Mc + "Fallback");
 
-    private void Paragraph(XElement p, List<DocBlock> blocks, CancellationToken cancellationToken)
+    private void Paragraph(XElement p, List<DocBlock> blocks, int depth, CancellationToken cancellationToken)
     {
         var properties = p.Element(W + "pPr");
         var chain = Chain(Val(properties?.Element(W + "pStyle")) ?? _defaultStyle).ToList();
@@ -174,7 +186,7 @@ internal sealed partial class DocxReader
         var look = heading > 0 ? default : new Look(First(chain, s => s.Bold) ?? false, First(chain, s => s.Italic) ?? false);
         var runs = new List<DocRun>();
         var boxes = new List<DocBlock>();
-        Inline(p, look, null, runs, boxes, cancellationToken);
+        Inline(p, look, null, runs, boxes, depth, cancellationToken);
         blocks.Add(new DocParagraph(heading, list, Merge(runs)));
         blocks.AddRange(boxes);
     }
@@ -249,22 +261,27 @@ internal sealed partial class DocxReader
         return new(level, format.Ordered, number);
     }
 
-    private void Inline(XElement parent, Look look, string? link, List<DocRun> runs, List<DocBlock> boxes, CancellationToken cancellationToken)
+    private void Inline(XElement parent, Look look, string? link, List<DocRun> runs, List<DocBlock> boxes, int depth, CancellationToken cancellationToken)
     {
+        if (depth >= MaxNestingDepth)
+        {
+            return;
+        }
+
         foreach (var e in Content(parent))
         {
             if (e.Name == W + "r")
             {
-                Run(e, look, link, runs, boxes, cancellationToken);
+                Run(e, look, link, runs, boxes, depth, cancellationToken);
             }
             else if (e.Name == W + "hyperlink")
             {
                 var target = e.Attribute(R + "id")?.Value is { } id && _links.TryGetValue(id, out var address) ? address : null;
-                Inline(e, look, target ?? link, runs, boxes, cancellationToken);
+                Inline(e, look, target ?? link, runs, boxes, depth + 1, cancellationToken);
             }
             else if (e.Name == W + "fldSimple")
             {
-                Inline(e, look, Hyperlink(e.Attribute(W + "instr")?.Value) ?? link, runs, boxes, cancellationToken);
+                Inline(e, look, Hyperlink(e.Attribute(W + "instr")?.Value) ?? link, runs, boxes, depth + 1, cancellationToken);
             }
             else if ((e.Name == M + "oMath" || e.Name == M + "oMathPara") && !InInstruction)
             {
@@ -273,7 +290,7 @@ internal sealed partial class DocxReader
         }
     }
 
-    private void Run(XElement r, Look paragraph, string? link, List<DocRun> runs, List<DocBlock> boxes, CancellationToken cancellationToken)
+    private void Run(XElement r, Look paragraph, string? link, List<DocRun> runs, List<DocBlock> boxes, int depth, CancellationToken cancellationToken)
     {
         var properties = r.Element(W + "rPr");
         var chain = Chain(Val(properties?.Element(W + "rStyle"))).ToList();
@@ -328,7 +345,7 @@ internal sealed partial class DocxReader
                 Flush();
                 foreach (var box in TextBoxes(e))
                 {
-                    boxes.AddRange(Blocks(box, cancellationToken));
+                    boxes.AddRange(Blocks(box, cancellationToken, depth + 1));
                 }
             }
         }
@@ -366,8 +383,13 @@ internal sealed partial class DocxReader
     private static partial Regex HyperlinkField();
 
     /// <summary>The outermost text box contents in a drawing or VML picture; text boxes in them are read with their paragraphs.</summary>
-    private static IEnumerable<XElement> TextBoxes(XElement e)
+    private static IEnumerable<XElement> TextBoxes(XElement e, int depth = 0)
     {
+        if (depth >= MaxNestingDepth)
+        {
+            yield break;
+        }
+
         foreach (var child in e.Elements())
         {
             var inner = child.Name == W + "txbxContent" ? null : child.Name == Mc + "AlternateContent" ? Choice(child) : child;
@@ -377,14 +399,14 @@ internal sealed partial class DocxReader
                 continue;
             }
 
-            foreach (var box in TextBoxes(inner))
+            foreach (var box in TextBoxes(inner, depth + 1))
             {
                 yield return box;
             }
         }
     }
 
-    private DocTable Table(XElement table, CancellationToken cancellationToken)
+    private DocTable Table(XElement table, int depth, CancellationToken cancellationToken)
     {
         var rows = new List<IReadOnlyList<IReadOnlyList<DocBlock>>>();
         foreach (var tr in Content(table).Where(e => e.Name == W + "tr"))
@@ -394,8 +416,8 @@ internal sealed partial class DocxReader
             {
                 var properties = tc.Element(W + "tcPr");
                 var merge = properties?.Element(W + "vMerge");
-                cells.Add(merge is not null && (merge.Attribute(W + "val")?.Value ?? "continue") == "continue" ? [] : Blocks(tc, cancellationToken));
-                for (var span = IntVal(properties?.Element(W + "gridSpan")) ?? 1; span > 1; span--)
+                cells.Add(merge is not null && (merge.Attribute(W + "val")?.Value ?? "continue") == "continue" ? [] : Blocks(tc, cancellationToken, depth));
+                for (var span = Math.Clamp(IntVal(properties?.Element(W + "gridSpan")) ?? 1, 1, MaxGridSpan); span > 1; span--)
                 {
                     cells.Add([]);
                 }

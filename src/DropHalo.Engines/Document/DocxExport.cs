@@ -142,10 +142,10 @@ internal static class DocxExport
     private static string Number(DocListItem item) => item.Number.ToString(CultureInfo.InvariantCulture) + ". ";
 
     /// <summary>The paragraphs of a cell, those in tables inside it too, in order.</summary>
-    private static IEnumerable<DocParagraph> Paragraphs(IEnumerable<DocBlock> blocks) => blocks.SelectMany(b => b switch
+    private static IEnumerable<DocParagraph> Paragraphs(IEnumerable<DocBlock> blocks, int depth = 0) => depth >= 64 ? [] : blocks.SelectMany(b => b switch
     {
         DocParagraph p => [p],
-        DocTable t => t.Rows.SelectMany(row => row.SelectMany(Paragraphs)),
+        DocTable t => t.Rows.SelectMany(row => row.SelectMany(cell => Paragraphs(cell, depth + 1))),
         _ => Enumerable.Empty<DocParagraph>(),
     });
 
@@ -291,7 +291,7 @@ internal static class DocxExport
 
     /// <summary>A link destination with what would end it or break it out percent-encoded.</summary>
     private static string Destination(string link) =>
-        link.Replace(" ", "%20").Replace("(", "%28").Replace(")", "%29").Replace("<", "%3C").Replace(">", "%3E");
+        link.Replace(" ", "%20").Replace("(", "%28").Replace(")", "%29").Replace("<", "%3C").Replace(">", "%3E").Replace("\\", "%5C").Replace("|", "%7C");
 
     private static string MarkdownTable(DocTable table)
     {
@@ -319,8 +319,13 @@ internal static class DocxExport
         .Select(p => (p.List is { } item ? (item.Ordered ? Number(item) : "• ") : "") + string.Join("<br>", Lines(p.Runs).Select(l => MarkdownInline(Trim(l)))))
         .Where(text => text.Length > 0));
 
-    private static void HtmlBlocks(StringBuilder html, IReadOnlyList<DocBlock> blocks)
+    private static void HtmlBlocks(StringBuilder html, IReadOnlyList<DocBlock> blocks, int depth = 0)
     {
+        if (depth >= 64)
+        {
+            return;
+        }
+
         // Whether each open list is ordered, outermost at the bottom; the last item of the innermost is open too.
         var lists = new Stack<bool>();
         void Close()
@@ -374,7 +379,7 @@ internal static class DocxExport
                     foreach (var cell in row)
                     {
                         html.Append("<td>\n");
-                        HtmlBlocks(html, cell);
+                        HtmlBlocks(html, cell, depth + 1);
                         html.Append("</td>\n");
                     }
 
@@ -420,7 +425,12 @@ internal static class DocxExport
 
     /// <summary>The link when it is an absolute address on one of <see cref="SafeSchemes"/>; null otherwise.</summary>
     private static string? Safe(string? link) =>
-        link is not null && Uri.TryCreate(link, UriKind.Absolute, out var uri) && SafeSchemes.Contains(uri.Scheme) ? link : null;
+        link?.Trim() is { Length: > 0 } trimmed
+        && trimmed.IndexOfAny(['\r', '\n', '\0']) < 0
+        && Uri.TryCreate(trimmed, UriKind.Absolute, out var uri)
+        && SafeSchemes.Contains(uri.Scheme)
+            ? trimmed
+            : null;
 
     /// <summary>Neighbouring runs that agree on <paramref name="key"/>, a list for each stretch.</summary>
     private static List<List<DocRun>> Groups<T>(IEnumerable<DocRun> runs, Func<DocRun, T> key)

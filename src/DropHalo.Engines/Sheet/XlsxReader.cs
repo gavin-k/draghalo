@@ -238,7 +238,8 @@ internal static partial class XlsxReader
     /// <summary>"2026-10-25", "08:30:00" or both, from Excel's day count; null outside the dates Excel has.</summary>
     private static string? Date(double serial, Shows shows, bool date1904)
     {
-        if (serial is < 0 or >= 2958466)
+        var maxSerial = date1904 ? 2957004 : 2958466;
+        if (serial < 0 || serial >= maxSerial)
         {
             return null;
         }
@@ -246,6 +247,11 @@ internal static partial class XlsxReader
         // The 1900 system counts a 29 February 1900 that never was, so day 61 is 1 March and day 1 is 1 January.
         var origin = date1904 ? new DateTime(1904, 1, 1) : serial < 61 ? new DateTime(1899, 12, 31) : new DateTime(1899, 12, 30);
         var seconds = Math.Round(serial * 86400, MidpointRounding.AwayFromZero);
+        if (seconds < 0 || seconds > (DateTime.MaxValue - origin).TotalSeconds)
+        {
+            return null;
+        }
+
         var moment = origin.AddSeconds(seconds);
         return shows switch
         {
