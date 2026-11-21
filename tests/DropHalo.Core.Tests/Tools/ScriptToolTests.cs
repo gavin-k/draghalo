@@ -281,6 +281,57 @@ public sealed class ScriptToolTests : IDisposable
         _progress.Should().ContainInOrder(0.25, 0.5, 0.75, 1);
     }
 
+    [Fact]
+    public async Task Revoking_trust_blocks_both_availability_and_execution()
+    {
+        var manifest = Manifest();
+        var hash = ToolManifestReader.CommandHash(manifest.Script!);
+        var trust = DropHalo.Core.Settings.UserToolSettings.Default.Trust(manifest.Id, hash);
+        var tool = new ScriptTool(manifest, _toolDir, _runner, new CommandResolver(File.Exists, [], []), new FakeTime(), () => trust);
+        var source = Source("a.jpg");
+        _runner.Behavior = (start, _, _) => WriteOutput(start);
+
+        tool.Check(new([source], tool.Id, "")).IsAvailable.Should().BeTrue();
+
+        trust = trust.Distrust(manifest.Id);
+        var check = tool.Check(new([source], tool.Id, ""));
+        check.IsAvailable.Should().BeFalse();
+        check.Cause.Should().Be(UnavailableCause.UntrustedTool);
+
+        var result = await Run(tool, source);
+        result.Succeeded.Should().BeFalse();
+        _runner.Starts.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_side_effect_only_script_marks_the_job_skipped_when_every_run_prints_skip()
+    {
+        _runner.Behavior = (_, print, _) =>
+        {
+            print("skip nothing to do");
+            return Task.FromResult(new ProcessOutcome(0, ""));
+        };
+        var tool = Tool(new("clean.exe", ["{input}"], true, new("none", "", ""), 600), undo: "none");
+
+        var result = await Run(tool, Source("a.jpg"));
+
+        result.Succeeded.Should().BeTrue();
+        result.Skipped.Should().BeTrue();
+        result.Detail.Should().Contain("nothing to do");
+    }
+
+    [Fact]
+    public async Task Input_file_name_containing_placeholder_tokens_is_not_expanded_twice()
+    {
+        var tricky = Source("{output}.jpg");
+        _runner.Behavior = (start, _, _) => WriteOutput(start);
+
+        var result = await Run(Tool(), tricky);
+
+        result.Succeeded.Should().BeTrue(result.Error);
+        FakeProcessRunner.After(_runner.Starts.Single(), "--in").Should().Be(tricky);
+    }
+
     private sealed class FakeTime : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => new(2026, 10, 29, 12, 0, 0, TimeSpan.Zero);
