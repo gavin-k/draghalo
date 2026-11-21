@@ -21,7 +21,7 @@ internal static class DelimitedText
         {
             delimiter = '\t';
         }
-        else if (text.StartsWith("sep=", StringComparison.OrdinalIgnoreCase) && text.Length > 4 && (text.Length == 5 || text[5] is '\r' or '\n'))
+        else if (text.StartsWith("sep=", StringComparison.OrdinalIgnoreCase) && text.Length > 4 && text[4] is not ('\r' or '\n') && (text.Length == 5 || text[5] is '\r' or '\n'))
         {
             delimiter = text[4];
             start = text.Length > 5 && text[5] == '\r' && text.Length > 6 && text[6] == '\n' ? 7 : 6;

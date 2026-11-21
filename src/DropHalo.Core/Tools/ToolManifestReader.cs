@@ -248,10 +248,15 @@ public static partial class ToolManifestReader
         }
 
         var command = String(element, "command", problems, ToolProblem.Command, required: true) ?? "";
+        if (command.Contains('\0'))
+        {
+            problems.Add(new(ToolProblem.Command, L.T("{0} 必须是非空文字", "command")));
+        }
+
         var args = new List<string>();
         if (element.TryGetProperty("args", out var argsElement))
         {
-            if (argsElement.ValueKind != JsonValueKind.Array || argsElement.EnumerateArray().Any(a => a.ValueKind != JsonValueKind.String))
+            if (argsElement.ValueKind != JsonValueKind.Array || argsElement.EnumerateArray().Any(a => a.ValueKind != JsonValueKind.String || a.GetString()!.Contains('\0')))
             {
                 problems.Add(new(ToolProblem.Args, L.T("args 必须是字符串数组")));
             }
@@ -349,7 +354,7 @@ public static partial class ToolManifestReader
         return new(group, index);
     }
 
-    private static IReadOnlyList<MediaKind>? Kinds(JsonElement root, List<ToolProblem> problems)
+    private static List<MediaKind>? Kinds(JsonElement root, List<ToolProblem> problems)
     {
         if (!root.TryGetProperty("appliesTo", out var element) || element.ValueKind == JsonValueKind.Null)
         {
@@ -485,7 +490,7 @@ public static partial class ToolManifestReader
     [GeneratedRegex(@"^(tool|action)\.[a-z0-9-]+$")]
     private static partial Regex StepIdPattern();
 
-    [GeneratedRegex(@"\{([A-Za-z]+)\}")]
+    [GeneratedRegex(@"\{([^{}\s]+)\}")]
     private static partial Regex PlaceholderPattern();
 
     [GeneratedRegex(@"^[a-z0-9]+$", RegexOptions.IgnoreCase)]

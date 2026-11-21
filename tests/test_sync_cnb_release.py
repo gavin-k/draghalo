@@ -216,6 +216,104 @@ class MirrorTests(unittest.TestCase):
                 mirror.github("/tags/v0.1.6")
             self.assertEqual(opened.call_count, 1)
 
+    def test_interrupted_draft_asset_with_wrong_size_is_replaced_on_retry(self):
+        target = next(name for name in self.files if name.endswith(".msi"))
+        self.cnb["assets"].append({"id": "partial", "name": target, "size": 3, "hash_algo": "sha256", "hash_value": "0" * 64})
+        def open_upload_overwrite(url, *, method="GET", data=None, **kwargs):
+            self.assertEqual(method, "PUT")
+            name = url.rsplit('/', 1)[-1]
+            body = data.read()
+            self.uploaded[name] = body
+            self.cnb["assets"] = [a for a in self.cnb["assets"] if a["name"] != name]
+            self.cnb["assets"].append({"id": "asset-" + name, "name": name, "size": len(body), "hash_algo": "sha256", "hash_value": hashlib.sha256(body).hexdigest()})
+            return io.BytesIO()
+        with patch.object(mirror, "api", side_effect=self.api), patch.object(mirror, "open_url", side_effect=open_upload_overwrite), patch.object(mirror, "download", side_effect=self.download), patch.object(mirror, "github", return_value=copy.deepcopy(self.upstream)):
+            mirror.mirror_release(self.upstream, self.work)
+        self.assertFalse(self.cnb["draft"])
+        self.assertFalse((self.work / "verify.tmp").exists())
+
+    def test_open_url_rejects_untrusted_initial_get_host(self):
+        with self.assertRaisesRegex(ValueError, "Untrusted transport host"):
+            mirror.open_url("https://evil.example.com/file.msi")
+
+    def test_open_url_authenticates_api_host_with_explicit_443_port(self):
+        captured = {}
+        class DummyOpener:
+            def open(self, req, timeout=None):
+                captured["auth"] = req.get_header("Authorization")
+                return io.BytesIO(b"{}")
+        with patch.dict(os.environ, {"GH_TOKEN": "tok123"}), patch.object(urllib.request, "build_opener", return_value=DummyOpener()):
+            mirror.open_url("https://API.GITHUB.COM:443/repos/gavin-k/draghalo/releases/latest", authenticated=True)
+        self.assertEqual(captured["auth"], "Bearer tok123")
+        with patch.object(urllib.request, "build_opener", return_value=DummyOpener()):
+            mirror.open_url("https://objects.githubusercontent.com/github-production-release-asset/file.msi")
+
+    def test_cnb_git_merge_strips_upstream_updates_and_preserves_cnb_updates_without_rewriting_upstream_sha(self):
+        git_bin = "/Library/Developer/CommandLineTools/usr/bin/git" if Path("/Library/Developer/CommandLineTools/usr/bin/git").exists() else "git"
+        def run_git(cwd, *args):
+            return subprocess.run([git_bin, *args], cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
+        def mirror_merge(cnb_dir, gh_dir):
+            cnb_head = run_git(cnb_dir, "rev-parse", "HEAD")
+            run_git(cnb_dir, "fetch", str(gh_dir.resolve()), "main")
+            is_anc = subprocess.run([git_bin, "merge-base", "--is-ancestor", "FETCH_HEAD", "HEAD"], cwd=cnb_dir).returncode == 0
+            if not is_anc:
+                run_git(cnb_dir, "merge", "--allow-unrelated-histories", "--no-ff", "-X", "theirs", "--no-edit", "FETCH_HEAD")
+                run_git(cnb_dir, "rm", "-rf", "--ignore-unmatch", "-q", "updates/")
+                has_updates = subprocess.run([git_bin, "rev-parse", "--verify", "-q", f"{cnb_head}^{{tree}}:updates"], cwd=cnb_dir, stdout=subprocess.DEVNULL).returncode == 0
+                if has_updates:
+                    run_git(cnb_dir, "checkout", cnb_head, "--", "updates/")
+                if subprocess.run([git_bin, "diff", "--cached", "--quiet"], cwd=cnb_dir).returncode != 0:
+                    run_git(cnb_dir, "commit", "--amend", "--no-edit")
+
+        gh = self.work / "gh-repo"
+        cnb = self.work / "cnb-repo"
+        for repo in (gh, cnb):
+            repo.mkdir()
+            run_git(repo, "init", "-b", "main")
+            run_git(repo, "config", "user.name", "Test")
+            run_git(repo, "config", "user.email", "test@example.com")
+
+        (cnb / "README.md").write_text("init\n")
+        run_git(cnb, "add", ".")
+        run_git(cnb, "commit", "-m", "cnb init")
+
+        (gh / "README.md").write_text("upstream v1\n")
+        (gh / "updates").mkdir()
+        (gh / "updates" / "rogue.json").write_text("{}\n")
+        run_git(gh, "add", ".")
+        run_git(gh, "commit", "-m", "gh v1")
+        gh_sha1 = run_git(gh, "rev-parse", "HEAD")
+
+        # 1. First mirror run when CNB has no updates/ yet: rogue upstream updates/ must be removed and gh_sha1 preserved as parent.
+        mirror_merge(cnb, gh)
+        self.assertFalse((cnb / "updates").exists())
+        self.assertEqual((cnb / "README.md").read_text(), "upstream v1\n")
+        self.assertIn(gh_sha1, run_git(cnb, "rev-parse", "HEAD^2"))
+
+        # 2. CNB records legitimate updates/latest.json; upstream pushes new commit touching updates/ + README.
+        (cnb / "updates").mkdir()
+        (cnb / "updates" / "latest.json").write_text('{"tag_name":"v0.1.6"}\n')
+        run_git(cnb, "add", "updates")
+        run_git(cnb, "commit", "-m", "cnb latest")
+
+        (gh / "README.md").write_text("upstream v2\n")
+        (gh / "updates" / "latest.json").write_text('{"tag_name":"v9.9.9"}\n')
+        (gh / "updates" / "extra.json").write_text("{}\n")
+        run_git(gh, "add", ".")
+        run_git(gh, "commit", "-m", "gh v2")
+        gh_sha2 = run_git(gh, "rev-parse", "HEAD")
+
+        mirror_merge(cnb, gh)
+        self.assertEqual((cnb / "README.md").read_text(), "upstream v2\n")
+        self.assertEqual((cnb / "updates" / "latest.json").read_text(), '{"tag_name":"v0.1.6"}\n')
+        self.assertFalse((cnb / "updates" / "extra.json").exists())
+        self.assertEqual(run_git(cnb, "rev-parse", "HEAD^2"), gh_sha2)
+
+        # 3. Subsequent no-op sync creates no extra commit.
+        before_noop = run_git(cnb, "rev-parse", "HEAD")
+        mirror_merge(cnb, gh)
+        self.assertEqual(run_git(cnb, "rev-parse", "HEAD"), before_noop)
+
 
 if __name__ == "__main__":
     unittest.main()

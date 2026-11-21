@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     One-shot, idempotent Windows developer setup for DropHalo.
 
@@ -40,13 +40,17 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 # $PSScriptRoot is not populated while parameter defaults are evaluated in Windows PowerShell 5.1.
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-if (-not $RepoRoot) { $RepoRoot = (Resolve-Path (Join-Path $ScriptDir '..')).Path }
+if (-not $RepoRoot) { $RepoRoot = (Resolve-Path (Join-Path $ScriptDir '..')).Path } else { $RepoRoot = [IO.Path]::GetFullPath($RepoRoot) }
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
 $env:WINAPP_CLI_TELEMETRY_OPTOUT = '1'
 
 function Get-WinappVersion([string]$exe) {
-    if (((& $exe --version 2>&1) | Out-String) -match '(\d+\.\d+[\d.]*)') { return $Matches[1] } else { return '?' }
+    try {
+        $out = & { $ErrorActionPreference = 'Continue'; & $exe --version 2>&1 } | Out-String
+        if ($out -match '(\d+\.\d+[\d.]*)') { return $Matches[1] }
+    } catch { }
+    return '?'
 }
 
 $Arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
@@ -68,9 +72,15 @@ function Refresh-Path {
     $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
 }
 function Add-MachinePath([string]$dir) {
-    $p = [Environment]::GetEnvironmentVariable('Path', 'Machine')
-    if (($p -split ';') -notcontains $dir) {
-        [Environment]::SetEnvironmentVariable('Path', "$p;$dir", 'Machine')
+    $reg = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('SYSTEM\CurrentControlSet\Control\Session Manager\Environment', $true)
+    try {
+        $raw = [string]$reg.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+        if (($raw -split ';') -notcontains $dir) {
+            $next = if ($raw) { "$($raw.TrimEnd(';'));$dir" } else { $dir }
+            $reg.SetValue('Path', $next, [Microsoft.Win32.RegistryValueKind]::ExpandString)
+        }
+    } finally {
+        if ($reg) { $reg.Dispose() }
     }
     Refresh-Path
 }
@@ -203,7 +213,8 @@ if ($SkipCert) {
     if (-not (Test-Path $manifest)) { throw "manifest not found: $manifest (pass -RepoRoot)" }
     Push-Location $RepoRoot
     try {
-        & $winapp cert generate --manifest $manifest --output $pfx --if-exists skip 2>&1 |
+        $global:LASTEXITCODE = 0
+        & { $ErrorActionPreference = 'Continue'; & $winapp cert generate --manifest $manifest --output $pfx --if-exists skip 2>&1 } |
             Where-Object { $_ -match 'certificate|Certificate|⚠|✅|ℹ|error|Error' }
         if ($LASTEXITCODE -ne 0) { throw "winapp cert generate failed ($LASTEXITCODE)" }
     } finally { Pop-Location }
@@ -259,6 +270,7 @@ if ($SkipVisualStudio) {
         Write-Ok $msg
     } else {
         Write-Todo "Visual Studio installer exited with $code - re-run this script or install the workloads from the VS Installer UI"
+        throw "Visual Studio 2022 Community installation failed (exit $code)."
     }
 }
 

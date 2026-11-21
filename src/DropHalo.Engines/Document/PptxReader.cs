@@ -164,8 +164,13 @@ internal sealed class PptxReader
     }
 
     /// <summary>The shapes that may hold text, in the order they are stacked, groups opened, the first choice of alternate content.</summary>
-    private static IEnumerable<XElement> Shapes(XElement? tree)
+    private static IEnumerable<XElement> Shapes(XElement? tree, int depth = 0)
     {
+        if (depth >= 64)
+        {
+            yield break;
+        }
+
         foreach (var e in tree?.Elements() ?? [])
         {
             var inner = e.Name == P + "grpSp" ? e
@@ -173,7 +178,7 @@ internal sealed class PptxReader
                 : null;
             if (inner is not null)
             {
-                foreach (var shape in Shapes(inner))
+                foreach (var shape in Shapes(inner, depth + 1))
                 {
                     yield return shape;
                 }
