@@ -29,7 +29,7 @@ public sealed partial class NamingTemplate(string template)
             _ => m.Value,
         });
 
-        result = InvalidCharsRegex().Replace(result, "_").Trim();
+        result = InvalidCharsRegex().Replace(result, "_").Trim().TrimEnd('.');
         return result.Length == 0 ? ctx.SourceNameWithoutExtension : result;
     }
 

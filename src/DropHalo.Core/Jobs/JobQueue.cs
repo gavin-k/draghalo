@@ -26,6 +26,7 @@ public sealed class JobQueue : IAsyncDisposable
     private readonly Task[] _workers;
     private TaskCompletionSource _idle = new();
     private int _outstanding;
+    private bool _disposed;
 
     /// <param name="prompt">Asks about taken names under <see cref="ConflictPolicy.Ask"/>; without one they are numbered.</param>
     public JobQueue(ConversionGraph graph, UndoLedger undo, TimeProvider? time = null, IConflictPrompt? prompt = null)
@@ -113,15 +114,45 @@ public sealed class JobQueue : IAsyncDisposable
     /// <summary>Reverses a finished job by its <see cref="Job.Undo"/> plan. Returns false if the job is not in a state that can be undone.</summary>
     public async Task<bool> UndoAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var job = Jobs.FirstOrDefault(j => j.Id == id);
-        if (job is not { State: JobState.Done } || !await _undo.UndoAsync(job, cancellationToken).ConfigureAwait(false))
+        Job? job;
+        lock (_gate)
         {
-            return false;
+            if (_disposed)
+            {
+                return false;
+            }
+
+            job = _jobs.FirstOrDefault(j => j.Id == id);
+            if (job is not { State: JobState.Done })
+            {
+                return false;
+            }
+
+            if (_outstanding++ == 0)
+            {
+                _idle = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
         }
 
-        job.State = JobState.Undone;
-        Raise(job);
-        return true;
+        try
+        {
+            if (!await _undo.UndoAsync(job, cancellationToken).ConfigureAwait(false))
+            {
+                return false;
+            }
+
+            lock (_gate)
+            {
+                job.State = JobState.Undone;
+            }
+
+            Raise(job);
+            return true;
+        }
+        finally
+        {
+            CompleteOne();
+        }
     }
 
     /// <summary>Completes when no job is pending or running.</summary>
@@ -137,6 +168,7 @@ public sealed class JobQueue : IAsyncDisposable
     {
         lock (_gate)
         {
+            _disposed = true;
             foreach (var lane in _lanes.Values)
             {
                 lane.Writer.TryComplete();
@@ -155,35 +187,48 @@ public sealed class JobQueue : IAsyncDisposable
         }
 
         await Task.WhenAll(_workers).ConfigureAwait(false);
+        await WhenIdleAsync().ConfigureAwait(false);
     }
 
     private async Task RunWorkerAsync(Channel<Task<Job>> lane)
     {
         await foreach (var ready in lane.Reader.ReadAllAsync().ConfigureAwait(false))
         {
-            var job = await ready.ConfigureAwait(false);
-            await RunAsync(job).ConfigureAwait(false);
-
-            TaskCompletionSource? idle = null;
-            lock (_gate)
+            try
             {
-                if (--_outstanding == 0)
-                {
-                    idle = _idle;
-                }
+                var job = await ready.ConfigureAwait(false);
+                await RunAsync(job).ConfigureAwait(false);
             }
-
-            idle?.TrySetResult();
+            finally
+            {
+                CompleteOne();
+            }
         }
+    }
+
+    private void CompleteOne()
+    {
+        TaskCompletionSource? idle = null;
+        lock (_gate)
+        {
+            if (--_outstanding == 0)
+            {
+                idle = _idle;
+            }
+        }
+
+        idle?.TrySetResult();
     }
 
     private async Task RunAsync(Job job)
     {
         var cts = _cancels[job.Id];
-        var conflicts = new JobConflicts(_undo.Files, _prompt, job.Request.SourcePaths, cts.Token);
+        JobConflicts? conflicts = null;
+        ConversionRequest? request = null;
         try
         {
             cts.Token.ThrowIfCancellationRequested();
+            conflicts = new JobConflicts(_undo.Files, _prompt, job.Request.SourcePaths, cts.Token);
             var availability = job.Runner?.Check(job.Request) ?? _graph.Check(job.Request);
             if (!availability.IsAvailable)
             {
@@ -203,7 +248,7 @@ public sealed class JobQueue : IAsyncDisposable
                 Raise(job);
             });
             // The request the job keeps has no Conflicts, so a retry starts with fresh answers.
-            var request = job.Request with { Conflicts = conflicts, Written = new(StringComparer.OrdinalIgnoreCase) };
+            request = job.Request with { Conflicts = conflicts, Written = new(StringComparer.OrdinalIgnoreCase) };
             var result = await runner.RunAsync(request, progress, cts.Token).ConfigureAwait(false);
             job.Replaced = conflicts.Replaced;
 
@@ -215,6 +260,11 @@ public sealed class JobQueue : IAsyncDisposable
 
             if (!result.Succeeded)
             {
+                if (request.Written.Count > 0)
+                {
+                    OutputFiles.Rollback(request, request.Written.Keys);
+                }
+
                 Finish(job, JobState.Failed, error: result.Error ?? L.T("转换失败。"));
             }
             else if (result.Skipped)
@@ -232,12 +282,22 @@ public sealed class JobQueue : IAsyncDisposable
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
-            job.Replaced = conflicts.Replaced;
+            if (request is { Written.Count: > 0 })
+            {
+                OutputFiles.Rollback(request, request.Written.Keys);
+            }
+
+            job.Replaced = conflicts?.Replaced ?? 0;
             Finish(job, JobState.Canceled);
         }
         catch (Exception ex)
         {
-            job.Replaced = conflicts.Replaced;
+            if (request is { Written.Count: > 0 })
+            {
+                OutputFiles.Rollback(request, request.Written.Keys);
+            }
+
+            job.Replaced = conflicts?.Replaced ?? 0;
             Finish(job, JobState.Failed, error: ex.Message);
         }
         finally

@@ -89,16 +89,17 @@ public sealed class TransferAction(bool copy, IFileOperations files, IDesktop de
         for (var i = 0; i < items.Count; i++)
         {
             var path = Path.TrimEndingDirectorySeparator(Path.GetFullPath(items[i]));
-            if (!copy && SamePath(Path.GetDirectoryName(path), folder))
+            var isFolder = Directory.Exists(path);
+            var name = Path.GetFileName(path);
+            var plain = Path.Combine(folder, name);
+            if (!copy && (SamePath(Path.GetDirectoryName(path), folder) || OutputSnapshot.SameItem(path, plain)))
             {
                 skipped++;
                 continue;
             }
 
-            var isFolder = Directory.Exists(path);
-            var name = Path.GetFileName(path);
-            var plain = Path.Combine(folder, name);
-            var policy = request.Conflict switch
+            var samePhysicalItem = copy && OutputSnapshot.SameItem(path, plain);
+            var policy = samePhysicalItem ? ConflictPolicy.AutoNumber : request.Conflict switch
             {
                 ConflictPolicy.Skip => ConflictPolicy.Skip,
                 ConflictPolicy.OverwriteToRecycleBin or ConflictPolicy.Ask when !taken.Contains(plain) && Exists(plain) =>
@@ -111,9 +112,17 @@ public sealed class TransferAction(bool copy, IFileOperations files, IDesktop de
                 replace.Add(plain);
             }
 
+            var stem = isFolder ? name : Path.GetFileNameWithoutExtension(name);
+            var ext = isFolder ? "" : Path.GetExtension(name).TrimStart('.');
+            if (stem.Length == 0)
+            {
+                stem = name;
+                ext = "";
+            }
+
             var target = policy == ConflictPolicy.OverwriteToRecycleBin ? plain : NamingTemplate.ResolveConflict(folder,
-                isFolder ? name : Path.GetFileNameWithoutExtension(name),
-                isFolder ? "" : Path.GetExtension(name).TrimStart('.'),
+                stem,
+                ext,
                 policy, p => taken.Contains(p) || Exists(p));
             if (target is null)
             {

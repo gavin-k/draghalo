@@ -6,6 +6,7 @@ namespace DropHalo.Core.Jobs;
 /// </summary>
 public sealed class QuotaCounter(int dailyLimit, TimeProvider time)
 {
+    private readonly Lock _gate = new();
     private DateOnly _day = DateOnly.FromDateTime(time.GetLocalNow().DateTime);
     private int _used;
 
@@ -18,19 +19,30 @@ public sealed class QuotaCounter(int dailyLimit, TimeProvider time)
     {
         get
         {
-            RollOverIfNeeded();
-            return _used;
+            lock (_gate)
+            {
+                RollOverIfNeeded();
+                return _used;
+            }
         }
     }
 
     public int Remaining => IsUnlimited ? int.MaxValue : Math.Max(0, DailyLimit - Used);
 
-    public bool CanStart(int outputs = 1) => IsUnlimited || Remaining >= outputs;
+    public bool CanStart(int outputs = 1)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(outputs);
+        return IsUnlimited || Remaining >= outputs;
+    }
 
     public void RecordSuccess(int outputs = 1)
     {
-        RollOverIfNeeded();
-        _used += outputs;
+        ArgumentOutOfRangeException.ThrowIfNegative(outputs);
+        lock (_gate)
+        {
+            RollOverIfNeeded();
+            _used = checked(_used + outputs);
+        }
     }
 
     private void RollOverIfNeeded()

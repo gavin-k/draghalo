@@ -36,6 +36,17 @@ public static class FileActions
         return Availability.Available;
     }
 
-    internal static bool IsDriveRoot(string path) =>
-        Path.GetPathRoot(path) is { Length: > 0 } root && Path.TrimEndingDirectorySeparator(path).Length <= Path.TrimEndingDirectorySeparator(root).Length;
+    internal static bool IsDriveRoot(string path)
+    {
+        try
+        {
+            var full = Path.GetFullPath(path);
+            return Path.GetPathRoot(full) is { Length: > 0 } root
+                && Path.TrimEndingDirectorySeparator(full).Length <= Path.TrimEndingDirectorySeparator(root).Length;
+        }
+        catch (Exception ex) when (ex is ArgumentException or PathTooLongException or NotSupportedException)
+        {
+            return false;
+        }
+    }
 }
