@@ -70,9 +70,25 @@ public sealed class SidecarProcess(string executablePath)
         var tail = new Queue<string>();
         var stdout = Task.Run(async () =>
         {
+            Exception? callbackFailure = null;
             while (await output.ReadLineAsync(cancellationToken).ConfigureAwait(false) is { } line)
             {
-                onStdoutLine?.Invoke(line);
+                if (callbackFailure is null && onStdoutLine is not null)
+                {
+                    try
+                    {
+                        onStdoutLine(line);
+                    }
+                    catch (Exception ex)
+                    {
+                        callbackFailure = ex;
+                    }
+                }
+            }
+
+            if (callbackFailure is not null)
+            {
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(callbackFailure).Throw();
             }
         });
         var stderr = Task.Run(async () =>
@@ -87,34 +103,19 @@ public sealed class SidecarProcess(string executablePath)
             }
         });
 
+        var io = Task.WhenAll(stdout, stderr);
         try
         {
             await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
-            await Task.WhenAll(stdout, stderr).WaitAsync(cancellationToken).ConfigureAwait(false);
+            await io.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            if (OperatingSystem.IsWindows())
-            {
-                await job!.KillAsync().ConfigureAwait(false);
-            }
-            else
-            {
-                try
-                {
-                    process.Kill(entireProcessTree: true);
-                }
-                catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
-                {
-                    // Exited on its own in the meantime.
-                }
-
-                await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
-            }
+            await KillProcessTreeAsync(job, process).ConfigureAwait(false);
 
             try
             {
-                await Task.WhenAll(stdout, stderr).ConfigureAwait(false);
+                await io.ConfigureAwait(false);
             }
             catch (Exception) when (cancellationToken.IsCancellationRequested)
             {
@@ -130,5 +131,25 @@ public sealed class SidecarProcess(string executablePath)
         }
 
         return new(process.ExitCode, tail.ToArray());
+    }
+
+    private static async Task KillProcessTreeAsync(KillOnCloseJob? job, Process process)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            await job!.KillAsync().ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            process.Kill(entireProcessTree: true);
+        }
+        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
+        {
+            // Exited on its own in the meantime.
+        }
+
+        await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
     }
 }
