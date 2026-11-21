@@ -8,7 +8,7 @@
 
 **Tech Stack:** .NET 10, C# 14, xunit + FluentAssertions, System.Text.Json source generation, WinUI 3 (App only), CsWin32.
 
-**Spec:** `/Users/gavinlee/.claude/plans/soft-questing-lobster.md` (approved plan; Phase ① Steps 0–9 and the decisions table).
+**Spec:** `<local-plans>/soft-questing-lobster.md` (approved plan; Phase ① Steps 0–9 and the decisions table).
 
 ## Global Constraints
 
