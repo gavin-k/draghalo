@@ -26,8 +26,14 @@ public static class FfmpegLocator
         }
 
         var path = Environment.GetEnvironmentVariable("PATH") ?? "";
-        foreach (var dir in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        foreach (var raw in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
+            var dir = raw.Trim('"');
+            if (dir.Length == 0 || !Path.IsPathFullyQualified(dir))
+            {
+                continue;
+            }
+
             if (In(dir) is { } found)
             {
                 return found;
@@ -39,8 +45,15 @@ public static class FfmpegLocator
 
     private static FfmpegTools? In(string directory)
     {
-        var ffmpeg = Path.Combine(directory, Exe("ffmpeg"));
-        var ffprobe = Path.Combine(directory, Exe("ffprobe"));
-        return File.Exists(ffmpeg) && File.Exists(ffprobe) ? new(ffmpeg, ffprobe) : null;
+        try
+        {
+            var ffmpeg = Path.Combine(directory, Exe("ffmpeg"));
+            var ffprobe = Path.Combine(directory, Exe("ffprobe"));
+            return File.Exists(ffmpeg) && File.Exists(ffprobe) ? new(ffmpeg, ffprobe) : null;
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
     }
 }

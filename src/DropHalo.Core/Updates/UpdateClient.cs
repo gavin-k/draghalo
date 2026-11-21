@@ -42,34 +42,40 @@ public sealed partial class UpdateClient(HttpClient http)
         };
         using var json = JsonDocument.Parse(await ReadAsync(new Uri(latest), 1024 * 1024, budget.Token).ConfigureAwait(false));
         var release = json.RootElement;
-        if (release.TryGetProperty("draft", out var draft) && draft.GetBoolean()
-            || release.GetProperty("prerelease").GetBoolean())
+        if ((release.TryGetProperty("draft", out var draft) && draft.GetBoolean())
+            || !release.TryGetProperty("prerelease", out var prerelease) || prerelease.GetBoolean())
         {
             throw new InvalidDataException("The update is not a stable release.");
         }
 
-        var tag = release.GetProperty("tag_name").GetString() ?? "";
+        var tag = release.TryGetProperty("tag_name", out var tagProp) ? tagProp.GetString() ?? "" : "";
         if (!StableTag().IsMatch(tag) || !Version.TryParse(tag[1..], out var version))
         {
             throw new InvalidDataException("Invalid release version.");
         }
 
-        if (version <= new Version(current.Major, current.Minor, current.Build))
+        if (version <= new Version(current.Major, current.Minor, Math.Max(0, current.Build)))
         {
             return null;
         }
 
         var file = $"DropHalo-{version}-{architecture}.{(packaged ? "msix" : "msi")}";
-        var assets = release.GetProperty("assets").EnumerateArray().ToArray();
-        var size = assets.Single(a => a.GetProperty("name").GetString() == file).GetProperty("size").GetInt64();
-        if (size is <= 0 or > MaxPackageSize || !assets.Any(a => a.GetProperty("name").GetString() == "SHA256SUMS.txt"))
+        if (!release.TryGetProperty("assets", out var assetsElement) || assetsElement.ValueKind != JsonValueKind.Array)
+        {
+            throw new InvalidDataException("The release has no complete installer and checksums.");
+        }
+
+        var assets = assetsElement.EnumerateArray().ToArray();
+        var matching = assets.Where(a => a.TryGetProperty("name", out var n) && n.GetString() == file).ToArray();
+        if (matching.Length != 1 || !matching[0].TryGetProperty("size", out var sizeElement) || !sizeElement.TryGetInt64(out var size)
+            || size is <= 0 or > MaxPackageSize || !assets.Any(a => a.TryGetProperty("name", out var n) && n.GetString() == "SHA256SUMS.txt"))
         {
             throw new InvalidDataException("The release has no complete installer and checksums.");
         }
 
         var sums = Encoding.UTF8.GetString(await ReadAsync(DownloadUri(source, tag, "SHA256SUMS.txt"), 64 * 1024, budget.Token).ConfigureAwait(false));
         var hashes = sums.Split('\n').Select(line => line.Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
-            .Where(parts => parts.Length == 2 && parts[1] == file).ToArray();
+            .Where(parts => parts.Length == 2 && parts[1].TrimStart('*') == file).ToArray();
         if (hashes.Length != 1 || !Hash().IsMatch(hashes[0][0]))
         {
             throw new InvalidDataException("The installer checksum is missing or ambiguous.");
@@ -135,7 +141,13 @@ public sealed partial class UpdateClient(HttpClient http)
         {
             if (created)
             {
-                File.Delete(path);
+                try
+                {
+                    File.Delete(path);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                }
             }
             throw;
         }
@@ -213,7 +225,7 @@ public sealed partial class UpdateClient(HttpClient http)
     }
 
     private static bool Allowed(Uri uri) => uri.Scheme == "https" && uri.IsDefaultPort && uri.UserInfo.Length == 0
-        && (uri.Host is "api.github.com" or "github.com" or "release-assets.githubusercontent.com" or "cnb.cool" or "asset.cnb.cool");
+        && (uri.Host is "api.github.com" or "github.com" or "release-assets.githubusercontent.com" or "objects.githubusercontent.com" or "cnb.cool" or "asset.cnb.cool");
 
     [GeneratedRegex(@"\Av(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\z")]
     private static partial Regex StableTag();

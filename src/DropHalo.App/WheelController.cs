@@ -207,9 +207,9 @@ internal sealed class WheelController : IDisposable
 
     private void OnHovered(WheelPlacement placement, WheelHit hit) => _ui.TryEnqueue(() =>
     {
-        if (_session is { } session && ReferenceEquals(session.View, placement))
+        if (_session is { } session && session.View.Showing == placement.Showing)
         {
-            Hover(session, placement, hit);
+            Hover(session, session.View, hit);
         }
     });
 

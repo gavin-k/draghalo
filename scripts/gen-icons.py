@@ -160,15 +160,19 @@ def write_ico(path: Path, sizes: list[int], tray: bool = False):
         offset += len(data)
     path.write_bytes(out + b"".join(data for _, data in entries))
     with Image.open(path) as decoded:
-        assert decoded.ico.sizes() == {(n, n) for n in sizes}
+        if decoded.ico.sizes() != {(n, n) for n in sizes}:
+            raise RuntimeError(f"{path}: unexpected ICO sizes {decoded.ico.sizes()}")
         for n in sizes:
             im = decoded.ico.getimage((n, n)).convert("RGBA")
             low, high = im.getchannel("A").getextrema()
-            assert low < 16 and high == 255, (path, n, "empty or opaque icon")
+            if not (low < 16 and high == 255):
+                raise RuntimeError(f"{path} ({n}px): empty or opaque icon")
             if tray:
-                assert im.getpixel((n // 2, n // 5))[3] == 0, (path, n, "closed halo gap")
+                if im.getpixel((n // 2, n // 5))[3] != 0:
+                    raise RuntimeError(f"{path} ({n}px): closed halo gap")
                 pixels = im.tobytes()
-                assert all(tuple(pixels[i:i + 3]) == BLUE for i in range(0, len(pixels), 4) if pixels[i + 3] == 255), (path, n, "tray colour")
+                if not all(tuple(pixels[i:i + 3]) == BLUE for i in range(0, len(pixels), 4) if pixels[i + 3] == 255):
+                    raise RuntimeError(f"{path} ({n}px): unexpected tray colour")
 
 
 def on_canvas(width: int, height: int, mark: int) -> Image.Image:

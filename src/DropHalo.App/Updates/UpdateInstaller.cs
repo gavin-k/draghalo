@@ -31,7 +31,7 @@ internal static class UpdateInstaller
         {
             UseShellExecute = false,
             CreateNoWindow = true,
-            ArgumentList = { "-NoProfile", "-NonInteractive", "-EncodedCommand", Convert.ToBase64String(Encoding.Unicode.GetBytes(script)) },
+            ArgumentList = { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", Convert.ToBase64String(Encoding.Unicode.GetBytes(script)) },
         };
         cancellationToken.ThrowIfCancellationRequested();
         using var helper = Process.Start(start) ?? throw new IOException("Could not start Windows Installer.");
@@ -73,17 +73,21 @@ internal static class UpdateInstaller
             {
                 try
                 {
-                    if (!helper.HasExited)
-                    {
-                        helper.Kill();
-                    }
+                    helper.Kill(entireProcessTree: true);
                 }
-                catch (Exception ex) when ((ex is InvalidOperationException or System.ComponentModel.Win32Exception) && helper.HasExited)
+                catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
                 {
                 }
 
                 // The caller can remove its temporary files after the helper releases the package.
-                await helper.WaitForExitAsync(CancellationToken.None).ConfigureAwait(true);
+                using var waitLimit = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                try
+                {
+                    await helper.WaitForExitAsync(waitLimit.Token).ConfigureAwait(true);
+                }
+                catch (OperationCanceledException)
+                {
+                }
             }
         }
     }
