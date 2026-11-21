@@ -106,8 +106,8 @@ internal sealed unsafe class TrayIcon : IDisposable
     public void Notify(string title, string text)
     {
         var data = Data(NOTIFY_ICON_DATA_FLAGS.NIF_INFO);
-        title.AsSpan().CopyTo(data.szInfoTitle.AsSpan());
-        text.AsSpan().CopyTo(data.szInfo.AsSpan());
+        CopyTruncated(title, data.szInfoTitle.AsSpan());
+        CopyTruncated(text, data.szInfo.AsSpan());
         data.dwInfoFlags = NOTIFY_ICON_INFOTIP_FLAGS.NIIF_WARNING;
         if (PInvoke.Shell_NotifyIcon(NOTIFY_ICON_MESSAGE.NIM_MODIFY, &data))
         {
@@ -144,8 +144,25 @@ internal sealed unsafe class TrayIcon : IDisposable
             uCallbackMessage = CallbackMessage,
             hIcon = _icon,
         };
-        _tip.AsSpan().CopyTo(data.szTip.AsSpan());
+        CopyTruncated(_tip, data.szTip.AsSpan());
         return data;
+    }
+
+    private static void CopyTruncated(ReadOnlySpan<char> source, Span<char> destination)
+    {
+        if (destination.Length <= 1 || source.IsEmpty)
+        {
+            return;
+        }
+
+        var count = Math.Min(source.Length, destination.Length - 1);
+        if (count < source.Length && count > 0 && char.IsHighSurrogate(source[count - 1]))
+        {
+            count--;
+        }
+
+        source[..count].CopyTo(destination);
+        destination[count] = '\0';
     }
 
     private void ShowMenu(int x, int y)

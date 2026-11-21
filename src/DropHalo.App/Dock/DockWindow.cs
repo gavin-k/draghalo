@@ -292,6 +292,7 @@ internal sealed class DockWindow
     private async void OnDrop(object sender, DragEventArgs e)
     {
         _over = false;
+        _idleGrace.Stop();
         _dropSurface.BorderBrush = Brush("DwBorderBrush");
         e.AcceptedOperation = DataPackageOperation.None;
         if (Quitting || !IsVisible || _draggingOut || !e.DataView.Contains(StandardDataFormats.StorageItems))
@@ -299,11 +300,12 @@ internal sealed class DockWindow
             return;
         }
 
-        var deferral = e.GetDeferral();
+        DragOperationDeferral? deferral = null;
         var generation = _dropGeneration;
         _pendingDrops++;
         try
         {
+            deferral = e.GetDeferral();
             var items = await e.DataView.GetStorageItemsAsync();
             if (generation != _dropGeneration)
             {
@@ -333,7 +335,7 @@ internal sealed class DockWindow
                 _pendingDrops--;
             }
 
-            deferral.Complete();
+            deferral?.Complete();
         }
 
         if (generation == _dropGeneration)
