@@ -24,6 +24,7 @@ public sealed class TypeAhead
 
     private readonly byte[] _keys = new byte[256];
     private int _activeCount;
+    private int _passedCount;
     private volatile bool _listening;
 
     /// <summary>Raised on the calling thread with a lower-case letter, a digit or <see cref="Backspace"/>, auto-repeats included.</summary>
@@ -51,20 +52,29 @@ public sealed class TypeAhead
 
         if (!isDown)
         {
-            var taken = _keys[vk] == Taken;
-            if (_keys[vk] != Up)
+            var state = _keys[vk];
+            if (state != Up)
             {
                 _keys[vk] = Up;
                 _activeCount--;
+                if (state == Passed)
+                {
+                    _passedCount--;
+                }
             }
 
-            return taken;
+            return state == Taken;
         }
 
         if (_keys[vk] == Up)
         {
-            _keys[vk] = _listening && (held & (Modifiers.Ctrl | Modifiers.Alt | Modifiers.Win)) == 0 ? Taken : Passed;
+            var take = _listening && (held & (Modifiers.Ctrl | Modifiers.Alt | Modifiers.Win)) == 0;
+            _keys[vk] = take ? Taken : Passed;
             _activeCount++;
+            if (!take)
+            {
+                _passedCount++;
+            }
         }
 
         if (_keys[vk] != Taken)
@@ -87,17 +97,22 @@ public sealed class TypeAhead
     /// </remarks>
     public void PruneReleased(Func<int, bool> isPhysicallyDown)
     {
-        if (_activeCount == 0)
+        // This runs inside the keyboard hook on every key-down, so it stops at the last passed key
+        // instead of walking the whole table.
+        var remaining = _passedCount;
+        for (var vk = 0; remaining > 0 && vk < _keys.Length; vk++)
         {
-            return;
-        }
+            if (_keys[vk] != Passed)
+            {
+                continue;
+            }
 
-        for (var vk = 0; vk < _keys.Length && _activeCount > 0; vk++)
-        {
-            if (_keys[vk] == Passed && !isPhysicallyDown(vk))
+            remaining--;
+            if (!isPhysicallyDown(vk))
             {
                 _keys[vk] = Up;
                 _activeCount--;
+                _passedCount--;
             }
         }
     }

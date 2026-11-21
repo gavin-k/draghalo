@@ -49,6 +49,8 @@ public sealed unsafe class DragMonitor(ModifierTapper tapper, WinKeyGate winKeys
     private long _pointer;
     private long _dragId;
     private volatile DragPhase _phase;
+    private int _pressedVk;
+    private Func<int, bool>? _stillDown;
 
     /// <summary>Raised on the hook thread, inside the hook callback.</summary>
     public event Action<DragPhase>? PhaseChanged;
@@ -217,11 +219,13 @@ public sealed unsafe class DragMonitor(ModifierTapper tapper, WinKeyGate winKeys
 
                     if (tapper.HasHeldKeys || winKeys.HasHeldKeys || typeAhead.HasHeldKeys)
                     {
-                        var pressedVk = (int)vk;
-                        bool StillDown(int key) => key == pressedVk || (PInvoke.GetAsyncKeyState(key) & 0x8000) != 0;
-                        tapper.PruneReleased(StillDown);
-                        winKeys.PruneReleased(StillDown);
-                        typeAhead.PruneReleased(StillDown);
+                        // One delegate for the life of the hook: a local function capturing the key would
+                        // allocate on every key-down, system-wide.
+                        _pressedVk = (int)vk;
+                        var stillDown = _stillDown ??= StillDown;
+                        tapper.PruneReleased(stillDown);
+                        winKeys.PruneReleased(stillDown);
+                        typeAhead.PruneReleased(stillDown);
                     }
                 }
 
@@ -261,6 +265,12 @@ public sealed unsafe class DragMonitor(ModifierTapper tapper, WinKeyGate winKeys
 
         return PInvoke.CallNextHookEx(default, code, wParam, lParam);
     }
+
+    /// <summary>
+    /// Whether Windows has <paramref name="key"/> down. The key this event is for counts as down: its
+    /// async state changes only after the hook returns.
+    /// </summary>
+    private bool StillDown(int key) => key == _pressedVk || (PInvoke.GetAsyncKeyState(key) & 0x8000) != 0;
 
     private void PollDragImage()
     {
