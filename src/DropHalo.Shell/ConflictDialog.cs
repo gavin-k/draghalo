@@ -66,7 +66,15 @@ public static class ConflictDialog
             cancellationToken.ThrowIfCancellationRequested();
             int pressed;
             BOOL forTheRest;
-            PInvoke.TaskDialogIndirect(in config, &pressed, null, &forTheRest).ThrowOnFailure();
+            try
+            {
+                PInvoke.TaskDialogIndirect(in config, &pressed, null, &forTheRest).ThrowOnFailure();
+            }
+            finally
+            {
+                close.Dispose();
+            }
+
             return pressed switch
             {
                 Replace => new(ConflictPolicy.OverwriteToRecycleBin, forTheRest),
