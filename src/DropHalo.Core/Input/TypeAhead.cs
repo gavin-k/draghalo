@@ -81,6 +81,10 @@ public sealed class TypeAhead
     }
 
     /// <summary>Resets keys whose key-up was lost to the secure desktop.</summary>
+    /// <remarks>
+    /// Only keys that reached Windows are checked. Windows never saw a taken key-down, so it reports
+    /// that key as up for the whole press; resetting it would let its key-up through alone.
+    /// </remarks>
     public void PruneReleased(Func<int, bool> isPhysicallyDown)
     {
         if (_activeCount == 0)
@@ -90,7 +94,7 @@ public sealed class TypeAhead
 
         for (var vk = 0; vk < _keys.Length && _activeCount > 0; vk++)
         {
-            if (_keys[vk] != Up && !isPhysicallyDown(vk))
+            if (_keys[vk] == Passed && !isPhysicallyDown(vk))
             {
                 _keys[vk] = Up;
                 _activeCount--;

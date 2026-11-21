@@ -23,6 +23,7 @@ public sealed class ModifierTapper(KeyBindings bindings, TimeProvider time)
     private bool _pressedWhileDragging;
     private bool _spent;
     private readonly Dictionary<int, Modifiers> _physical = [];
+    private readonly HashSet<int> _swallowed = [];
 
     /// <summary>Raised on the calling thread when a bound combo is tapped (or held, for <see cref="InvokeStyle.Hold"/>).</summary>
     public event Action<WheelMode>? Invoked;
@@ -42,9 +43,13 @@ public sealed class ModifierTapper(KeyBindings bindings, TimeProvider time)
                 return;
             }
         }
-        else if (!_physical.Remove(identity) || _physical.ContainsValue(key))
+        else
         {
-            return;
+            _swallowed.Remove(identity);
+            if (!_physical.Remove(identity) || _physical.ContainsValue(key))
+            {
+                return;
+            }
         }
 
         var current = _bindings;
@@ -103,13 +108,25 @@ public sealed class ModifierTapper(KeyBindings bindings, TimeProvider time)
         }
     }
 
+    /// <summary>
+    /// The hook swallowed the key-down just fed to <see cref="OnModifier"/>. Windows never saw that key
+    /// go down and reports it as up for the whole press, so <see cref="PruneReleased"/> leaves it alone.
+    /// </summary>
+    public void OnSwallowed(int physicalKey)
+    {
+        if (_physical.ContainsKey(physicalKey))
+        {
+            _swallowed.Add(physicalKey);
+        }
+    }
+
     /// <summary>Clears physical keys whose key-up went to the secure desktop (Win+L, Ctrl+Alt+Del, UAC).</summary>
     public void PruneReleased(Func<int, bool> isPhysicallyDown)
     {
         List<(int Id, Modifiers Key)>? stale = null;
         foreach (var (id, key) in _physical)
         {
-            if (id > (int)Modifiers.Win && !isPhysicallyDown(id))
+            if (id > (int)Modifiers.Win && !_swallowed.Contains(id) && !isPhysicallyDown(id))
             {
                 (stale ??= []).Add((id, key));
             }

@@ -205,7 +205,9 @@ public sealed unsafe class DragMonitor(ModifierTapper tapper, WinKeyGate winKeys
                 var down = (uint)wParam.Value is PInvoke.WM_KEYDOWN or PInvoke.WM_SYSKEYDOWN;
 
                 // A button-up or key-up the hook never saw (it was skipped, or landed on the secure desktop)
-                // would leave the phase or held keys stuck. Physical key state settles both on the next press.
+                // would leave the phase or held keys stuck. Physical key state settles both on the next press,
+                // except for keys this hook swallowed: Windows never saw those go down, so the trackers keep
+                // them until their own key-up.
                 if (down)
                 {
                     if (_phase != DragPhase.Idle && !ButtonIsDown())
@@ -242,6 +244,11 @@ public sealed unsafe class DragMonitor(ModifierTapper tapper, WinKeyGate winKeys
                     tapper.OnModifier(modifier, down, dragging, (int)vk);
                     if (modifier == Modifiers.Win && winKeys.Swallow(down, dragging, (int)vk))
                     {
+                        if (down)
+                        {
+                            tapper.OnSwallowed((int)vk);
+                        }
+
                         return new LRESULT(1);
                     }
                 }

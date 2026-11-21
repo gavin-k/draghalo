@@ -36,6 +36,10 @@ public sealed class WinKeyGate(KeyBindings bindings)
     }
 
     /// <summary>Drops Win keys whose key-up was lost to the secure desktop (Win+L, UAC).</summary>
+    /// <remarks>
+    /// Only presses that reached Windows are checked. Windows never saw a swallowed key-down, so it
+    /// reports that key as up for the whole press; dropping it would let its key-up through alone.
+    /// </remarks>
     public void PruneReleased(Func<int, bool> isPhysicallyDown)
     {
         if (_pressed.Count == 0)
@@ -44,9 +48,9 @@ public sealed class WinKeyGate(KeyBindings bindings)
         }
 
         List<int>? stale = null;
-        foreach (var key in _pressed.Keys)
+        foreach (var (key, swallowed) in _pressed)
         {
-            if (key != 0 && !isPhysicallyDown(key))
+            if (key != 0 && !swallowed && !isPhysicallyDown(key))
             {
                 (stale ??= []).Add(key);
             }
