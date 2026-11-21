@@ -357,13 +357,14 @@ internal sealed partial class SettingsWindow
     public void Close()
     {
         Quitting = true;
+        _namingPause.Stop();
         _updateTimer?.Stop();
         _updateCancellation?.Cancel();
         _updateHttp.Dispose();
         _window.Close();
     }
 
-    private static unsafe bool HasPackageIdentity()
+    internal static unsafe bool HasPackageIdentity()
     {
         uint length = 0;
         return PInvoke.GetCurrentPackageFullName(&length, default) != WIN32_ERROR.APPMODEL_ERROR_NO_PACKAGE;
@@ -766,9 +767,16 @@ internal sealed partial class SettingsWindow
 
     private async Task ClearLogsAsync()
     {
-        var deleted = await FileLog.ClearAsync().ConfigureAwait(true);
-        FileLog.Info($"settings: cleared {deleted} log file(s)");
-        _logNote.Text = L.T("已清除 {0} 个日志文件。", deleted);
+        try
+        {
+            var deleted = await FileLog.ClearAsync().ConfigureAwait(true);
+            FileLog.Info($"settings: cleared {deleted} log file(s)");
+            _logNote.Text = L.T("已清除 {0} 个日志文件。", deleted);
+        }
+        catch (Exception ex)
+        {
+            FileLog.Error("settings: could not clear log files", ex);
+        }
     }
 
     private void KeysChanged(WheelMode mode)
@@ -1029,9 +1037,14 @@ internal sealed partial class SettingsWindow
             _changingLanguage = true;
             try
             {
+                if (_window.Content?.XamlRoot is not { } xamlRoot)
+                {
+                    return;
+                }
+
                 var confirm = new ContentDialog
                 {
-                    XamlRoot = _window.Content.XamlRoot,
+                    XamlRoot = xamlRoot,
                     Title = L.T("重启以切换语言？"),
                     Content = L.T("需要重启 DropHalo 才能应用新语言。现在重启会取消未完成的任务，并清空任务列表。"),
                     PrimaryButtonText = L.T("重启并应用"),
@@ -1053,12 +1066,16 @@ internal sealed partial class SettingsWindow
                     FileLog.Error("settings: could not restart for the language change", ex);
                     await new ContentDialog
                     {
-                        XamlRoot = _window.Content.XamlRoot,
+                        XamlRoot = xamlRoot,
                         Title = L.T("无法重启 DropHalo"),
                         Content = L.T("语言已保存，但未能重启 DropHalo。请退出后重新打开。\n{0}", ex.Message),
                         CloseButtonText = L.T("知道了"),
                     }.ShowAsync().AsTask().ConfigureAwait(true);
                 }
+            }
+            catch (Exception ex)
+            {
+                FileLog.Error("settings: language prompt failed", ex);
             }
             finally
             {
