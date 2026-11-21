@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="DropHalo.Core.Tests" />
     <Compile Include="../Shared/L.cs" Link="Localization/L.cs" />
     <EmbeddedResource Include="Strings.*.json" LogicalName="%(Filename)%(Extension)" WithCulture="false" />
   </ItemGroup>

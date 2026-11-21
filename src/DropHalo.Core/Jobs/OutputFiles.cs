@@ -57,7 +57,7 @@ public static class OutputFiles
     {
         foreach (var path in paths)
         {
-            if (!request.Written.TryGetValue(path, out var snapshot) || !snapshot.Matches(path))
+            if (!request.Written.TryGetValue(path, out var snapshot) || !snapshot.MetadataMatches(path))
             {
                 continue;
             }
@@ -66,8 +66,8 @@ public static class OutputFiles
             try
             {
                 Move(path, held);
-                // Verify after claiming the path too: a replacement may have arrived before the move.
-                if (snapshot.Matches(held))
+                // Verify full content after claiming the path: an in-place edit or replacement may have arrived before the move.
+                if (snapshot.MatchesMoved(held))
                 {
                     TryDelete(held);
                 }
@@ -168,7 +168,13 @@ public static class OutputFiles
 
         // A chosen output folder may not exist yet, or no longer.
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-        var temp = Path.Combine(Path.GetDirectoryName(target)!, $".{Path.GetFileName(target)}.{Guid.NewGuid():N}{TempSuffix}");
+        var targetName = Path.GetFileName(target);
+        if (targetName.Length > 64)
+        {
+            targetName = targetName[..64];
+        }
+
+        var temp = Path.Combine(Path.GetDirectoryName(target)!, $".{targetName}.{Guid.NewGuid():N}{TempSuffix}");
         try
         {
             if (folder)
@@ -177,7 +183,7 @@ public static class OutputFiles
             }
 
             await write(temp).ConfigureAwait(false);
-            var snapshot = OutputSnapshot.Capture(temp);
+            var staged = OutputSnapshot.Stage(temp);
             cancellationToken.ThrowIfCancellationRequested();
             if (policy == ConflictPolicy.OverwriteToRecycleBin && Exists(target))
             {
@@ -199,12 +205,16 @@ public static class OutputFiles
                     }
 
                     request.Conflicts?.Wrote(target);
-                    if (snapshot is not null)
+                    if (staged?.RebindAfterMove(target) is { } finalSnapshot)
                     {
-                        request.Written[target] = snapshot;
+                        request.Written[target] = finalSnapshot;
                     }
 
                     return target;
+                }
+                catch (IOException) when (Exists(target) && policy == ConflictPolicy.Skip)
+                {
+                    return null;
                 }
                 catch (IOException) when (Exists(target) && policy == ConflictPolicy.AutoNumber && attempt < 5)
                 {

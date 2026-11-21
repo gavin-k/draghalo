@@ -613,6 +613,107 @@ public sealed class JobQueueTests : IDisposable
         queue.WhenIdleAsync().IsCompleted.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task Bad_source_path_fails_its_job_without_killing_the_worker_lane()
+    {
+        var (queue, _) = Create((_, _, _) => Task.FromResult(new ConversionResult(true, [])));
+        await using var _q = queue;
+
+        var broken = queue.Enqueue(new(["bad\0path.jpg"], "png", ""), "broken");
+        var healthy = queue.Enqueue(Jpg("ok"), "healthy");
+
+        await queue.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        broken.State.Should().Be(JobState.Failed);
+        healthy.State.Should().Be(JobState.Done);
+    }
+
+    [Fact]
+    public async Task When_idle_waits_for_an_in_flight_undo()
+    {
+        var undoStarted = new TaskCompletionSource();
+        var allowUndoFinish = new TaskCompletionSource();
+        var slowFiles = new SlowRecycleFiles(undoStarted, allowUndoFinish.Task);
+        var graph = new ConversionGraph();
+        var outFile = Path.Combine(_dir, "undo-wait.png");
+        graph.Register(new TestConverter([new("jpg", "png")], (_, _, _) =>
+        {
+            File.WriteAllText(outFile, "out");
+            return Task.FromResult(ConversionResult.Written([outFile]));
+        }));
+        await using var queue = new JobQueue(graph, new UndoLedger(slowFiles));
+
+        var job = queue.Enqueue(Jpg("undo-wait"), "undo-wait");
+        await queue.WhenIdleAsync();
+        job.State.Should().Be(JobState.Done);
+
+        var undoTask = queue.UndoAsync(job.Id);
+        await undoStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        queue.WhenIdleAsync().IsCompleted.Should().BeFalse();
+
+        allowUndoFinish.SetResult();
+        (await undoTask).Should().BeTrue();
+        await queue.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task Concurrent_undos_run_once_and_undo_after_dispose_is_refused()
+    {
+        var recycleCount = 0;
+        var undoStarted = new TaskCompletionSource();
+        var allowFinish = new TaskCompletionSource();
+        var files = new CountingSlowRecycleFiles(() =>
+        {
+            Interlocked.Increment(ref recycleCount);
+            undoStarted.TrySetResult();
+            return allowFinish.Task;
+        });
+        var graph = new ConversionGraph();
+        graph.Register(new TestConverter([new("jpg", "png")], (req, _, _) =>
+        {
+            var outPath = Output(Path.GetFileNameWithoutExtension(req.SourcePaths[0]) + ".png");
+            return Task.FromResult(ConversionResult.Written([outPath]));
+        }));
+
+        var queue = new JobQueue(graph, new UndoLedger(files));
+        var first = queue.Enqueue(Jpg("first"), "first");
+        var second = queue.Enqueue(Jpg("second"), "second");
+        await queue.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(5));
+
+        var u1 = queue.UndoAsync(first.Id);
+        await undoStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var u2 = queue.UndoAsync(first.Id);
+        allowFinish.SetResult();
+
+        var results = await Task.WhenAll(u1, u2);
+        results.Count(r => r).Should().Be(1);
+        recycleCount.Should().Be(1);
+        first.State.Should().Be(JobState.Undone);
+
+        await queue.DisposeAsync();
+        (await queue.UndoAsync(second.Id)).Should().BeFalse();
+        second.State.Should().Be(JobState.Done);
+        queue.WhenIdleAsync().IsCompleted.Should().BeTrue();
+    }
+
+    private sealed class CountingSlowRecycleFiles(Func<Task> onRecycle) : IFileOperations
+    {
+        public Task RecycleAsync(IReadOnlyList<string> paths, CancellationToken cancellationToken = default) => onRecycle();
+        public Task<IReadOnlyList<FileMove>> MoveAsync(IReadOnlyList<FileMove> moves, CancellationToken cancellationToken = default) => Task.FromResult(moves);
+        public Task<IReadOnlyList<FileMove>> CopyAsync(IReadOnlyList<FileMove> copies, CancellationToken cancellationToken = default) => Task.FromResult(copies);
+    }
+
+    private sealed class SlowRecycleFiles(TaskCompletionSource started, Task gate) : IFileOperations
+    {
+        public async Task RecycleAsync(IReadOnlyList<string> paths, CancellationToken cancellationToken = default)
+        {
+            started.TrySetResult();
+            await gate;
+        }
+
+        public Task<IReadOnlyList<FileMove>> MoveAsync(IReadOnlyList<FileMove> moves, CancellationToken cancellationToken = default) => Task.FromResult(moves);
+        public Task<IReadOnlyList<FileMove>> CopyAsync(IReadOnlyList<FileMove> copies, CancellationToken cancellationToken = default) => Task.FromResult(copies);
+    }
+
     private static void InterlockedMax(ref int target, int value)
     {
         int current;

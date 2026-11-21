@@ -208,6 +208,7 @@ internal sealed class QueueWindow
 
     private async Task UndoAsync(Job job, Row row)
     {
+        row.Fail(null);
         row.Busy(true);
         try
         {
@@ -277,7 +278,7 @@ internal sealed class QueueWindow
 
         public void Busy(bool busy) => _undo.IsEnabled = !busy;
 
-        public void Fail(string message) => _failure = message;
+        public void Fail(string? message) => _failure = message;
 
         public void Refresh()
         {
@@ -300,7 +301,7 @@ internal sealed class QueueWindow
             _progress.Value = _job.Progress;
             _cancel.Visibility = Shown(state is JobState.Pending or JobState.Running);
             _retry.Visibility = Shown(state is JobState.Failed or JobState.Canceled);
-            _reveal.Visibility = Shown(state == JobState.Done && _failure is null && _job.Outputs.Count > 0);
+            _reveal.Visibility = Shown(state == JobState.Done && _job.Outputs.Count > 0);
             _undo.Visibility = Shown(state == JobState.Done && _job.Undo is not UndoPlan.None);
         }
 

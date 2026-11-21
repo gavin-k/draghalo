@@ -27,11 +27,11 @@ public sealed class ShellFileOperations : IFileOperations
         const FILEOPERATION_FLAGS flags = FILEOPERATION_FLAGS.FOF_ALLOWUNDO | FILEOPERATION_FLAGS.FOF_NOCONFIRMATION
             | FILEOPERATION_FLAGS.FOF_SILENT | FILEOPERATION_FLAGS.FOF_NOERRORUI | FILEOPERATION_FLAGS.FOF_WANTNUKEWARNING
             | FILEOPERATION_FLAGS.FOFX_RECYCLEONDELETE;
-        return RunAsync(flags, op =>
+        return RunAsync(flags, (op, release) =>
         {
             foreach (var path in existing)
             {
-                op.DeleteItem(Item(path), null);
+                op.DeleteItem(release(Item(path)), null);
             }
         }, $"recycle {existing.Count} item(s)", cancellationToken);
     }
@@ -48,45 +48,91 @@ public sealed class ShellFileOperations : IFileOperations
         const FILEOPERATION_FLAGS flags = FILEOPERATION_FLAGS.FOF_ALLOWUNDO | FILEOPERATION_FLAGS.FOF_NOCONFIRMMKDIR
             | FILEOPERATION_FLAGS.FOF_RENAMEONCOLLISION | FILEOPERATION_FLAGS.FOF_SILENT;
         var transferred = new List<FileMove>();
-        await RunAsync(flags, op =>
+        await RunAsync(flags, (op, release) =>
         {
             foreach (var item in items)
             {
-                var folder = Path.GetDirectoryName(Path.GetFullPath(item.To)) ?? throw new ArgumentException($"No folder in {item.To}.", nameof(items));
+                var fullTo = Path.TrimEndingDirectorySeparator(Path.GetFullPath(item.To));
+                var folder = Path.GetDirectoryName(fullTo) ?? throw new ArgumentException($"No folder in {item.To}.", nameof(items));
                 Directory.CreateDirectory(folder);
-                var progress = new TransferProgress(Path.GetFullPath(item.From), transferred);
+                var progress = new TransferProgress(Path.TrimEndingDirectorySeparator(Path.GetFullPath(item.From)), transferred, cancellationToken);
                 if (copy)
                 {
-                    op.CopyItem(Item(item.From), Item(folder), Path.GetFileName(item.To), progress);
+                    op.CopyItem(release(Item(item.From)), release(Item(folder)), Path.GetFileName(fullTo), progress);
                 }
                 else
                 {
-                    op.MoveItem(Item(item.From), Item(folder), Path.GetFileName(item.To), progress);
+                    op.MoveItem(release(Item(item.From)), release(Item(folder)), Path.GetFileName(fullTo), progress);
                 }
             }
         }, $"{(copy ? "copy" : "move")} {items.Count} item(s)", cancellationToken).ConfigureAwait(false);
         return transferred;
     }
 
-    private static Task RunAsync(FILEOPERATION_FLAGS flags, Action<IFileOperation> queue, string what, CancellationToken cancellationToken)
+    private static Task RunAsync(FILEOPERATION_FLAGS flags, Action<IFileOperation, Func<IShellItem, IShellItem>> queue, string what, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var thread = new Thread(() =>
         {
+            var createdItems = new List<IShellItem>();
+            IShellItem Track(IShellItem item)
+            {
+                createdItems.Add(item);
+                return item;
+            }
+
             try
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 PInvoke.CoCreateInstance(typeof(FileOperation).GUID, null, CLSCTX.CLSCTX_ALL, out IFileOperation op).ThrowOnFailure();
-                op.SetOperationFlags(flags);
-                queue(op);
-                op.PerformOperations();
-                op.GetAnyOperationsAborted(out var aborted);
-                if (aborted)
+                try
                 {
-                    throw new IOException($"The Shell did not finish: {what}.");
-                }
+                    op.SetOperationFlags(flags);
+                    var cancelSink = new CancellationSink(cancellationToken);
+                    op.Advise(cancelSink, out var cookie);
+                    try
+                    {
+                        queue(op, Track);
+                        op.PerformOperations();
+                    }
+                    catch (COMException ex) when (ex.HResult == CancellationSink.UserCancelled && cancellationToken.IsCancellationRequested)
+                    {
+                        done.SetCanceled(cancellationToken);
+                        return;
+                    }
+                    finally
+                    {
+                        op.Unadvise(cookie);
+                    }
 
-                done.SetResult();
+                    op.GetAnyOperationsAborted(out var aborted);
+                    if (aborted)
+                    {
+                        if (cancellationToken.IsCancellationRequested)
+                        {
+                            done.SetCanceled(cancellationToken);
+                            return;
+                        }
+
+                        throw new IOException($"The Shell did not finish: {what}.");
+                    }
+
+                    done.SetResult();
+                }
+                finally
+                {
+                    foreach (var shellItem in createdItems)
+                    {
+                        Marshal.ReleaseComObject(shellItem);
+                    }
+
+                    Marshal.ReleaseComObject(op);
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                done.SetCanceled(cancellationToken);
             }
             catch (Exception ex)
             {
@@ -106,8 +152,47 @@ public sealed class ShellFileOperations : IFileOperations
     }
 
     [ComVisible(true), ClassInterface(ClassInterfaceType.None)]
-    private sealed class TransferProgress(string source, List<FileMove> transferred) : IFileOperationProgressSink
+    private sealed class CancellationSink(CancellationToken cancellationToken) : IFileOperationProgressSink
     {
+        public const int UserCancelled = unchecked((int)0x80270000); // COPYENGINE_E_USER_CANCELLED
+
+        private void CheckCancel()
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                Marshal.ThrowExceptionForHR(UserCancelled);
+            }
+        }
+
+        public void StartOperations() => CheckCancel();
+        public void FinishOperations(HRESULT result) { }
+        public void PreRenameItem(uint flags, IShellItem item, PCWSTR name) => CheckCancel();
+        public void PostRenameItem(uint flags, IShellItem item, PCWSTR name, HRESULT result, IShellItem created) { }
+        public void PreMoveItem(uint flags, IShellItem item, IShellItem folder, PCWSTR name) => CheckCancel();
+        public void PostMoveItem(uint flags, IShellItem item, IShellItem folder, PCWSTR name, HRESULT result, IShellItem created) { }
+        public void PreCopyItem(uint flags, IShellItem item, IShellItem folder, PCWSTR name) => CheckCancel();
+        public void PostCopyItem(uint flags, IShellItem item, IShellItem folder, PCWSTR name, HRESULT result, IShellItem created) { }
+        public void PreDeleteItem(uint flags, IShellItem item) => CheckCancel();
+        public void PostDeleteItem(uint flags, IShellItem item, HRESULT result, IShellItem created) { }
+        public void PreNewItem(uint flags, IShellItem folder, PCWSTR name) => CheckCancel();
+        public void PostNewItem(uint flags, IShellItem folder, PCWSTR name, PCWSTR template, uint attributes, HRESULT result, IShellItem created) { }
+        public void UpdateProgress(uint total, uint completed) => CheckCancel();
+        public void ResetTimer() { }
+        public void PauseTimer() { }
+        public void ResumeTimer() { }
+    }
+
+    [ComVisible(true), ClassInterface(ClassInterfaceType.None)]
+    private sealed class TransferProgress(string source, List<FileMove> transferred, CancellationToken cancellationToken) : IFileOperationProgressSink
+    {
+        private void CheckCancel()
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                Marshal.ThrowExceptionForHR(CancellationSink.UserCancelled);
+            }
+        }
+
         public void PostMoveItem(uint flags, IShellItem item, IShellItem folder, PCWSTR name, HRESULT result, IShellItem created) => Record(item, result, created);
 
         public void PostCopyItem(uint flags, IShellItem item, IShellItem folder, PCWSTR name, HRESULT result, IShellItem created) => Record(item, result, created);
@@ -116,9 +201,9 @@ public sealed class ShellFileOperations : IFileOperations
         {
             result.ThrowOnFailure();
             // Folder operations can report children too; only the selected root belongs in the undo plan.
-            if (created is not null && string.Equals(PathOf(item), source, StringComparison.OrdinalIgnoreCase))
+            if (created is not null && string.Equals(Path.TrimEndingDirectorySeparator(PathOf(item)), source, StringComparison.OrdinalIgnoreCase))
             {
-                transferred.Add(new(source, PathOf(created)));
+                transferred.Add(new(source, Path.TrimEndingDirectorySeparator(PathOf(created))));
             }
         }
 
@@ -135,17 +220,17 @@ public sealed class ShellFileOperations : IFileOperations
             }
         }
 
-        public void StartOperations() { }
+        public void StartOperations() => CheckCancel();
         public void FinishOperations(HRESULT result) { }
-        public void PreRenameItem(uint flags, IShellItem item, PCWSTR name) { }
+        public void PreRenameItem(uint flags, IShellItem item, PCWSTR name) => CheckCancel();
         public void PostRenameItem(uint flags, IShellItem item, PCWSTR name, HRESULT result, IShellItem created) { }
-        public void PreMoveItem(uint flags, IShellItem item, IShellItem folder, PCWSTR name) { }
-        public void PreCopyItem(uint flags, IShellItem item, IShellItem folder, PCWSTR name) { }
-        public void PreDeleteItem(uint flags, IShellItem item) { }
+        public void PreMoveItem(uint flags, IShellItem item, IShellItem folder, PCWSTR name) => CheckCancel();
+        public void PreCopyItem(uint flags, IShellItem item, IShellItem folder, PCWSTR name) => CheckCancel();
+        public void PreDeleteItem(uint flags, IShellItem item) => CheckCancel();
         public void PostDeleteItem(uint flags, IShellItem item, HRESULT result, IShellItem created) { }
-        public void PreNewItem(uint flags, IShellItem folder, PCWSTR name) { }
+        public void PreNewItem(uint flags, IShellItem folder, PCWSTR name) => CheckCancel();
         public void PostNewItem(uint flags, IShellItem folder, PCWSTR name, PCWSTR template, uint attributes, HRESULT result, IShellItem created) { }
-        public void UpdateProgress(uint total, uint completed) { }
+        public void UpdateProgress(uint total, uint completed) => CheckCancel();
         public void ResetTimer() { }
         public void PauseTimer() { }
         public void ResumeTimer() { }

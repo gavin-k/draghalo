@@ -285,4 +285,115 @@ public sealed class OutputFilesTests : IDisposable
         written.Select(Path.GetFileName).Should().Equal("a.vtt", "b.vtt");
         progress.Should().Equal(0.25, 0.5, 0.75, 1.0);
     }
+
+    [Fact]
+    public void Near_limit_file_name_keeps_temp_name_within_component_bounds()
+    {
+        var stem = new string('a', 235);
+        var source = Source(stem + ".srt");
+        string? seenTempName = null;
+
+        var output = OutputFiles.Write(new([source], "vtt", ""), source, 0, Now, temp =>
+        {
+            seenTempName = Path.GetFileName(temp);
+            File.WriteAllText(temp, "x");
+        });
+
+        seenTempName.Should().NotBeNull();
+        seenTempName!.Length.Should().BeLessThan(128);
+        output.Should().Be(Path.Combine(_dir, stem + ".vtt"));
+    }
+
+    [Fact]
+    public void Staged_output_rebinds_after_move_to_the_exact_same_snapshot_without_rereading_bytes()
+    {
+        var tempFile = Path.Combine(_dir, ".staged-file" + OutputFiles.TempSuffix);
+        var finalFile = Path.Combine(_dir, "staged-file.bin");
+        File.WriteAllBytes(tempFile, [1, 2, 3, 4, 5, 6, 7, 8]);
+
+        var stagedFile = OutputSnapshot.Stage(tempFile);
+        stagedFile.Should().NotBeNull();
+        File.Move(tempFile, finalFile);
+
+        var reboundFile = stagedFile!.RebindAfterMove(finalFile);
+        var capturedFile = OutputSnapshot.Capture(finalFile);
+        reboundFile.Should().NotBeNull().And.Be(capturedFile);
+        reboundFile!.MetadataMatches(finalFile).Should().BeTrue();
+
+        var tempFolder = Path.Combine(_dir, ".staged-dir" + OutputFiles.TempSuffix);
+        var finalFolder = Path.Combine(_dir, "staged-dir");
+        Directory.CreateDirectory(Path.Combine(tempFolder, "sub"));
+        File.WriteAllText(Path.Combine(tempFolder, "a.txt"), "alpha");
+        File.WriteAllText(Path.Combine(tempFolder, "sub", "b.txt"), "beta");
+
+        var stagedFolder = OutputSnapshot.Stage(tempFolder);
+        stagedFolder.Should().NotBeNull();
+        Directory.Move(tempFolder, finalFolder);
+
+        var reboundFolder = stagedFolder!.RebindAfterMove(finalFolder);
+        reboundFolder.Should().NotBeNull().And.Be(OutputSnapshot.Capture(finalFolder));
+
+        File.WriteAllText(finalFile, "changed-length");
+        reboundFile.MetadataMatches(finalFile).Should().BeFalse();
+        stagedFile.RebindAfterMove(finalFile).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Same_item_and_job_conflicts_resolve_multi_level_ancestor_symlinks_and_scale_linearly()
+    {
+        var realRoot = Path.Combine(_dir, "real-root");
+        var deepDir = Path.Combine(realRoot, "level1", "level2");
+        Directory.CreateDirectory(deepDir);
+        var realFile = Path.Combine(deepDir, "photo.jpg");
+        File.WriteAllText(realFile, "original");
+
+        var linkRoot = Path.Combine(_dir, "link-root");
+        try
+        {
+            Directory.CreateSymbolicLink(linkRoot, realRoot);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Unprivileged Windows without Developer Mode cannot create symlinks.
+            return;
+        }
+
+        var viaLink = Path.Combine(linkRoot, "level1", "level2", "photo.jpg");
+        OutputSnapshot.SameItem(viaLink, realFile).Should().BeTrue();
+
+        var conflicts = new JobConflicts(new NoOpFiles(), null, [realFile], CancellationToken.None);
+        (await conflicts.SettleAsync(viaLink, ConflictPolicy.OverwriteToRecycleBin, more: false))
+            .Should().Be(ConflictPolicy.AutoNumber);
+
+        var batchDir = Path.Combine(_dir, "batch");
+        Directory.CreateDirectory(batchDir);
+        var sources = new List<string>(250);
+        var targets = new List<string>(250);
+        for (var i = 0; i < 250; i++)
+        {
+            var src = Path.Combine(batchDir, $"src-{i}.jpg");
+            var dst = Path.Combine(batchDir, $"dst-{i}.png");
+            File.WriteAllText(src, "s");
+            File.WriteAllText(dst, "d");
+            sources.Add(src);
+            targets.Add(dst);
+        }
+
+        var batchConflicts = new JobConflicts(new NoOpFiles(), null, sources, CancellationToken.None);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        foreach (var dst in targets)
+        {
+            (await batchConflicts.SettleAsync(dst, ConflictPolicy.OverwriteToRecycleBin, more: true))
+                .Should().Be(ConflictPolicy.OverwriteToRecycleBin);
+        }
+
+        sw.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3));
+    }
+
+    private sealed class NoOpFiles : IFileOperations
+    {
+        public Task RecycleAsync(IReadOnlyList<string> paths, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<IReadOnlyList<FileMove>> MoveAsync(IReadOnlyList<FileMove> moves, CancellationToken cancellationToken = default) => Task.FromResult(moves);
+        public Task<IReadOnlyList<FileMove>> CopyAsync(IReadOnlyList<FileMove> copies, CancellationToken cancellationToken = default) => Task.FromResult(copies);
+    }
 }
