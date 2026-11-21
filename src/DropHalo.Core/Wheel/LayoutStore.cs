@@ -16,7 +16,8 @@ public sealed class LayoutStore : IDisposable
     private readonly string _path;
     private readonly TimeProvider _time;
     private readonly Lock _gate = new();
-    private DateTime _stamp;
+    private (DateTime LastWriteUtc, long Length) _stamp;
+    private int _readRetries;
     private FileSystemWatcher? _watcher;
     private ITimer? _debounce;
 
@@ -24,7 +25,15 @@ public sealed class LayoutStore : IDisposable
     {
         _path = Path.GetFullPath(path);
         _time = time ?? TimeProvider.System;
-        Current = Load();
+        try
+        {
+            Current = Load(moveBadAside: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Current = WheelLayout.Empty;
+            LoadProblem = ex.Message;
+        }
     }
 
     public WheelLayout Current { get; private set; }
@@ -41,12 +50,14 @@ public sealed class LayoutStore : IDisposable
         bool moved;
         lock (_gate)
         {
-            moved = ReloadLocked();
+            moved = ReloadLocked(moveBadAside: true);
             next = change(Current);
             if (!ReferenceEquals(next, Current))
             {
                 JsonFile.Save(_path, next, SettingsJson.Default.WheelLayout);
                 _stamp = Stamp();
+                _readRetries = 0;
+                LoadProblem = null;
                 Current = next;
                 moved = true;
             }
@@ -69,12 +80,17 @@ public sealed class LayoutStore : IDisposable
         {
             try
             {
-                moved = ReloadLocked();
+                moved = ReloadLocked(moveBadAside: false);
+                _readRetries = 0;
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or NotSupportedException)
             {
                 LoadProblem = ex.Message;
-                _debounce?.Change(Debounce, Timeout.InfiniteTimeSpan);
+                if (_readRetries++ < 3)
+                {
+                    _debounce?.Change(Debounce, Timeout.InfiniteTimeSpan);
+                }
+
                 return false;
             }
 
@@ -150,31 +166,36 @@ public sealed class LayoutStore : IDisposable
     {
         lock (_gate)
         {
+            _readRetries = 0;
             _debounce?.Change(Debounce, Timeout.InfiniteTimeSpan);
         }
     }
 
-    private bool ReloadLocked()
+    private bool ReloadLocked(bool moveBadAside)
     {
         if (Stamp() == _stamp)
         {
             return false;
         }
 
-        Current = Load();
+        Current = Load(moveBadAside);
         return true;
     }
 
-    private WheelLayout Load()
+    private WheelLayout Load(bool moveBadAside)
     {
         var stamp = Stamp();
-        var (loaded, problem) = JsonFile.Load(_path, SettingsJson.Default.WheelLayout, WheelLayout.Empty);
+        var (loaded, problem) = JsonFile.Load(_path, SettingsJson.Default.WheelLayout, WheelLayout.Empty, moveBadAside);
         var repaired = loaded.Repair();
         _stamp = stamp;
         LoadProblem = problem;
         return repaired;
     }
 
-    /// <summary>When the file was last written, or the fixed value File gives a missing one.</summary>
-    private DateTime Stamp() => File.GetLastWriteTimeUtc(_path);
+    /// <summary>When the file was last written and its byte length, or fixed values when missing.</summary>
+    private (DateTime LastWriteUtc, long Length) Stamp()
+    {
+        var info = new FileInfo(_path);
+        return info.Exists ? (info.LastWriteTimeUtc, info.Length) : (File.GetLastWriteTimeUtc(_path), -1);
+    }
 }

@@ -16,9 +16,17 @@ public sealed class SettingsStore
     public SettingsStore(string path)
     {
         _path = path;
-        var (loaded, problem) = JsonFile.Load(path, SettingsJson.Default.AppSettings, AppSettings.Default);
-        Current = Migrate(Repair(loaded));
-        LoadProblem = problem;
+        try
+        {
+            var (loaded, problem) = JsonFile.Load(path, SettingsJson.Default.AppSettings, AppSettings.Default);
+            Current = Migrate(Repair(loaded));
+            LoadProblem = problem;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Current = AppSettings.Default;
+            LoadProblem = $"{Path.GetFileName(path)} could not be read ({ex.Message}); using defaults";
+        }
     }
 
     /// <summary>Raised after a change has been saved, on the thread that made it.</summary>
@@ -44,15 +52,24 @@ public sealed class SettingsStore
     }
 
     /// <summary>A hand-edited file can leave out or null whole sections; those fall back to their defaults.</summary>
-    private static AppSettings Repair(AppSettings s) => s with
+    private static AppSettings Repair(AppSettings s)
     {
-        Keys = s.Keys?.Bindings is null ? KeyBindings.Default : s.Keys,
-        Output = s.Output ?? new(),
-        Actions = s.Actions?.Enabled is null ? FileActionSettings.Default : s.Actions,
-        Privacy = s.Privacy ?? new(),
-        Tools = s.Tools?.Trusted is null ? UserToolSettings.Default : s.Tools,
-        Wheel = s.Wheel ?? new(),
-    };
+        var keys = s.Keys?.Bindings is null ? KeyBindings.Default : s.Keys;
+        keys = keys with
+        {
+            TapWindowMs = Math.Clamp(keys.TapWindowMs, 50, 5000),
+            LongPressMs = Math.Clamp(keys.LongPressMs, 100, 5000),
+        };
+        return s with
+        {
+            Keys = keys,
+            Output = s.Output ?? new(),
+            Actions = s.Actions?.Enabled is null ? FileActionSettings.Default : s.Actions,
+            Privacy = s.Privacy ?? new(),
+            Tools = s.Tools?.Trusted is null ? UserToolSettings.Default : s.Tools,
+            Wheel = s.Wheel ?? new(),
+        };
+    }
 
     /// <summary>
     /// Version 1 had no file actions in the settings window, so its files hold that version's default,
@@ -68,7 +85,7 @@ public sealed class SettingsStore
 /// <summary>Small JSON documents written atomically: a temp file next to the target, then a replace.</summary>
 public static class JsonFile
 {
-    public static (T Value, string? Problem) Load<T>(string path, JsonTypeInfo<T> type, T fallback)
+    public static (T Value, string? Problem) Load<T>(string path, JsonTypeInfo<T> type, T fallback, bool moveBadAside = true)
     {
         if (!File.Exists(path))
         {
@@ -77,14 +94,26 @@ public static class JsonFile
 
         try
         {
-            using var stream = File.OpenRead(path);
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
             return (JsonSerializer.Deserialize(stream, type) ?? fallback, null);
         }
         catch (Exception ex) when (ex is JsonException or NotSupportedException)
         {
+            if (!moveBadAside)
+            {
+                throw;
+            }
+
             var aside = path + ".bad";
-            File.Move(path, aside, overwrite: true);
-            return (fallback, $"{Path.GetFileName(path)} could not be read ({ex.Message}); moved to {aside} and using defaults");
+            try
+            {
+                File.Move(path, aside, overwrite: true);
+                return (fallback, $"{Path.GetFileName(path)} could not be read ({ex.Message}); moved to {aside} and using defaults");
+            }
+            catch (Exception moveEx) when (moveEx is IOException or UnauthorizedAccessException)
+            {
+                return (fallback, $"{Path.GetFileName(path)} could not be read ({ex.Message}); using defaults");
+            }
         }
     }
 
@@ -92,13 +121,22 @@ public static class JsonFile
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         var temp = $"{path}.{Environment.ProcessId}.tmp";
-        using (var stream = File.Create(temp))
+        try
         {
-            JsonSerializer.Serialize(stream, value, type);
-            stream.Flush(flushToDisk: true);
-        }
+            using (var stream = File.Create(temp))
+            {
+                JsonSerializer.Serialize(stream, value, type);
+                stream.Flush(flushToDisk: true);
+            }
 
-        File.Move(temp, path, overwrite: true);
+            File.Move(temp, path, overwrite: true);
+        }
+        catch
+        {
+            try { File.Delete(temp); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            throw;
+        }
     }
 }
 

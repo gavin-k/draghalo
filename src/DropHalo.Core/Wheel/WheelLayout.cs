@@ -324,8 +324,11 @@ public sealed record WheelLayout(int Version, IReadOnlyDictionary<string, IReadO
 
     private static LayoutSlot? Clean(LayoutSlot? slot) => slot switch
     {
-        { Item: { Length: > 0 } } => slot,
-        { Group: { Name.Zh: { Length: > 0 }, Items: { Count: > 0 } items } group } => new(Group: group with { Items = [.. items.Where(i => !string.IsNullOrEmpty(i)).Take(LayoutGroup.Capacity)] }),
+        { Item: { Length: > 0 } item } => new(Item: item),
+        { Group: { Name.Zh: { Length: > 0 }, Items: { Count: > 0 } items } group } =>
+            items.Where(i => !string.IsNullOrEmpty(i)).Take(LayoutGroup.Capacity).ToList() is { Count: > 0 } cleaned
+                ? new(Group: group with { Items = cleaned })
+                : null,
         _ => null,
     };
 }
