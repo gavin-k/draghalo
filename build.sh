@@ -48,8 +48,8 @@ if is_windows; then
   dotnet restore DropHalo.slnx -p:Platform=x64
   dotnet build DropHalo.slnx -c "$CONFIG" -p:Platform=x64 --no-restore
   if [[ $RUN_TESTS -eq 1 ]]; then
-    dotnet test "$TESTS" -c "$CONFIG" --no-restore
-    dotnet test "$ENGINE_TESTS" -c "$CONFIG" -p:Platform=x64 --no-build
+    dotnet test "$TESTS" -c "$CONFIG" --no-build
+    dotnet test "$ENGINE_TESTS" -c "$CONFIG" --no-build
   fi
   echo "==> For the MSIX package run: pwsh ./scripts/build-windows.ps1"
 else
