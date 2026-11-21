@@ -63,7 +63,15 @@ public static class FolderDialog
                 | FILEOPENDIALOGOPTIONS.FOS_PATHMUSTEXIST | FILEOPENDIALOGOPTIONS.FOS_NOCHANGEDIR);
             if (Directory.Exists(prompt.StartFolder))
             {
-                dialog.SetDefaultFolder(Item(prompt.StartFolder));
+                var startItem = Item(prompt.StartFolder);
+                try
+                {
+                    dialog.SetDefaultFolder(startItem);
+                }
+                finally
+                {
+                    Marshal.ReleaseComObject(startItem);
+                }
             }
 
             dialog.SetTitle(prompt.Title);
@@ -86,18 +94,26 @@ public static class FolderDialog
             }
             finally
             {
+                events.Dispose();
                 dialog.Unadvise(cookie);
             }
 
             dialog.GetResult(out var item);
-            item.GetDisplayName(SIGDN.SIGDN_FILESYSPATH, out var name);
             try
             {
-                return name.ToString();
+                item.GetDisplayName(SIGDN.SIGDN_FILESYSPATH, out var name);
+                try
+                {
+                    return name.ToString();
+                }
+                finally
+                {
+                    Marshal.FreeCoTaskMem((nint)name.Value);
+                }
             }
             finally
             {
-                Marshal.FreeCoTaskMem((nint)name.Value);
+                Marshal.ReleaseComObject(item);
             }
         }
         finally
@@ -111,9 +127,19 @@ public static class FolderDialog
     {
         private CancellationTokenRegistration? _registration;
 
-        public void Attach(HWND window) => _registration ??= token.Register(() => PInvoke.PostMessage(window, PInvoke.WM_CLOSE, 0, 0));
+        public void Attach(HWND window)
+        {
+            if (!window.IsNull)
+            {
+                _registration ??= token.Register(() => PInvoke.PostMessage(window, PInvoke.WM_CLOSE, 0, 0));
+            }
+        }
 
-        public void Dispose() => _registration?.Dispose();
+        public void Dispose()
+        {
+            _registration?.Dispose();
+            _registration = null;
+        }
     }
 
     private sealed class FolderEvents(CancellationToken token) : IFileDialogEvents, IDisposable
