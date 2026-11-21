@@ -15,7 +15,13 @@ internal static class OoxmlPackage
     /// <summary>The OLE compound file signature: Office saves a password-protected file in one, and the old binary formats are one too.</summary>
     private static readonly byte[] Compound = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
 
-    public static readonly XmlReaderSettings Safe = new() { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null };
+    public static readonly XmlReaderSettings Safe = new()
+    {
+        DtdProcessing = DtdProcessing.Prohibit,
+        XmlResolver = null,
+        MaxCharactersFromEntities = 1024,
+        MaxCharactersInDocument = 128L * 1024 * 1024,
+    };
 
     /// <param name="format">"DOCX", for a file that is not a zip.</param>
     /// <param name="legacy">".doc", the old binary format a renamed file may be.</param>
