@@ -33,6 +33,8 @@ public sealed class SharpCompressArchiveConverter : IConverter
 
     /// <summary>Above this the zip gets Zip64 headers; leaves room for incompressible data growing a little.</summary>
     private const long Zip64Threshold = 3L << 30;
+    private const int MaxEntries = 100_000;
+    private const long MaxUncompressedBytes = 16L << 30;
 
     private readonly TimeProvider _time;
     private readonly ArchiveEncoding _names;
@@ -46,8 +48,20 @@ public sealed class SharpCompressArchiveConverter : IConverter
     public SharpCompressArchiveConverter(TimeProvider? time = null, Encoding? legacyNames = null)
     {
         _time = time ?? TimeProvider.System;
-        var legacy = legacyNames ?? Encoding.GetEncoding(CultureInfo.CurrentCulture.TextInfo.OEMCodePage);
+        var legacy = legacyNames ?? LegacyEncoding();
         _names = new() { CustomDecoder = (bytes, index, count, type) => DecodeName(bytes, index, count, type, legacy) };
+    }
+
+    private static Encoding LegacyEncoding()
+    {
+        try
+        {
+            return Encoding.GetEncoding(CultureInfo.CurrentCulture.TextInfo.OEMCodePage);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
+        {
+            return Encoding.UTF8;
+        }
     }
 
     public string Id => "sharpcompress";
@@ -143,8 +157,24 @@ public sealed class SharpCompressArchiveConverter : IConverter
 
     private void Read(string source, IProgress<double> progress, Action<bool> opened, Action<IEntry, string, Func<Stream>> visit, CancellationToken cancellationToken)
     {
+        var seenEntries = 0;
+        var unpackedBytes = 0L;
+        void GuardBytes(int count)
+        {
+            unpackedBytes += count;
+            if (unpackedBytes > MaxUncompressedBytes)
+            {
+                throw TooLarge(source);
+            }
+        }
+
         void Visit(IEntry entry, Func<Stream> open, string? unnamed = null)
         {
+            if (++seenEntries > MaxEntries)
+            {
+                throw TooLarge(source);
+            }
+
             if (string.IsNullOrEmpty(entry.LinkTarget) && EntryPath(entry, unnamed) is { } path)
             {
                 visit(entry, path, open);
@@ -163,7 +193,7 @@ public sealed class SharpCompressArchiveConverter : IConverter
             var unnamed = reader.Type == ArchiveType.GZip ? FormatRegistry.StemOf(source) : null;
             while (reader.MoveToNextEntry())
             {
-                Visit(reader.Entry, () => new ObservedStream(reader.OpenEntryStream(), _ => { }, cancellationToken), unnamed);
+                Visit(reader.Entry, () => new ObservedStream(reader.OpenEntryStream(), GuardBytes, cancellationToken), unnamed);
             }
 
             return;
@@ -171,14 +201,28 @@ public sealed class SharpCompressArchiveConverter : IConverter
 
         using var archive = ArchiveFactory.OpenArchive(source, ReaderOptions.ForFilePath with { ArchiveEncoding = _names });
         var entries = archive.Entries.ToList();
+        if (entries.Count > MaxEntries)
+        {
+            throw TooLarge(source);
+        }
+
         if (entries.Any(e => e.IsEncrypted))
         {
             throw Encrypted(source);
         }
 
         var total = archive.TotalUncompressedSize;
+        if (total > MaxUncompressedBytes)
+        {
+            throw TooLarge(source);
+        }
+
         var done = 0L;
-        Stream Observe(Stream data) => new ObservedStream(data, n => progress.Report(total > 0 ? (double)(done += n) / total : 0), cancellationToken);
+        Stream Observe(Stream data) => new ObservedStream(data, n =>
+        {
+            GuardBytes(n);
+            progress.Report(total > 0 ? (double)(done += n) / total : 0);
+        }, cancellationToken);
 
         opened(total > Zip64Threshold || entries.Count >= ushort.MaxValue);
         if (archive.IsSolid || archive.Type == ArchiveType.SevenZip)
@@ -219,6 +263,14 @@ public sealed class SharpCompressArchiveConverter : IConverter
         using var data = open();
         if (writer is TarWriter tar)
         {
+            if (entry.Size <= 0 && !data.CanSeek)
+            {
+                // Single-file GZip streams do not report uncompressed length up front; keep small ones in RAM and spill large ones to temp disk.
+                using var buffered = BufferSeekable(data);
+                tar.Write(path, buffered, entry.LastModifiedTime, buffered.Length);
+                return;
+            }
+
             // A tar header carries the size up front, and entry streams cannot seek to find it.
             tar.Write(path, data, entry.LastModifiedTime, entry.Size);
         }
@@ -228,7 +280,58 @@ public sealed class SharpCompressArchiveConverter : IConverter
         }
     }
 
-    /// <summary>Forward slashes, no leading "./" or "/" as tar tools write them; null for the root itself.</summary>
+    internal static Stream BufferSeekable(Stream source, int memoryLimitBytes = 4 * 1024 * 1024)
+    {
+        var memory = new MemoryStream();
+        try
+        {
+            var chunk = System.Buffers.ArrayPool<byte>.Shared.Rent(81920);
+            try
+            {
+                int read;
+                while ((read = source.Read(chunk, 0, chunk.Length)) > 0)
+                {
+                    if (memory.Length + read > memoryLimitBytes)
+                    {
+                        var tempPath = Path.Combine(Path.GetTempPath(), $"drophalo-tar-{Guid.NewGuid():N}.tmp");
+                        var disk = new FileStream(tempPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 81920, FileOptions.DeleteOnClose);
+                        try
+                        {
+                            memory.Position = 0;
+                            memory.CopyTo(disk);
+                            memory.Dispose();
+                            memory = null!;
+                            disk.Write(chunk, 0, read);
+                            source.CopyTo(disk);
+                            disk.Position = 0;
+                            return disk;
+                        }
+                        catch
+                        {
+                            disk.Dispose();
+                            throw;
+                        }
+                    }
+
+                    memory.Write(chunk, 0, read);
+                }
+
+                memory.Position = 0;
+                return memory;
+            }
+            finally
+            {
+                System.Buffers.ArrayPool<byte>.Shared.Return(chunk);
+            }
+        }
+        catch
+        {
+            memory?.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>Forward slashes, normalized segments, no leading "./" or "/"; null for the root itself.</summary>
     private static string? EntryPath(IEntry entry, string? unnamed)
     {
         if (string.IsNullOrEmpty(entry.Key))
@@ -236,15 +339,34 @@ public sealed class SharpCompressArchiveConverter : IConverter
             return unnamed;
         }
 
-        var path = entry.Key.Replace('\\', '/');
-        while (path.StartsWith("./", StringComparison.Ordinal))
+        var raw = entry.Key.Replace('\\', '/');
+        var segments = new List<string>();
+        foreach (var part in raw.Split('/', StringSplitOptions.RemoveEmptyEntries))
         {
-            path = path[2..];
+            if (part == ".")
+            {
+                continue;
+            }
+
+            if (part == "..")
+            {
+                if (segments.Count == 0)
+                {
+                    throw new InvalidDataException(L.T("压缩包里有指向包外的路径（{0}），已停止解压", entry.Key));
+                }
+
+                segments.RemoveAt(segments.Count - 1);
+                continue;
+            }
+
+            segments.Add(part);
         }
 
-        path = path.Trim('/');
-        return path is "" or "." ? null : path;
+        return segments.Count == 0 ? null : string.Join('/', segments);
     }
+
+    private static InvalidDataException TooLarge(string source) =>
+        new(L.T("{0} 无法读取：{1}", Path.GetFileName(source), "> 16 GB / 100,000"));
 
     private static string DecodeName(byte[] bytes, int index, int count, EncodingType type, Encoding legacy)
     {
