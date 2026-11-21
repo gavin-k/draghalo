@@ -385,4 +385,33 @@ public sealed class RecipeToolTests : IDisposable
         (await Run(tool, Source("photo.txt"))).Error.Should().Be("配方没有步骤");
         tool.Check(new ConversionRequest([Source("y.txt")], tool.Id, "")).IsAvailable.Should().BeFalse();
     }
+
+    [Fact]
+    public async Task Later_steps_check_availability_and_convert_steps_resolve_each_file_format()
+    {
+        var b = new Step("tool.b", "-b");
+        var checkedRecipe = Tool([new Step("tool.a", "-a"), b], null, Op("tool.a"), Op("tool.b", ("broken", "yes")));
+        var failed = await Run(checkedRecipe, Source("photo.txt"));
+        failed.Succeeded.Should().BeFalse();
+        failed.Error.Should().Be("第 2 步 tool.b：broken");
+        b.Requests.Should().BeEmpty();
+
+        var graph = new ConversionGraph();
+        graph.Register(new TestConverter([new("txt", "html")], (req, progress, ct) =>
+        {
+            var outputs = OutputFiles.ForEachSourceAsync(req, progress, (src, idx, _) =>
+                Task.FromResult(OutputFiles.Write(req, src, idx, DateTimeOffset.UnixEpoch, temp => File.WriteAllText(temp, "<h1>txt</h1>"), cancellationToken: ct)), ct).GetAwaiter().GetResult();
+            return Task.FromResult(ConversionResult.Written(outputs));
+        }));
+        graph.Register(new TestConverter([new("md", "html")], (req, progress, ct) =>
+        {
+            var outputs = OutputFiles.ForEachSourceAsync(req, progress, (src, idx, _) =>
+                Task.FromResult(OutputFiles.Write(req, src, idx, DateTimeOffset.UnixEpoch, temp => File.WriteAllText(temp, "<h1>md</h1>"), cancellationToken: ct)), ct).GetAwaiter().GetResult();
+            return Task.FromResult(ConversionResult.Written(outputs));
+        }));
+        var mixedRecipe = Tool([], graph, Convert("html"));
+        var mixed = await Run(mixedRecipe, Source("a.txt"), Source("b.md"));
+        mixed.Succeeded.Should().BeTrue(mixed.Error);
+        mixed.OutputPaths.Select(Path.GetFileName).Should().Equal("a.html", "b.html");
+    }
 }

@@ -118,7 +118,7 @@ public partial class App : Application
             var desktop = new Desktop(ui);
             _queue = new JobQueue(graph, new UndoLedger(files), prompt: desktop);
             IReadOnlyList<IWheelOperation> operations = [.. FileActions.Create(files, desktop), .. converters.Tools(recognizer)];
-            var catalog = _catalog = new UserToolCatalog(Path.Combine(dataDir, "tools"), new SidecarProcessRunner(), CommandResolver.FromEnvironment(), builtIns: operations, graph: graph);
+            var catalog = _catalog = new UserToolCatalog(Path.Combine(dataDir, "tools"), new SidecarProcessRunner(), CommandResolver.FromEnvironment(), builtIns: operations, graph: graph, trust: () => settings.Current.Tools);
             var layout = _layout = new LayoutStore(Path.Combine(dataDir, "layout.json"));
             if (layout.LoadProblem is { } layoutProblem)
             {
