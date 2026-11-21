@@ -44,52 +44,71 @@ public static class MediaProbe
             throw new InvalidDataException(L.T("{0} 无法识别为音视频文件{1}", Path.GetFileName(path), Detail(result.StderrTail)));
         }
 
-        return Parse(json.ToString());
+        try
+        {
+            return Parse(json.ToString());
+        }
+        catch (InvalidDataException ex)
+        {
+            throw new InvalidDataException(L.T("{0} 无法识别为音视频文件{1}", Path.GetFileName(path), Detail([ex.Message])), ex);
+        }
     }
 
     public static MediaInfo Parse(string json)
     {
-        using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-        var streams = new List<MediaTrack>();
-        if (root.TryGetProperty("streams", out var list))
+        JsonDocument doc;
+        try
         {
-            foreach (var s in list.EnumerateArray())
+            doc = JsonDocument.Parse(json);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidDataException(ex.Message, ex);
+        }
+
+        using (doc)
+        {
+            var root = doc.RootElement;
+            var streams = new List<MediaTrack>();
+            if (root.TryGetProperty("streams", out var list) && list.ValueKind == JsonValueKind.Array)
             {
-                var type = Str(s, "codec_type") ?? "";
-                int? width = Int(s, "width"), height = Int(s, "height");
-                if (Rotation(s) is 90 or 270)
+                foreach (var s in list.EnumerateArray())
                 {
-                    (width, height) = (height, width);
+                    var type = Str(s, "codec_type") ?? "";
+                    int? width = Int(s, "width"), height = Int(s, "height");
+                    if (Rotation(s) is 90 or 270)
+                    {
+                        (width, height) = (height, width);
+                    }
+
+                    streams.Add(new(
+                        Int(s, "index") ?? streams.Count,
+                        type,
+                        Str(s, "codec_name") ?? "",
+                        width,
+                        height,
+                        type == "video" ? Rate(Str(s, "avg_frame_rate")) ?? Rate(Str(s, "r_frame_rate")) : null,
+                        Long(s, "bit_rate"),
+                        s.TryGetProperty("disposition", out var d) && d.ValueKind == JsonValueKind.Object && Int(d, "attached_pic") == 1,
+                        Positive(Int(s, "bits_per_raw_sample")) ?? Positive(Int(s, "bits_per_sample")),
+                        Int(s, "channels")));
+                }
+            }
+
+            TimeSpan? duration = null;
+            long? bitRate = null;
+            if (root.TryGetProperty("format", out var format) && format.ValueKind == JsonValueKind.Object)
+            {
+                if (Double(format, "duration") is double seconds && seconds is > 0 and < 1e9)
+                {
+                    duration = TimeSpan.FromSeconds(seconds);
                 }
 
-                streams.Add(new(
-                    Int(s, "index") ?? streams.Count,
-                    type,
-                    Str(s, "codec_name") ?? "",
-                    width,
-                    height,
-                    type == "video" ? Rate(Str(s, "avg_frame_rate")) ?? Rate(Str(s, "r_frame_rate")) : null,
-                    Long(s, "bit_rate"),
-                    s.TryGetProperty("disposition", out var d) && Int(d, "attached_pic") == 1,
-                    Positive(Int(s, "bits_per_raw_sample")) ?? Positive(Int(s, "bits_per_sample")),
-                    Int(s, "channels")));
-            }
-        }
-
-        TimeSpan? duration = null;
-        long? bitRate = null;
-        if (root.TryGetProperty("format", out var format))
-        {
-            if (Double(format, "duration") is double seconds && seconds > 0)
-            {
-                duration = TimeSpan.FromSeconds(seconds);
+                bitRate = Long(format, "bit_rate");
             }
 
-            bitRate = Long(format, "bit_rate");
+            return new(duration, bitRate, streams);
         }
-
-        return new(duration, bitRate, streams);
     }
 
     internal static string Detail(IReadOnlyList<string> stderrTail) =>
@@ -97,14 +116,14 @@ public static class MediaProbe
 
     private static int Rotation(JsonElement stream)
     {
-        if (!stream.TryGetProperty("side_data_list", out var sideData))
+        if (!stream.TryGetProperty("side_data_list", out var sideData) || sideData.ValueKind != JsonValueKind.Array)
         {
             return 0;
         }
 
         foreach (var item in sideData.EnumerateArray())
         {
-            if (Double(item, "rotation") is { } r)
+            if (item.ValueKind == JsonValueKind.Object && Double(item, "rotation") is { } r && r is >= -36000 and <= 36000)
             {
                 return ((int)Math.Round(r) % 360 + 360) % 360;
             }
@@ -120,12 +139,14 @@ public static class MediaProbe
         if (parts is not [var n, var d]
             || !double.TryParse(n, NumberStyles.Float, CultureInfo.InvariantCulture, out var num)
             || !double.TryParse(d, NumberStyles.Float, CultureInfo.InvariantCulture, out var den)
+            || !double.IsFinite(num) || !double.IsFinite(den)
             || num <= 0 || den <= 0)
         {
             return null;
         }
 
-        return num / den;
+        var rate = num / den;
+        return double.IsFinite(rate) ? rate : null;
     }
 
     private static string? Str(JsonElement e, string name) =>
@@ -139,17 +160,18 @@ public static class MediaProbe
             return null;
         }
 
-        return v.ValueKind switch
+        var parsed = v.ValueKind switch
         {
-            JsonValueKind.Number => v.GetDouble(),
+            JsonValueKind.Number when v.TryGetDouble(out var n) => n,
             JsonValueKind.String when double.TryParse(v.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var d) => d,
-            _ => null,
+            _ => double.NaN,
         };
+        return double.IsFinite(parsed) ? parsed : null;
     }
 
     private static int? Positive(int? value) => value > 0 ? value : null;
 
-    private static long? Long(JsonElement e, string name) => Double(e, name) is { } d ? (long)d : null;
+    private static long? Long(JsonElement e, string name) => Double(e, name) is { } d and >= long.MinValue and <= long.MaxValue ? (long)d : null;
 
-    private static int? Int(JsonElement e, string name) => Double(e, name) is { } d ? (int)d : null;
+    private static int? Int(JsonElement e, string name) => Double(e, name) is { } d and >= int.MinValue and <= int.MaxValue ? (int)d : null;
 }
