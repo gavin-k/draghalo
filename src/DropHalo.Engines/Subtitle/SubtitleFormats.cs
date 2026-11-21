@@ -58,7 +58,9 @@ internal static partial class SubtitleFormats
         for (var i = 0; i < lines.Length; i++)
         {
             var timing = TimingRegex().Match(lines[i]);
-            if (!timing.Success)
+            if (!timing.Success
+                || !TryTimeOf(timing.Groups["a"].Value, out var cueStart)
+                || !TryTimeOf(timing.Groups["b"].Value, out var cueEnd))
             {
                 continue;
             }
@@ -85,7 +87,7 @@ internal static partial class SubtitleFormats
             cueText = vtt ? CleanVtt(cueText) : CleanSrt(cueText);
             if (cueText.Length > 0)
             {
-                cues.Add(new(TimeOf(timing.Groups["a"].Value), TimeOf(timing.Groups["b"].Value), cueText));
+                cues.Add(new(cueStart, cueEnd, cueText));
             }
         }
 
@@ -299,7 +301,11 @@ internal static partial class SubtitleFormats
             var line = raw.Trim();
             if (OffsetRegex().Match(line) is { Success: true } o)
             {
-                offset = TimeSpan.FromMilliseconds(int.Parse(o.Groups[1].Value, CultureInfo.InvariantCulture));
+                if (long.TryParse(o.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var ms))
+                {
+                    offset = TimeSpan.FromMilliseconds(Math.Clamp(ms, -86_400_000L, 86_400_000L));
+                }
+
                 continue;
             }
 
@@ -307,7 +313,11 @@ internal static partial class SubtitleFormats
             var at = 0;
             while (LrcTimeRegex().Match(line, at) is { Success: true } m)
             {
-                times.Add(Time(m.Groups["h"].Value, m.Groups["m"].Value, m.Groups["s"].Value, m.Groups["f"].Value));
+                if (TryTime(m.Groups["h"].Value, m.Groups["m"].Value, m.Groups["s"].Value, m.Groups["f"].Value, out var parsed))
+                {
+                    times.Add(parsed);
+                }
+
                 at += m.Length;
             }
 
@@ -400,19 +410,43 @@ internal static partial class SubtitleFormats
         return BasicTagRegex().Replace(sb.ToString(), "").Trim().Length == 0 ? "" : sb.ToString().Trim();
     }
 
-    private static TimeSpan TimeOf(string clock) => TryTimeOf(clock, out var t) ? t : throw new FormatException($"not a time: {clock}");
-
     private static bool TryTimeOf(string clock, out TimeSpan time)
     {
         var m = ClockRegex().Match(clock.Trim());
-        time = m.Success ? Time(m.Groups["h"].Value, m.Groups["m"].Value, m.Groups["s"].Value, m.Groups["f"].Value) : default;
-        return m.Success;
+        if (!m.Success)
+        {
+            time = default;
+            return false;
+        }
+
+        return TryTime(m.Groups["h"].Value, m.Groups["m"].Value, m.Groups["s"].Value, m.Groups["f"].Value, out time);
     }
 
     /// <summary>Fractions are read as decimals: ".5", ".50" and ".500" are all half a second.</summary>
-    private static TimeSpan Time(string h, string m, string s, string f) =>
-        new TimeSpan(0, h.Length > 0 ? int.Parse(h, CultureInfo.InvariantCulture) : 0, int.Parse(m, CultureInfo.InvariantCulture), int.Parse(s, CultureInfo.InvariantCulture))
-        + TimeSpan.FromMilliseconds(f.Length > 0 ? int.Parse(f.PadRight(3, '0'), CultureInfo.InvariantCulture) : 0);
+    private static bool TryTime(string h, string m, string s, string f, out TimeSpan time)
+    {
+        time = default;
+        var hours = 0;
+        if (h.Length > 0 && (!int.TryParse(h, NumberStyles.None, CultureInfo.InvariantCulture, out hours) || hours > 99_999))
+        {
+            return false;
+        }
+
+        if (!int.TryParse(m, NumberStyles.None, CultureInfo.InvariantCulture, out var minutes) || minutes > 999_999
+            || !int.TryParse(s, NumberStyles.None, CultureInfo.InvariantCulture, out var seconds) || seconds > 999_999)
+        {
+            return false;
+        }
+
+        var ms = 0;
+        if (f.Length > 0 && !int.TryParse(f.PadRight(3, '0'), NumberStyles.None, CultureInfo.InvariantCulture, out ms))
+        {
+            return false;
+        }
+
+        time = new TimeSpan(0, hours, minutes, seconds) + TimeSpan.FromMilliseconds(ms);
+        return true;
+    }
 
     private const string ClockPattern = @"(?:\d+:)?\d{1,2}:\d{1,2}(?:[,.]\d{1,3})?";
 
