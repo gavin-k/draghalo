@@ -24,29 +24,36 @@ public sealed class CommandResolver(Func<string, bool> fileExists, IReadOnlyList
 
     public CommandResolution? Resolve(string command, string toolDirectory)
     {
-        if (command.Length == 0)
+        if (command.Length == 0 || command.Contains('\0'))
         {
             return null;
         }
 
-        if (Path.IsPathRooted(command))
+        try
         {
-            return WithExtensions(command) is { } rooted ? new(rooted) : null;
-        }
+            if (Path.IsPathRooted(command))
+            {
+                return WithExtensions(command) is { } rooted ? new(rooted) : null;
+            }
 
-        if (command.Contains(Path.DirectorySeparatorChar) || command.Contains(Path.AltDirectorySeparatorChar))
-        {
-            return WithExtensions(Path.GetFullPath(Path.Combine(toolDirectory, command))) is { } relative ? new(relative) : null;
-        }
+            if (command.Contains(Path.DirectorySeparatorChar) || command.Contains(Path.AltDirectorySeparatorChar))
+            {
+                return WithExtensions(Path.GetFullPath(Path.Combine(toolDirectory, command))) is { } relative ? new(relative) : null;
+            }
 
-        if (Bare(command, toolDirectory) is { } found)
-        {
-            return new(found);
-        }
+            if (Bare(command, toolDirectory) is { } found)
+            {
+                return new(found);
+            }
 
-        if (command.Equals(Pwsh, StringComparison.OrdinalIgnoreCase) && Bare(WindowsPowerShell, toolDirectory) is { } fallback)
+            if (command.Equals(Pwsh, StringComparison.OrdinalIgnoreCase) && Bare(WindowsPowerShell, toolDirectory) is { } fallback)
+            {
+                return new(fallback, FellBackToWindowsPowerShell: true);
+            }
+        }
+        catch (Exception ex) when (ex is ArgumentException or PathTooLongException or NotSupportedException)
         {
-            return new(fallback, FellBackToWindowsPowerShell: true);
+            return null;
         }
 
         return null;
