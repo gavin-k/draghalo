@@ -367,4 +367,20 @@ public sealed class ImageToolTests : IDisposable
         new RotateRightTool().Options.Should().ContainSingle().Which.Should().Match<OptionSpec>(o => o.Name == "degrees" && o.Accepts("270") && !o.Accepts("45") && o.Expected == "90 / 180 / 270");
         new StripMetadataTool().Options.Should().BeEmpty();
     }
+
+    [Fact]
+    public async Task Strip_rejects_zero_length_jpeg_segment_and_imageless_webp_cleanly()
+    {
+        var badJpg = Path.Combine(_dir, "short-seg.jpg");
+        File.WriteAllBytes(badJpg, [0xFF, 0xD8, 0xFF, 0xE1, 0x00, 0x00, 0xFF, 0xD9]);
+        var jpgResult = await Run(new StripMetadataTool(), badJpg);
+        jpgResult.Succeeded.Should().BeFalse();
+        jpgResult.Error.Should().Contain("short-seg.jpg");
+
+        var emptyWebp = Path.Combine(_dir, "empty.webp");
+        File.WriteAllBytes(emptyWebp, "RIFF\x04\x00\x00\x00WEBP"u8.ToArray());
+        var webpResult = await Run(new StripMetadataTool(), emptyWebp);
+        webpResult.Succeeded.Should().BeFalse();
+        webpResult.Error.Should().Contain("empty.webp");
+    }
 }

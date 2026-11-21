@@ -85,10 +85,15 @@ public abstract class ImageTool(TimeProvider? time) : IWheelOperation
                     return null;
                 }
 
-                before += new FileInfo(source).Length;
-                after += rendered.Data.Length;
                 var plan = request with { TargetFormatId = formatId, Naming = NamingTemplate.Default + Suffix };
-                return OutputFiles.Write(plan, source, i, now, temp => File.WriteAllBytes(temp, rendered.Data), rendered.Width, rendered.Height, cancellationToken: cancellationToken);
+                var writtenPath = OutputFiles.Write(plan, source, i, now, temp => File.WriteAllBytes(temp, rendered.Data), rendered.Width, rendered.Height, cancellationToken: cancellationToken);
+                if (writtenPath is not null)
+                {
+                    before += new FileInfo(source).Length;
+                    after += rendered.Data.Length;
+                }
+
+                return writtenPath;
             }, cancellationToken), cancellationToken).ConfigureAwait(false);
 
             if (unchanged.Count == request.SourcePaths.Count)
@@ -96,7 +101,7 @@ public abstract class ImageTool(TimeProvider? time) : IWheelOperation
                 return new(true, []) { Skipped = true, UnchangedPaths = unchanged, Detail = Unchanged };
             }
 
-            var notes = new[] { Detail(before, after), unchanged.Count > 0 ? L.T("另有 {0} 张{1}", unchanged.Count, Unchanged) : null };
+            var notes = new[] { written.Count > 0 ? Detail(before, after) : null, unchanged.Count > 0 ? L.T("另有 {0} 张{1}", unchanged.Count, Unchanged) : null };
             return ConversionResult.Written(written) with { UnchangedPaths = unchanged, Detail = string.Join(L.T("；"), notes.OfType<string>()) is { Length: > 0 } d ? d : null };
         }
         catch (Exception ex) when (ex is MagickException or InvalidDataException)
@@ -121,7 +126,8 @@ public abstract class ImageTool(TimeProvider? time) : IWheelOperation
     /// <summary>Every frame of an animation and every page of a TIFF, an animation's frames made whole so each can be changed alone.</summary>
     protected static MagickImageCollection Frames(string source)
     {
-        var frames = new MagickImageCollection(source);
+        var format = Image.MagickImageConverter.EnsureSafeRasterFile(source);
+        var frames = new MagickImageCollection(source, new MagickReadSettings { Format = format });
         if (frames.Count > 1 && frames[0].Format is MagickFormat.Gif or MagickFormat.WebP)
         {
             frames.Coalesce();

@@ -36,31 +36,67 @@ public sealed class MergePdfTool(TimeProvider? time = null) : IWheelOperation
     {
         var sources = request.SourcePaths.Order(CombinePdfTool.FileNameOrder.Instance).ToList();
         var plan = request with { SourcePaths = [sources[0]], TargetFormatId = "pdf", Naming = NamingTemplate.Default + L.T("-合并") };
-        var documents = new List<PdfDocument>();
         try
         {
             return await Task.Run(() =>
             {
-                foreach (var source in sources)
+                const int MaxRetainedDocuments = 16;
+                var retained = new PdfDocument?[Math.Min(sources.Count, MaxRetainedDocuments)];
+                try
                 {
-                    documents.Add(PdfCopy.Open(source));
-                }
+                    var total = 0;
+                    for (var i = 0; i < sources.Count; i++)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var doc = PdfCopy.Open(sources[i]);
+                        total += doc.NumberOfPages;
+                        if (i < retained.Length)
+                        {
+                            retained[i] = doc;
+                        }
+                        else
+                        {
+                            doc.Dispose();
+                        }
+                    }
 
-                var total = documents.Sum(d => d.NumberOfPages);
-                var pages = documents.SelectMany((d, i) => Enumerable.Range(1, d.NumberOfPages).Select(n => (d, sources[i], n)));
-                var done = 0;
-                var written = OutputFiles.Write(plan, sources[0], 0, _time.GetLocalNow(),
-                    temp => PdfCopy.Write(temp, pages, () => progress.Report((double)++done / total), cancellationToken), cancellationToken: cancellationToken);
-                return ConversionResult.Written(written is null ? [] : [written]) with { Detail = written is null ? null : L.T("{0} 个文件，共 {1} 页", sources.Count, total) };
+                    IEnumerable<(PdfDocument Document, string Source, int Number)> Pages()
+                    {
+                        for (var i = 0; i < sources.Count; i++)
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+                            PdfDocument? cached = null;
+                            if (i < retained.Length)
+                            {
+                                cached = retained[i];
+                                retained[i] = null;
+                            }
+
+                            using var doc = cached ?? PdfCopy.Open(sources[i]);
+                            for (var n = 1; n <= doc.NumberOfPages; n++)
+                            {
+                                yield return (doc, sources[i], n);
+                            }
+                        }
+                    }
+
+                    var done = 0;
+                    var written = OutputFiles.Write(plan, sources[0], 0, _time.GetLocalNow(),
+                        temp => PdfCopy.Write(temp, Pages(), () => progress.Report((double)++done / Math.Max(1, total)), cancellationToken), cancellationToken: cancellationToken);
+                    return ConversionResult.Written(written is null ? [] : [written]) with { Detail = written is null ? null : L.T("{0} 个文件，共 {1} 页", sources.Count, total) };
+                }
+                finally
+                {
+                    foreach (var doc in retained)
+                    {
+                        doc?.Dispose();
+                    }
+                }
             }, cancellationToken).ConfigureAwait(false);
         }
         catch (InvalidDataException ex)
         {
             return new(false, [], ex.Message);
-        }
-        finally
-        {
-            documents.ForEach(d => d.Dispose());
         }
     }
 

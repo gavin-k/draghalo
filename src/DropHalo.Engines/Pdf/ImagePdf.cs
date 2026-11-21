@@ -128,8 +128,9 @@ public static class ImagePdf
             origin = codec.EncodedOrigin;
         }
 
+        var dpi = DpiOf(new MagickImageInfo(bytes).Density);
         using var data = SKData.CreateCopy(WithoutExif(bytes));
-        return SKImage.FromEncodedData(data) is { } image ? new(image, origin, DpiOf(new MagickImageInfo(source).Density)) : null;
+        return SKImage.FromEncodedData(data) is { } image ? new(image, origin, dpi) : null;
     }
 
     /// <summary>
@@ -147,12 +148,24 @@ public static class ImagePdf
         using var output = new MemoryStream(jpeg.Length);
         output.Write(jpeg, 0, 2);
         var at = 2;
-        while (at + 4 <= jpeg.Length && jpeg[at] == 0xFF)
+        while (at + 2 <= jpeg.Length && jpeg[at] == 0xFF)
         {
             var marker = jpeg[at + 1];
             if (marker == 0xFF)
             {
                 at++; // fill byte
+                continue;
+            }
+
+            if (marker is 0x01 or (>= 0xD0 and <= 0xD9))
+            {
+                output.Write(jpeg, at, 2);
+                if (marker == 0xD9)
+                {
+                    return output.ToArray();
+                }
+
+                at += 2;
                 continue;
             }
 
@@ -163,8 +176,14 @@ public static class ImagePdf
                 return output.ToArray();
             }
 
-            var end = at + 2 + ((jpeg[at + 2] << 8) | jpeg[at + 3]);
-            if (end > jpeg.Length)
+            if (at + 4 > jpeg.Length)
+            {
+                break;
+            }
+
+            var length = (jpeg[at + 2] << 8) | jpeg[at + 3];
+            var end = at + 2 + length;
+            if (length < 2 || end > jpeg.Length)
             {
                 break;
             }
@@ -183,29 +202,52 @@ public static class ImagePdf
     /// <param name="lossy">Store an opaque frame as JPEG.</param>
     private static List<Page> Decode(string source, bool allFrames, bool lossy)
     {
+        var format = Image.MagickImageConverter.EnsureSafeRasterFile(source);
         using var frames = new MagickImageCollection();
-        frames.Read(source, new MagickReadSettings { FrameCount = allFrames ? null : 1 });
+        frames.Read(source, new MagickReadSettings { Format = format, FrameCount = allFrames ? null : 1 });
+
         var pages = new List<Page>(frames.Count);
-        foreach (var frame in frames)
+        try
         {
-            frame.AutoOrient();
-            var opaque = !frame.HasAlpha;
-            using var pixels = frame.GetPixelsUnsafe();
-            var rgba = pixels.ToByteArray(PixelMapping.RGBA) ?? throw new InvalidDataException(L.T("无法读取 {0} 的像素", Path.GetFileName(source)));
-            var info = new SKImageInfo((int)frame.Width, (int)frame.Height, SKColorType.Rgba8888, opaque ? SKAlphaType.Opaque : SKAlphaType.Unpremul);
-            var image = SKImage.FromPixelCopy(info, rgba);
-            if (lossy && opaque)
+            foreach (var frame in frames)
             {
-                // Skia's writer passes encoded JPEG data through, so the quality is chosen here, per image.
-                using var decoded = image;
-                using var data = decoded.Encode(SKEncodedImageFormat.Jpeg, LossyQuality);
-                image = SKImage.FromEncodedData(data);
+                frame.AutoOrient();
+                if (frame.GetColorProfile() is not null)
+                {
+                    frame.TransformColorSpace(ColorProfiles.SRGB);
+                }
+
+                if (frame.ColorSpace is not (ColorSpace.sRGB or ColorSpace.RGB))
+                {
+                    frame.ColorSpace = ColorSpace.sRGB;
+                }
+
+                var opaque = !frame.HasAlpha;
+                using var pixels = frame.GetPixelsUnsafe();
+                var rgba = pixels.ToByteArray(PixelMapping.RGBA) ?? throw new InvalidDataException(L.T("无法读取 {0} 的像素", Path.GetFileName(source)));
+                var info = new SKImageInfo((int)frame.Width, (int)frame.Height, SKColorType.Rgba8888, opaque ? SKAlphaType.Opaque : SKAlphaType.Unpremul);
+                var image = SKImage.FromPixelCopy(info, rgba);
+                if (lossy && opaque)
+                {
+                    // Skia's writer passes encoded JPEG data through, so the quality is chosen here, per image.
+                    using var data = image.Encode(SKEncodedImageFormat.Jpeg, LossyQuality);
+                    if (data is not null && SKImage.FromEncodedData(data) is { } encoded)
+                    {
+                        image.Dispose();
+                        image = encoded;
+                    }
+                }
+
+                pages.Add(new(image, SKEncodedOrigin.TopLeft, DpiOf(frame.Density)));
             }
 
-            pages.Add(new(image, SKEncodedOrigin.TopLeft, DpiOf(frame.Density)));
+            return pages;
         }
-
-        return pages;
+        catch
+        {
+            Dispose(pages);
+            throw;
+        }
     }
 
     private static double DpiOf(Density? density)
