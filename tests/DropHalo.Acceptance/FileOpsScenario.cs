@@ -66,9 +66,9 @@ internal static class FileOpsScenario
     }
 
     /// <summary>
-    /// Cancels a transfer of many small files as soon as the first one shows up in the destination. Only a run the
-    /// Shell stopped between its first and its last item says anything, so one that moved all or none is tried again
-    /// with more files, and never counts as a pass.
+    /// Cancels a transfer of many small files once a few have shown up in the destination: a copy canceled while its
+    /// first file is being written takes that file back. Only a run the Shell stopped between its first and its last
+    /// item says anything, so one that moved all or none is tried again with more files, and never counts as a pass.
     /// </summary>
     private static void CanceledPartWay(Checks checks, ShellFileOperations ops, string dir, string stamp, bool copy)
     {
@@ -84,7 +84,7 @@ internal static class FileOpsScenario
             using var cancel = new CancellationTokenSource();
             var watcher = Task.Run(() =>
             {
-                while (!cancel.IsCancellationRequested && !Directory.EnumerateFiles(to).Any())
+                while (!cancel.IsCancellationRequested && !Directory.EnumerateFiles(to).Skip(2).Any())
                 {
                     Thread.Sleep(0);
                 }
