@@ -48,7 +48,7 @@ public sealed class ShellFileOperations : IFileOperations
         const FILEOPERATION_FLAGS flags = FILEOPERATION_FLAGS.FOF_ALLOWUNDO | FILEOPERATION_FLAGS.FOF_NOCONFIRMMKDIR
             | FILEOPERATION_FLAGS.FOF_RENAMEONCOLLISION | FILEOPERATION_FLAGS.FOF_SILENT;
         var transferred = new List<FileMove>();
-        await RunAsync(flags, (op, release) =>
+        var run = RunAsync(flags, (op, release) =>
         {
             foreach (var item in items)
             {
@@ -65,7 +65,17 @@ public sealed class ShellFileOperations : IFileOperations
                     op.MoveItem(release(Item(item.From)), release(Item(folder)), Path.GetFileName(fullTo), progress);
                 }
             }
-        }, $"{(copy ? "copy" : "move")} {items.Count} item(s)", cancellationToken).ConfigureAwait(false);
+        }, $"{(copy ? "copy" : "move")} {items.Count} item(s)", cancellationToken);
+        try
+        {
+            await run.ConfigureAwait(false);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested && transferred.Count > 0)
+        {
+            // However the Shell stopped, the items it had finished are where they are now: name them.
+            throw new PartialTransferException([.. transferred], cancellationToken);
+        }
+
         return transferred;
     }
 
