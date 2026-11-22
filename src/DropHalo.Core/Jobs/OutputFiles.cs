@@ -205,9 +205,11 @@ public static class OutputFiles
                     }
 
                     request.Conflicts?.Wrote(target);
-                    if (staged?.RebindAfterMove(target) is { } finalSnapshot)
+                    if (staged is not null)
                     {
-                        request.Written[target] = finalSnapshot;
+                        // What was moved may no longer be what was staged. The staged snapshot is kept then: it does
+                        // not match, so rollback and undo leave the item alone instead of taking it as it is now.
+                        request.Written[target] = staged.RebindAfterMove(target) ?? staged.Snapshot;
                     }
 
                     return target;

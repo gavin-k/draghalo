@@ -227,6 +227,47 @@ public sealed class JobQueueTests : IDisposable
         File.ReadAllText(output).Should().Be("user content");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Undo_refuses_an_output_that_changed_while_the_one_it_replaces_was_recycled(bool folder)
+    {
+        var source = Path.Combine(_dir, "a.jpg");
+        File.WriteAllText(source, "source");
+        var target = Path.Combine(_dir, folder ? "a" : "a.png");
+        if (folder)
+        {
+            Directory.CreateDirectory(target);
+        }
+        else
+        {
+            File.WriteAllText(target, "old");
+        }
+
+        var files = new DeletingFiles(() =>
+        {
+            var staged = Directory.GetFileSystemEntries(_dir).Single(e => e.EndsWith(OutputFiles.TempSuffix, StringComparison.Ordinal));
+            File.WriteAllText(folder ? Path.Combine(staged, "theirs.txt") : staged, "theirs");
+        });
+        await using var queue = new JobQueue(new ConversionGraph(), new UndoLedger(files));
+        var runner = new TestRunner(async (r, _, ct) =>
+        {
+            var output = folder
+                ? await OutputFiles.WriteFolderAsync(r, source, 0, DateTimeOffset.Now, temp => File.WriteAllTextAsync(Path.Combine(temp, "ours.png"), "ours", ct), cancellationToken: ct)
+                : await OutputFiles.WriteAsync(r, source, 0, DateTimeOffset.Now, temp => File.WriteAllTextAsync(temp, "ours", ct), cancellationToken: ct);
+            return ConversionResult.Written([output!]);
+        });
+        var job = queue.Enqueue(new ConversionRequest([source], "png", _dir) { Conflict = ConflictPolicy.OverwriteToRecycleBin }, "x", runner);
+        await queue.WhenIdleAsync();
+        job.State.Should().Be(JobState.Done);
+        job.Outputs.Should().Equal(target);
+
+        await queue.Invoking(q => q.UndoAsync(job.Id)).Should().ThrowAsync<IOException>();
+
+        files.Recycled.Should().Equal(target);
+        File.ReadAllText(folder ? Path.Combine(target, "theirs.txt") : target).Should().Be("theirs");
+    }
+
     // Without a birth time (Linux without statx), the creation time falls back to the earlier of ctime and
     // mtime, so a recreated file with the original mtime fingerprints the same; only Windows has a file ID.
     [WindowsFact]
@@ -693,6 +734,36 @@ public sealed class JobQueueTests : IDisposable
         (await queue.UndoAsync(second.Id)).Should().BeFalse();
         second.State.Should().Be(JobState.Done);
         queue.WhenIdleAsync().IsCompleted.Should().BeTrue();
+    }
+
+    /// <summary>Really removes what it recycles, and lets something else act while the first removal is under way.</summary>
+    private sealed class DeletingFiles(Action duringFirstRecycle) : IFileOperations
+    {
+        private Action? _during = duringFirstRecycle;
+
+        public List<string> Recycled { get; } = [];
+
+        public Task RecycleAsync(IReadOnlyList<string> paths, CancellationToken cancellationToken = default)
+        {
+            Recycled.AddRange(paths);
+            foreach (var path in paths)
+            {
+                if (Directory.Exists(path))
+                {
+                    Directory.Delete(path, recursive: true);
+                }
+                else
+                {
+                    File.Delete(path);
+                }
+            }
+
+            Interlocked.Exchange(ref _during, null)?.Invoke();
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<FileMove>> MoveAsync(IReadOnlyList<FileMove> moves, CancellationToken cancellationToken = default) => Task.FromResult(moves);
+        public Task<IReadOnlyList<FileMove>> CopyAsync(IReadOnlyList<FileMove> copies, CancellationToken cancellationToken = default) => Task.FromResult(copies);
     }
 
     private sealed class CountingSlowRecycleFiles(Func<Task> onRecycle) : IFileOperations
