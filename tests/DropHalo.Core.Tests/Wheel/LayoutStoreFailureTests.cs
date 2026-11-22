@@ -97,6 +97,44 @@ public sealed class LayoutStoreFailureTests : IDisposable
     }
 
     [Fact]
+    public void A_layout_that_could_not_be_read_at_startup_is_read_before_the_next_edit()
+    {
+        File.WriteAllText(File_, InitialLayout);
+        LayoutStore unread;
+        using (new FileStream(File_, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            unread = new LayoutStore(File_);
+        }
+
+        using var store = unread;
+        store.LoadProblem.Should().NotBeNullOrEmpty();
+        store.SlotsFor(WheelMode.Tools, MediaKind.Image).Should().BeNull();
+
+        store.Update(layout => layout.With(WheelMode.Tools, MediaKind.Video, [new LayoutSlot("tool.ocr")]));
+
+        store.LoadProblem.Should().BeNull();
+        using var reloaded = new LayoutStore(File_);
+        reloaded.SlotsFor(WheelMode.Tools, MediaKind.Image)!.Single()!.Item.Should().Be("tool.compress-image");
+        reloaded.SlotsFor(WheelMode.Tools, MediaKind.Video)!.Single()!.Item.Should().Be("tool.ocr");
+    }
+
+    [Fact]
+    public void An_edit_fails_and_keeps_the_file_while_the_layout_still_cannot_be_read()
+    {
+        File.WriteAllText(File_, InitialLayout);
+        using (new FileStream(File_, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            using var store = new LayoutStore(File_);
+
+            var edit = () => store.Update(layout => layout.With(WheelMode.Tools, MediaKind.Video, [new LayoutSlot("tool.ocr")]));
+
+            edit.Should().Throw<IOException>();
+        }
+
+        File.ReadAllText(File_).Should().Be(InitialLayout);
+    }
+
+    [Fact]
     public void A_bad_layout_that_cannot_be_moved_aside_is_not_replaced_by_the_next_edit()
     {
         const string bad = """{ "version": 1, "wheels": { "tools": { "image": [ { "item": "tool.ocr" } ] } }, "installed": [ """;
