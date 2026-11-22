@@ -141,7 +141,8 @@ internal sealed record OutputSnapshot(string Fingerprint, string ContentFingerpr
             return true;
         }
 
-        return TryGetIdentity(a, out var ia) && TryGetIdentity(b, out var ib) && ia == ib;
+        // The second path is the one that is usually not there, and saying so costs far less than an identity.
+        return TryGetIdentity(b, out var ib) && TryGetIdentity(a, out var ia) && ia == ib;
     }
 
     internal static bool TryGetIdentity(string path, out ItemIdentity identity)
