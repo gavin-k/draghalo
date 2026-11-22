@@ -45,7 +45,7 @@ internal static class ImageMetadata
         var turned = false;
         while (true)
         {
-            if (at + 4 > jpeg.Length || jpeg[at] != 0xFF)
+            if (at + 2 > jpeg.Length || jpeg[at] != 0xFF)
             {
                 throw NotA("JPEG");
             }
@@ -57,14 +57,32 @@ internal static class ImageMetadata
                 continue;
             }
 
+            if (marker is 0x01 or (>= 0xD0 and <= 0xD8))
+            {
+                output.Write(jpeg, at, 2);
+                at += 2;
+                continue;
+            }
+
+            if (marker == 0xD9)
+            {
+                throw NotA("JPEG");
+            }
+
             if (marker == 0xDA)
             {
                 output.Write(jpeg, at, EndOfImage(jpeg, at) - at);
                 return output.ToArray();
             }
 
-            var end = at + 2 + BinaryPrimitives.ReadUInt16BigEndian(jpeg.AsSpan(at + 2));
-            if (end > jpeg.Length)
+            if (at + 4 > jpeg.Length)
+            {
+                throw NotA("JPEG");
+            }
+
+            var length = BinaryPrimitives.ReadUInt16BigEndian(jpeg.AsSpan(at + 2));
+            var end = at + 2 + length;
+            if (length < 2 || end > jpeg.Length)
             {
                 throw NotA("JPEG");
             }
@@ -99,7 +117,7 @@ internal static class ImageMetadata
     /// </summary>
     private static int EndOfImage(byte[] jpeg, int at)
     {
-        while (at + 4 <= jpeg.Length && jpeg[at] == 0xFF)
+        while (at + 2 <= jpeg.Length && jpeg[at] == 0xFF)
         {
             var marker = jpeg[at + 1];
             if (marker == 0xD9)
@@ -113,7 +131,24 @@ internal static class ImageMetadata
                 continue;
             }
 
-            at += 2 + BinaryPrimitives.ReadUInt16BigEndian(jpeg.AsSpan(at + 2));
+            if (marker is 0x01 or (>= 0xD0 and <= 0xD8))
+            {
+                at += 2;
+                continue;
+            }
+
+            if (at + 4 > jpeg.Length)
+            {
+                break;
+            }
+
+            var length = BinaryPrimitives.ReadUInt16BigEndian(jpeg.AsSpan(at + 2));
+            if (length < 2 || at + 2 + length > jpeg.Length)
+            {
+                break;
+            }
+
+            at += 2 + length;
             if (marker != 0xDA)
             {
                 continue;
@@ -202,6 +237,7 @@ internal static class ImageMetadata
         using var output = new MemoryStream(png.Length);
         output.Write(PngSignature);
         var at = PngSignature.Length;
+        var hasIhdr = false;
         while (true)
         {
             if (at + 12 > png.Length)
@@ -217,14 +253,24 @@ internal static class ImageMetadata
 
             var end = at + 12 + (int)length;
             var type = png.AsSpan(at + 4, 4);
+            if (type.SequenceEqual("IHDR"u8))
+            {
+                hasIhdr = true;
+            }
+
             if (!(type.SequenceEqual("tEXt"u8) || type.SequenceEqual("zTXt"u8) || type.SequenceEqual("iTXt"u8)
-                || type.SequenceEqual("eXIf"u8) || type.SequenceEqual("tIME"u8)))
+                || type.SequenceEqual("eXIf"u8) || type.SequenceEqual("tIME"u8) || type.SequenceEqual("caBX"u8)))
             {
                 output.Write(png, at, end - at);
             }
 
             if (type.SequenceEqual("IEND"u8))
             {
+                if (!hasIhdr)
+                {
+                    throw NotA("PNG");
+                }
+
                 return output.ToArray();
             }
 
@@ -233,7 +279,7 @@ internal static class ImageMetadata
     }
 
     /// <summary>
-    /// Drops the EXIF and XMP chunks and clears their flags in the extended header. A simple WebP, one without
+    /// Drops the EXIF, XMP and C2PA chunks and clears their flags in the extended header. A simple WebP, one without
     /// that header, has nowhere to keep metadata.
     /// </summary>
     private static byte[] WebP(byte[] webp)
@@ -247,6 +293,7 @@ internal static class ImageMetadata
         using var output = new MemoryStream(webp.Length);
         output.Write(webp, 0, 12);
         var at = 12;
+        var hasImage = false;
         while (at + 8 <= riffEnd)
         {
             var size = BinaryPrimitives.ReadUInt32LittleEndian(webp.AsSpan(at + 4));
@@ -259,7 +306,12 @@ internal static class ImageMetadata
             // The last chunk's padding byte is sometimes missing.
             end = Math.Min(end, riffEnd);
             var fourCc = webp.AsSpan(at, 4);
-            if (!fourCc.SequenceEqual("EXIF"u8) && !fourCc.SequenceEqual("XMP "u8))
+            if (fourCc.SequenceEqual("VP8 "u8) || fourCc.SequenceEqual("VP8L"u8) || fourCc.SequenceEqual("ANMF"u8))
+            {
+                hasImage = true;
+            }
+
+            if (!fourCc.SequenceEqual("EXIF"u8) && !fourCc.SequenceEqual("XMP "u8) && !fourCc.SequenceEqual("C2PA"u8))
             {
                 var start = (int)output.Position;
                 output.Write(webp, at, (int)end - at);
@@ -270,6 +322,11 @@ internal static class ImageMetadata
             }
 
             at = (int)end;
+        }
+
+        if (!hasImage)
+        {
+            throw NotA("WebP");
         }
 
         var stripped = output.ToArray();
