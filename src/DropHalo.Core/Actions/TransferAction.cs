@@ -10,6 +10,7 @@ namespace DropHalo.Core.Actions;
 /// one Shell operation. A name already there is numbered, skipped or replaced by the conflict policy,
 /// asking under Ask; a replaced item goes to the Recycle Bin before the transfer and undo does not bring it
 /// back. Undo moves the items back, or recycles the copies, using the actual names returned by the Shell.
+/// Canceled part-way, the job still ends as done: it names how many items arrived and undo covers those.
 /// </summary>
 public sealed class TransferAction(bool copy, IFileOperations files, IDesktop desktop) : IWheelOperation
 {
@@ -66,13 +67,22 @@ public sealed class TransferAction(bool copy, IFileOperations files, IDesktop de
             await request.Conflicts!.ReplaceAsync(taken).ConfigureAwait(false);
         }
 
-        var transferred = await (copy ? files.CopyAsync(plan, cancellationToken) : files.MoveAsync(plan, cancellationToken)).ConfigureAwait(false);
-        var outputs = transferred.Select(m => m.To).ToList();
-        return ConversionResult.Written(outputs) with
+        IReadOnlyList<FileMove> transferred;
+        string detail;
+        try
         {
-            Undo = copy ? null : new UndoPlan.MoveBack(transferred),
-            Detail = (copy ? L.T("已复制到 {0}", where) : L.T("已移动到 {0}", where)) + (skipped > 0 ? L.T("，跳过 {0} 项", skipped) : ""),
-        };
+            transferred = await (copy ? files.CopyAsync(plan, cancellationToken) : files.MoveAsync(plan, cancellationToken)).ConfigureAwait(false);
+            detail = (copy ? L.T("已复制到 {0}", where) : L.T("已移动到 {0}", where)) + (skipped > 0 ? L.T("，跳过 {0} 项", skipped) : "");
+        }
+        catch (PartialTransferException ex) when (ex.Transferred.Count > 0)
+        {
+            // What arrived stays where it is: the job ends as done so the queue shows it and can put it back.
+            transferred = ex.Transferred;
+            detail = copy ? L.T("已取消，{0} 项已复制到 {1}", transferred.Count, where) : L.T("已取消，{0} 项已移动到 {1}", transferred.Count, where);
+        }
+
+        var outputs = transferred.Select(m => m.To).ToList();
+        return ConversionResult.Written(outputs) with { Undo = copy ? null : new UndoPlan.MoveBack(transferred), Detail = detail };
     }
 
     /// <summary>

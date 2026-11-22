@@ -36,6 +36,8 @@
   "复制路径": "Copier le chemin",
   "工具": "Outils",
   "工具轮盘": "Roue d’outils",
+  "已取消，{0} 项已复制到 {1}": "Annulé ; {0} {0|élément déjà copié|éléments déjà copiés} vers {1}",
+  "已取消，{0} 项已移动到 {1}": "Annulé ; {0} {0|élément déjà déplacé|éléments déjà déplacés} vers {1}",
   "已复制 {0} 个路径": "{0} {0|chemin copié|chemins copiés}",
   "已复制到 {0}": "Copié vers {0}",
   "已复制路径": "Chemin copié",
