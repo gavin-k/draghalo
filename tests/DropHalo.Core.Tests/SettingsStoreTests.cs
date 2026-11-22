@@ -130,6 +130,31 @@ public sealed class SettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public void A_bad_file_that_cannot_be_moved_aside_is_kept_until_it_can_be()
+    {
+        const string bad = "{ \"version\": 2, \"language\": \"German\", ";
+        File.WriteAllText(File_, bad);
+        Directory.CreateDirectory(File_ + ".bad");
+        var store = new SettingsStore(File_);
+        store.Current.Should().Be(AppSettings.Default);
+        store.LoadProblem.Should().Contain("settings.json");
+
+        var save = () => store.Update(s => s with { OnboardingDone = true });
+
+        save.Should().Throw<IOException>();
+        File.ReadAllText(File_).Should().Be(bad);
+
+        Directory.Delete(File_ + ".bad");
+        store.Update(s => s with { OnboardingDone = true });
+
+        File.ReadAllText(File_ + ".bad").Should().Be(bad);
+        var reloaded = new SettingsStore(File_);
+        reloaded.LoadProblem.Should().BeNull();
+        reloaded.Current.OnboardingDone.Should().BeTrue();
+        reloaded.Current.Language.Should().Be(AppSettings.Default.Language);
+    }
+
+    [Fact]
     public void Settings_that_could_not_be_read_at_startup_are_read_before_the_next_save()
     {
         SaveGermanSettings();

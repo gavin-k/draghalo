@@ -121,12 +121,14 @@ public static class JsonFile
             try
             {
                 File.Move(path, aside, overwrite: true);
-                return (fallback, $"{Path.GetFileName(path)} could not be read ({ex.Message}); moved to {aside} and using defaults");
             }
             catch (Exception moveEx) when (moveEx is IOException or UnauthorizedAccessException)
             {
-                return (fallback, $"{Path.GetFileName(path)} could not be read ({ex.Message}); using defaults");
+                // Still the user's file at its own path: a caller handed the fallback would save over it.
+                throw new IOException($"{Path.GetFileName(path)} could not be parsed ({ex.Message}) and could not be moved to {aside} ({moveEx.Message})", moveEx);
             }
+
+            return (fallback, $"{Path.GetFileName(path)} could not be read ({ex.Message}); moved to {aside} and using defaults");
         }
     }
 

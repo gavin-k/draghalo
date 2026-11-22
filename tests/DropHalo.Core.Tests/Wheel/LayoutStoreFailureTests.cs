@@ -97,6 +97,21 @@ public sealed class LayoutStoreFailureTests : IDisposable
     }
 
     [Fact]
+    public void A_bad_layout_that_cannot_be_moved_aside_is_not_replaced_by_the_next_edit()
+    {
+        const string bad = """{ "version": 1, "wheels": { "tools": { "image": [ { "item": "tool.ocr" } ] } }, "installed": [ """;
+        File.WriteAllText(File_, bad);
+        Directory.CreateDirectory(File_ + ".bad");
+        using var store = new LayoutStore(File_);
+        store.LoadProblem.Should().NotBeNullOrEmpty();
+
+        var edit = () => store.Update(layout => layout.With(WheelMode.Tools, MediaKind.Video, [new LayoutSlot("tool.trim")]));
+
+        edit.Should().Throw<IOException>();
+        File.ReadAllText(File_).Should().Be(bad);
+    }
+
+    [Fact]
     public void A_no_op_update_notifies_an_external_reload_once_without_rewriting_the_file()
     {
         File.WriteAllText(File_, InitialLayout);
