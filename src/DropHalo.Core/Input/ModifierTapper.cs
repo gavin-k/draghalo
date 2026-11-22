@@ -23,9 +23,13 @@ public sealed class ModifierTapper(KeyBindings bindings, TimeProvider time)
     private bool _pressedWhileDragging;
     private bool _spent;
     private readonly Dictionary<int, Modifiers> _physical = [];
+    private readonly HashSet<int> _swallowed = [];
 
     /// <summary>Raised on the calling thread when a bound combo is tapped (or held, for <see cref="InvokeStyle.Hold"/>).</summary>
     public event Action<WheelMode>? Invoked;
+
+    /// <summary>True when at least one physical modifier key is currently tracked as held.</summary>
+    public bool HasHeldKeys => _physical.Count > 0;
 
     /// <summary>Feed a modifier transition. <paramref name="isDown"/> is true on key-down, including auto-repeat.</summary>
     /// <param name="physicalKey">The Shell's left/right virtual-key code; zero for a logical transition.</param>
@@ -39,9 +43,13 @@ public sealed class ModifierTapper(KeyBindings bindings, TimeProvider time)
                 return;
             }
         }
-        else if (!_physical.Remove(identity) || _physical.ContainsValue(key))
+        else
         {
-            return;
+            _swallowed.Remove(identity);
+            if (!_physical.Remove(identity) || _physical.ContainsValue(key))
+            {
+                return;
+            }
         }
 
         var current = _bindings;
@@ -96,6 +104,51 @@ public sealed class ModifierTapper(KeyBindings bindings, TimeProvider time)
     {
         if (_held != Modifiers.None)
         {
+            _spent = true;
+        }
+    }
+
+    /// <summary>
+    /// The hook swallowed the key-down just fed to <see cref="OnModifier"/>. Windows never saw that key
+    /// go down and reports it as up for the whole press, so <see cref="PruneReleased"/> leaves it alone.
+    /// </summary>
+    public void OnSwallowed(int physicalKey)
+    {
+        if (_physical.ContainsKey(physicalKey))
+        {
+            _swallowed.Add(physicalKey);
+        }
+    }
+
+    /// <summary>Clears physical keys whose key-up went to the secure desktop (Win+L, Ctrl+Alt+Del, UAC).</summary>
+    public void PruneReleased(Func<int, bool> isPhysicallyDown)
+    {
+        List<(int Id, Modifiers Key)>? stale = null;
+        foreach (var (id, key) in _physical)
+        {
+            if (id > (int)Modifiers.Win && !_swallowed.Contains(id) && !isPhysicallyDown(id))
+            {
+                (stale ??= []).Add((id, key));
+            }
+        }
+
+        if (stale is null)
+        {
+            return;
+        }
+
+        foreach (var (id, key) in stale)
+        {
+            _physical.Remove(id);
+            if (!_physical.ContainsValue(key))
+            {
+                _held &= ~key;
+            }
+        }
+
+        if (_held == Modifiers.None)
+        {
+            _combo = Modifiers.None;
             _spent = true;
         }
     }

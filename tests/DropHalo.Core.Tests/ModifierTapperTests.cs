@@ -198,4 +198,83 @@ public class ModifierTapperTests
 
         _invoked.Should().Equal(WheelMode.Actions);
     }
+
+    [Fact]
+    public void Pruning_a_released_key_recovers_from_a_missed_key_up()
+    {
+        var t = Tapper();
+        // Win (vk 0x5B) went down, then Win+L switched to the secure desktop so its key-up never reached the hook.
+        t.OnModifier(Modifiers.Win, true, false, 0x5B);
+        t.OnOtherKey();
+
+        // Next Shift tap (vk 0xA0) prunes keys no longer physically down, so Shift is not misread as Win+Shift.
+        t.PruneReleased(vk => vk == 0xA0);
+        t.OnModifier(Modifiers.Shift, true, true, 0xA0);
+        After(50);
+        t.OnModifier(Modifiers.Shift, false, true, 0xA0);
+
+        _invoked.Should().Equal(WheelMode.Convert);
+    }
+
+    [Fact]
+    public void Pruning_keeps_a_swallowed_Win_so_a_Shift_tap_under_it_stays_Win_Shift()
+    {
+        var t = Tapper();
+        // Win went down during the drag and the hook swallowed it: Windows reports it as up while it is held.
+        t.OnModifier(Modifiers.Win, true, true, 0x5B);
+        t.OnSwallowed(0x5B);
+
+        t.PruneReleased(vk => vk == 0xA0);
+        t.OnModifier(Modifiers.Shift, true, true, 0xA0);
+        After(50);
+        t.OnModifier(Modifiers.Shift, false, true, 0xA0);
+        t.OnModifier(Modifiers.Win, false, true, 0x5B);
+
+        _invoked.Should().BeEmpty("Win+Shift is not bound, and it is not a Shift tap");
+    }
+
+    [Fact]
+    public void A_swallowed_press_ends_at_its_key_up()
+    {
+        var t = Tapper();
+        t.OnModifier(Modifiers.Win, true, true, 0x5B);
+        t.OnSwallowed(0x5B);
+        t.OnModifier(Modifiers.Win, false, true, 0x5B);
+        _invoked.Clear();
+
+        // The next press of the same key reaches Windows; when its key-up is lost it must be pruned again.
+        t.OnModifier(Modifiers.Win, true, false, 0x5B);
+        t.PruneReleased(_ => false);
+
+        t.HasHeldKeys.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Held_key_flags_stay_false_when_idle_and_clear_when_keys_Windows_saw_are_pruned()
+    {
+        var tapper = Tapper();
+        var winGate = new WinKeyGate(KeyBindings.Default);
+        var typeAhead = new TypeAhead();
+
+        tapper.HasHeldKeys.Should().BeFalse();
+        winGate.HasHeldKeys.Should().BeFalse();
+        typeAhead.HasHeldKeys.Should().BeFalse();
+
+        // None of these is swallowed, so Windows saw each key go down and its answer can be trusted.
+        tapper.OnModifier(Modifiers.Shift, true, true, 0xA0);
+        winGate.Swallow(true, false, 0x5B).Should().BeFalse();
+        typeAhead.Swallow(0x41, true, Modifiers.None).Should().BeFalse();
+
+        tapper.HasHeldKeys.Should().BeTrue();
+        winGate.HasHeldKeys.Should().BeTrue();
+        typeAhead.HasHeldKeys.Should().BeTrue();
+
+        tapper.PruneReleased(_ => false);
+        winGate.PruneReleased(_ => false);
+        typeAhead.PruneReleased(_ => false);
+
+        tapper.HasHeldKeys.Should().BeFalse();
+        winGate.HasHeldKeys.Should().BeFalse();
+        typeAhead.HasHeldKeys.Should().BeFalse();
+    }
 }

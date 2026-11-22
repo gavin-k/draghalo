@@ -19,6 +19,9 @@ public sealed class WinKeyGate(KeyBindings bindings)
     /// <summary>Swaps the bindings, from any thread. A press already being swallowed is swallowed to its key-up.</summary>
     public void Rebind(KeyBindings bindings) => _winBound = WinBound(bindings);
 
+    /// <summary>True when at least one physical Win key is currently tracked as down.</summary>
+    public bool HasHeldKeys => _pressed.Count > 0;
+
     /// <summary>True if the hook should swallow this Win key event instead of passing it on.</summary>
     /// <param name="physicalKey">The Shell's left/right virtual-key code; zero for a logical transition.</param>
     public bool Swallow(bool isDown, bool dragging, int physicalKey = 0)
@@ -30,6 +33,38 @@ public sealed class WinKeyGate(KeyBindings bindings)
         }
 
         return _pressed.Remove(physicalKey, out var swallowed) && swallowed;
+    }
+
+    /// <summary>Drops Win keys whose key-up was lost to the secure desktop (Win+L, UAC).</summary>
+    /// <remarks>
+    /// Only presses that reached Windows are checked. Windows never saw a swallowed key-down, so it
+    /// reports that key as up for the whole press; dropping it would let its key-up through alone.
+    /// </remarks>
+    public void PruneReleased(Func<int, bool> isPhysicallyDown)
+    {
+        if (_pressed.Count == 0)
+        {
+            return;
+        }
+
+        List<int>? stale = null;
+        foreach (var (key, swallowed) in _pressed)
+        {
+            if (key != 0 && !swallowed && !isPhysicallyDown(key))
+            {
+                (stale ??= []).Add(key);
+            }
+        }
+
+        if (stale is null)
+        {
+            return;
+        }
+
+        foreach (var key in stale)
+        {
+            _pressed.Remove(key);
+        }
     }
 
     private static bool WinBound(KeyBindings bindings) => bindings.Bindings.Any(b => (b.Keys & Modifiers.Win) != 0);
