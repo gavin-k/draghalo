@@ -3,7 +3,10 @@ using DropHalo.Shell;
 
 namespace DropHalo.Acceptance;
 
-/// <summary><see cref="ShellFileOperations"/> against the real Shell: recycle, and move with a name collision.</summary>
+/// <summary>
+/// <see cref="ShellFileOperations"/> against the real Shell: recycle, move and copy with a name collision, a folder
+/// copy, and a move and a copy canceled part-way.
+/// </summary>
 internal static class FileOpsScenario
 {
     public static int Run()
@@ -50,6 +53,9 @@ internal static class FileOpsScenario
             checks.Check("folder copy reports only the selected root", folders.Count == 1
                 && folders[0].From == folderSource && string.Equals(folders[0].To, folderDest, StringComparison.OrdinalIgnoreCase)
                 && File.Exists(Path.Combine(folderDest, "child", "a.txt")), string.Join(", ", folders));
+
+            CanceledPartWay(checks, ops, dir, stamp, copy: false);
+            CanceledPartWay(checks, ops, dir, stamp, copy: true);
         }
         catch (Exception ex)
         {
@@ -57,6 +63,77 @@ internal static class FileOpsScenario
         }
 
         return checks.Report("ShellFileOperations");
+    }
+
+    /// <summary>
+    /// Cancels a transfer of many small files as soon as the first one shows up in the destination. Only a run the
+    /// Shell stopped between its first and its last item says anything, so one that moved all or none is tried again
+    /// with more files, and never counts as a pass.
+    /// </summary>
+    private static void CanceledPartWay(Checks checks, ShellFileOperations ops, string dir, string stamp, bool copy)
+    {
+        var verb = copy ? "copy" : "move";
+        var tried = new List<string>();
+        for (var attempt = 1; attempt <= 5; attempt++)
+        {
+            var count = 400 * attempt;
+            var from = Path.Combine(dir, $"cancel-{verb}-{stamp}-{attempt}");
+            var to = from + "-to";
+            Directory.CreateDirectory(to);
+            var plan = Enumerable.Range(0, count).Select(i => new FileMove(Write(Path.Combine(from, $"{i:D4}.bin")), Path.Combine(to, $"{i:D4}.bin"))).ToList();
+            using var cancel = new CancellationTokenSource();
+            var watcher = Task.Run(() =>
+            {
+                while (!cancel.IsCancellationRequested && !Directory.EnumerateFiles(to).Any())
+                {
+                    Thread.Sleep(0);
+                }
+
+                cancel.Cancel();
+            });
+
+            IReadOnlyList<FileMove>? reported = null;
+            string outcome;
+            try
+            {
+                var all = (copy ? ops.CopyAsync(plan, cancel.Token) : ops.MoveAsync(plan, cancel.Token)).GetAwaiter().GetResult();
+                outcome = $"finished all {all.Count}";
+            }
+            catch (PartialTransferException ex)
+            {
+                reported = ex.Transferred;
+                outcome = $"reported {reported.Count}";
+            }
+            catch (OperationCanceledException ex)
+            {
+                outcome = $"canceled without a report ({ex.GetType().Name})";
+            }
+            finally
+            {
+                cancel.Cancel();
+                watcher.Wait();
+            }
+
+            var arrived = plan.Where(m => File.Exists(m.To)).ToList();
+            tried.Add($"attempt {attempt}: {arrived.Count} of {count} arrived, {outcome}");
+            if (arrived.Count == 0 || arrived.Count == count)
+            {
+                continue;
+            }
+
+            var named = (reported ?? []).Select(m => (m.From, m.To)).ToHashSet();
+            var same = named.Count == arrived.Count && arrived.All(m => named.Any(n =>
+                string.Equals(n.From, m.From, StringComparison.OrdinalIgnoreCase) && string.Equals(n.To, m.To, StringComparison.OrdinalIgnoreCase)));
+            checks.Check($"a {verb} canceled part-way reports exactly what arrived", reported is not null && same, string.Join("; ", tried));
+            var whole = plan.All(m => File.Exists(m.To)
+                ? new FileInfo(m.To).Length == 16 && File.Exists(m.From) == copy
+                : File.Exists(m.From) && new FileInfo(m.From).Length == 16);
+            checks.Check($"a {verb} canceled part-way leaves every item whole, in one place{(copy ? " or both" : "")}", whole,
+                $"{arrived.Count} in the destination, {plan.Count(m => File.Exists(m.From))} in the source");
+            return;
+        }
+
+        checks.Check($"a {verb} canceled part-way reports exactly what arrived", false, "never stopped between the first and the last item: " + string.Join("; ", tried));
     }
 
     private static string Write(string path, int bytes = 16)
