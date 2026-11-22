@@ -225,6 +225,24 @@ public sealed class SettingsStoreTests : IDisposable
         new SettingsStore(File_).Current.Language.Should().Be(LanguageSetting.German);
     }
 
+    [WindowsFact("Windows file sharing only.")]
+    public void A_settings_file_that_is_still_being_written_fails_the_load_and_is_not_moved_aside()
+    {
+        SaveGermanSettings();
+        var waits = 0;
+        // Emptied and not written yet, by a writer that lets others read, write and rename it meanwhile.
+        using (new FileStream(File_, FileMode.Create, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete))
+        {
+            var load = () => new SettingsStore(File_, _ => waits++);
+
+            load.Should().Throw<IOException>();
+            File.Exists(File_).Should().BeTrue();
+            File.Exists(File_ + ".bad").Should().BeFalse();
+        }
+
+        waits.Should().Be(4);
+    }
+
     private void SaveGermanSettings() => new SettingsStore(File_).Update(s => s with
     {
         Language = LanguageSetting.German,

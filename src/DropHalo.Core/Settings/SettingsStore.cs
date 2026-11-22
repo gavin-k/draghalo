@@ -113,7 +113,8 @@ public static class JsonFile
 
         try
         {
-            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            // Not while someone else has it open for writing: caught half-way it would not parse and be moved aside.
+            using var stream = File.OpenRead(path);
             return (JsonSerializer.Deserialize(stream, type) ?? fallback, null);
         }
         catch (Exception ex) when (ex is JsonException or NotSupportedException)

@@ -134,6 +134,22 @@ public sealed class LayoutStoreFailureTests : IDisposable
         File.ReadAllText(File_).Should().Be(InitialLayout);
     }
 
+    [WindowsFact("Windows file sharing only.")]
+    public void A_layout_that_is_still_being_written_is_not_moved_aside_by_an_edit()
+    {
+        File.WriteAllText(File_, InitialLayout);
+        using var store = new LayoutStore(File_);
+        // Emptied and not written yet, by a writer that lets others read, write and rename it meanwhile.
+        using (new FileStream(File_, FileMode.Create, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete))
+        {
+            var edit = () => store.Update(layout => layout.With(WheelMode.Tools, MediaKind.Video, [new LayoutSlot("tool.ocr")]));
+
+            edit.Should().Throw<IOException>();
+            File.Exists(File_).Should().BeTrue();
+            File.Exists(File_ + ".bad").Should().BeFalse();
+        }
+    }
+
     [Fact]
     public void A_bad_layout_that_cannot_be_moved_aside_is_not_replaced_by_the_next_edit()
     {
