@@ -12,13 +12,18 @@ namespace DropHalo.Core.Settings;
 /// </summary>
 public sealed class SettingsStore
 {
+    private static readonly TimeSpan FirstRetry = TimeSpan.FromMilliseconds(50);
+    private static readonly TimeSpan LastRetry = TimeSpan.FromMilliseconds(400);
+
     private readonly string _path;
     private readonly Lock _gate = new();
 
-    public SettingsStore(string path)
+    /// <param name="path">Where settings.json is.</param>
+    /// <param name="wait">Sits out the pause before another try at a file that would not open; sleeps when left out.</param>
+    public SettingsStore(string path, Action<TimeSpan>? wait = null)
     {
         _path = path;
-        var (loaded, problem) = JsonFile.Load(path, SettingsJson.Default.AppSettings, AppSettings.Default);
+        var (loaded, problem) = LoadWhenFree(path, wait ?? Thread.Sleep);
         Current = Migrate(Repair(loaded));
         LoadProblem = problem;
     }
@@ -43,6 +48,26 @@ public sealed class SettingsStore
 
         Changed?.Invoke(next);
         return next;
+    }
+
+    /// <summary>
+    /// Whatever holds the file at startup (a scanner, a backup, the instance this one replaces still saving)
+    /// tends to let go within moments, so a few short waits come before giving up. A file that opens the first
+    /// time costs nothing extra.
+    /// </summary>
+    private static (AppSettings Value, string? Problem) LoadWhenFree(string path, Action<TimeSpan> wait)
+    {
+        for (var pause = FirstRetry; ; pause *= 2)
+        {
+            try
+            {
+                return JsonFile.Load(path, SettingsJson.Default.AppSettings, AppSettings.Default);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException && pause <= LastRetry)
+            {
+                wait(pause);
+            }
+        }
     }
 
     /// <summary>A hand-edited file can leave out or null whole sections; those fall back to their defaults.</summary>

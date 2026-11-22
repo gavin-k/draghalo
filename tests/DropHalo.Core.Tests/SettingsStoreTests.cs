@@ -136,7 +136,7 @@ public sealed class SettingsStoreTests : IDisposable
         File.WriteAllText(File_, bad);
         Directory.CreateDirectory(File_ + ".bad");
 
-        var load = () => new SettingsStore(File_);
+        var load = () => new SettingsStore(File_, _ => { });
 
         load.Should().Throw<IOException>();
         File.ReadAllText(File_).Should().Be(bad);
@@ -150,17 +150,42 @@ public sealed class SettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public void A_settings_file_that_is_locked_for_a_moment_is_read_once_it_is_free()
+    {
+        SaveGermanSettings();
+        using var held = new FileStream(File_, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        var waits = 0;
+
+        var store = new SettingsStore(File_, _ =>
+        {
+            if (++waits == 2)
+            {
+                held.Dispose();
+            }
+        });
+
+        waits.Should().Be(2);
+        store.LoadProblem.Should().BeNull();
+        store.Current.Language.Should().Be(LanguageSetting.German);
+        store.Current.UpdateSource.Should().Be(UpdateSource.GitHub);
+        store.Current.Tools.Trusted.Should().ContainSingle();
+    }
+
+    [Fact]
     public void A_settings_file_that_stays_locked_fails_the_load_and_is_left_alone()
     {
         SaveGermanSettings();
         var saved = File.ReadAllBytes(File_);
+        var waits = new List<TimeSpan>();
         using (new FileStream(File_, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
         {
-            var load = () => new SettingsStore(File_);
+            var load = () => new SettingsStore(File_, waits.Add);
 
             load.Should().Throw<IOException>();
         }
 
+        waits.Should().NotBeEmpty().And.BeInAscendingOrder();
+        waits.Aggregate(TimeSpan.Zero, (sum, wait) => sum + wait).Should().BeLessThan(TimeSpan.FromSeconds(1));
         File.ReadAllBytes(File_).Should().Equal(saved);
         new SettingsStore(File_).Current.Language.Should().Be(LanguageSetting.German);
     }
