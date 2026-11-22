@@ -18,6 +18,7 @@ public sealed class LayoutStore : IDisposable
     private readonly Lock _gate = new();
     private (DateTime LastWriteUtc, long Length) _stamp;
     private int _readRetries;
+    private bool _unopenedAtStart;
     private FileSystemWatcher? _watcher;
     private ITimer? _debounce;
 
@@ -33,6 +34,7 @@ public sealed class LayoutStore : IDisposable
         {
             Current = WheelLayout.Empty;
             LoadProblem = ex.Message;
+            _unopenedAtStart = true;
         }
     }
 
@@ -136,6 +138,11 @@ public sealed class LayoutStore : IDisposable
         _watcher.Renamed += OnChange;
         _watcher.Error += OnChange;
         _watcher.EnableRaisingEvents = true;
+        if (_unopenedAtStart)
+        {
+            // Nothing may write the file again this session, so the layout it holds is read without waiting for that.
+            _debounce.Change(Debounce, Timeout.InfiniteTimeSpan);
+        }
     }
 
     public void Dispose()

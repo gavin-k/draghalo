@@ -183,6 +183,47 @@ public sealed class LayoutStoreFailureTests : IDisposable
     }
 
     [Fact]
+    public void A_layout_that_could_not_be_opened_at_startup_is_read_once_watching_starts()
+    {
+        File.WriteAllText(File_, InitialLayout);
+        var clock = new FakeTimeProvider();
+        LayoutStore unread;
+        using (new FileStream(File_, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            unread = new LayoutStore(File_, clock);
+        }
+
+        using var store = unread;
+        var changes = new List<WheelLayout>();
+        store.Changed += changes.Add;
+        store.SlotsFor(WheelMode.Tools, MediaKind.Image).Should().BeNull();
+
+        store.Watch();
+        clock.Advance(TimeSpan.FromMilliseconds(300));
+
+        store.SlotsFor(WheelMode.Tools, MediaKind.Image)!.Single()!.Item.Should().Be("tool.compress-image");
+        store.LoadProblem.Should().BeNull();
+        changes.Should().ContainSingle().Which.Should().BeSameAs(store.Current);
+    }
+
+    [Fact]
+    public void A_bad_layout_moved_aside_at_startup_is_not_announced_again_once_watching_starts()
+    {
+        File.WriteAllText(File_, """{ "version": 1, "wheels": """);
+        var clock = new FakeTimeProvider();
+        using var store = new LayoutStore(File_, clock);
+        var changes = new List<WheelLayout>();
+        store.Changed += changes.Add;
+        store.LoadProblem.Should().Contain("layout.json.bad");
+
+        store.Watch();
+        clock.Advance(TimeSpan.FromMilliseconds(300));
+
+        changes.Should().BeEmpty();
+        store.LoadProblem.Should().Contain("layout.json.bad");
+    }
+
+    [Fact]
     public void A_bad_layout_that_cannot_be_moved_aside_is_not_replaced_by_the_next_edit()
     {
         const string bad = """{ "version": 1, "wheels": { "tools": { "image": [ { "item": "tool.ocr" } ] } }, "installed": [ """;
