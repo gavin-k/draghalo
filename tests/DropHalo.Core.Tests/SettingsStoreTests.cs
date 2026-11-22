@@ -130,78 +130,39 @@ public sealed class SettingsStoreTests : IDisposable
     }
 
     [Fact]
-    public void A_bad_file_that_cannot_be_moved_aside_is_kept_until_it_can_be()
+    public void A_bad_file_that_cannot_be_moved_aside_fails_the_load_and_is_kept()
     {
         const string bad = "{ \"version\": 2, \"language\": \"German\", ";
         File.WriteAllText(File_, bad);
         Directory.CreateDirectory(File_ + ".bad");
-        var store = new SettingsStore(File_);
-        store.Current.Should().Be(AppSettings.Default);
-        store.LoadProblem.Should().Contain("settings.json");
 
-        var save = () => store.Update(s => s with { OnboardingDone = true });
+        var load = () => new SettingsStore(File_);
 
-        save.Should().Throw<IOException>();
+        load.Should().Throw<IOException>();
         File.ReadAllText(File_).Should().Be(bad);
 
         Directory.Delete(File_ + ".bad");
-        store.Update(s => s with { OnboardingDone = true });
-
-        File.ReadAllText(File_ + ".bad").Should().Be(bad);
-        var reloaded = new SettingsStore(File_);
-        reloaded.LoadProblem.Should().BeNull();
-        reloaded.Current.OnboardingDone.Should().BeTrue();
-        reloaded.Current.Language.Should().Be(AppSettings.Default.Language);
-    }
-
-    [Fact]
-    public void Settings_that_could_not_be_read_at_startup_are_read_before_the_next_save()
-    {
-        SaveGermanSettings();
-        SettingsStore store;
-        using (new FileStream(File_, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
-        {
-            store = new SettingsStore(File_);
-        }
+        var store = new SettingsStore(File_);
 
         store.Current.Should().Be(AppSettings.Default);
-        store.LoadProblem.Should().Contain("settings.json");
-        AppSettings? seen = null;
-        store.Changed += s => seen = s;
-
-        store.Update(s => s with { OnboardingDone = true });
-
-        foreach (var settings in new[] { store.Current, new SettingsStore(File_).Current })
-        {
-            settings.Language.Should().Be(LanguageSetting.German);
-            settings.UpdateSource.Should().Be(UpdateSource.GitHub);
-            settings.Tools.Trusted.Should().ContainSingle();
-            settings.OnboardingDone.Should().BeTrue();
-        }
-
-        seen.Should().BeSameAs(store.Current);
-        store.LoadProblem.Should().BeNull();
+        store.LoadProblem.Should().Contain("settings.json.bad");
+        File.ReadAllText(File_ + ".bad").Should().Be(bad);
     }
 
     [Fact]
-    public void A_save_fails_and_keeps_the_file_while_it_still_cannot_be_read()
+    public void A_settings_file_that_stays_locked_fails_the_load_and_is_left_alone()
     {
         SaveGermanSettings();
         var saved = File.ReadAllBytes(File_);
-        var changes = 0;
         using (new FileStream(File_, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
         {
-            var store = new SettingsStore(File_);
-            store.Changed += _ => changes++;
+            var load = () => new SettingsStore(File_);
 
-            var save = () => store.Update(s => s with { OnboardingDone = true });
-
-            save.Should().Throw<IOException>();
-            store.Current.Should().Be(AppSettings.Default);
+            load.Should().Throw<IOException>();
         }
 
-        changes.Should().Be(0);
         File.ReadAllBytes(File_).Should().Equal(saved);
+        new SettingsStore(File_).Current.Language.Should().Be(LanguageSetting.German);
     }
 
     private void SaveGermanSettings() => new SettingsStore(File_).Update(s => s with

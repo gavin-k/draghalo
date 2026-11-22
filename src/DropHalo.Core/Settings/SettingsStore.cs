@@ -5,29 +5,22 @@ using System.Text.Json.Serialization.Metadata;
 namespace DropHalo.Core.Settings;
 
 /// <summary>
-/// settings.json: loaded once, saved on every change. A file that cannot be read is moved aside to
+/// settings.json: loaded once, saved on every change. A file that cannot be parsed is moved aside to
 /// settings.json.bad and the defaults are used, so a bad file never stops the app from starting. A file
-/// that could not even be opened is still the user's: it is read before anything is saved over it.
+/// that cannot be opened still holds what the user chose (strict offline, where outputs go), so loading
+/// fails instead of carrying on with defaults that would act for them and be saved over it.
 /// </summary>
 public sealed class SettingsStore
 {
     private readonly string _path;
     private readonly Lock _gate = new();
-    private bool _unread;
 
     public SettingsStore(string path)
     {
         _path = path;
-        try
-        {
-            Current = Load();
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            Current = AppSettings.Default;
-            LoadProblem = $"{Path.GetFileName(path)} could not be read ({ex.Message}); using defaults";
-            _unread = true;
-        }
+        var (loaded, problem) = JsonFile.Load(path, SettingsJson.Default.AppSettings, AppSettings.Default);
+        Current = Migrate(Repair(loaded));
+        LoadProblem = problem;
     }
 
     /// <summary>Raised after a change has been saved, on the thread that made it.</summary>
@@ -36,32 +29,20 @@ public sealed class SettingsStore
     public AppSettings Current { get; private set; }
 
     /// <summary>Why the file on disk was not used, or null if it was (or did not exist yet).</summary>
-    public string? LoadProblem { get; private set; }
+    public string? LoadProblem { get; }
 
-    /// <summary>
-    /// Saves the change, then publishes it. While the file has not been read the change is applied to what is
-    /// on disk; if that still cannot be read this throws and nothing is saved over it.
-    /// </summary>
     public AppSettings Update(Func<AppSettings, AppSettings> change)
     {
         AppSettings next;
         lock (_gate)
         {
-            next = change(_unread ? Load() : Current);
+            next = change(Current);
             JsonFile.Save(_path, next, SettingsJson.Default.AppSettings);
-            _unread = false;
             Current = next;
         }
 
         Changed?.Invoke(next);
         return next;
-    }
-
-    private AppSettings Load()
-    {
-        var (loaded, problem) = JsonFile.Load(_path, SettingsJson.Default.AppSettings, AppSettings.Default);
-        LoadProblem = problem;
-        return Migrate(Repair(loaded));
     }
 
     /// <summary>A hand-edited file can leave out or null whole sections; those fall back to their defaults.</summary>
