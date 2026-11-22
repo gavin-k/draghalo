@@ -183,6 +183,27 @@ public sealed class LayoutStoreFailureTests : IDisposable
     }
 
     [Fact]
+    public void A_reload_leaves_a_layout_that_does_not_parse_where_it_is()
+    {
+        const string half = """{ "version": 1, "wheels": { "tools": { "image": [ """;
+        File.WriteAllText(File_, InitialLayout);
+        using var store = new LayoutStore(File_);
+        var previous = store.Current;
+        var changes = new List<WheelLayout>();
+        store.Changed += changes.Add;
+        File.WriteAllText(File_, half);
+        File.SetLastWriteTimeUtc(File_, File.GetLastWriteTimeUtc(File_).AddSeconds(2));
+
+        store.Reload().Should().BeFalse();
+
+        store.Current.Should().BeSameAs(previous);
+        store.LoadProblem.Should().NotBeNullOrEmpty();
+        changes.Should().BeEmpty();
+        File.ReadAllText(File_).Should().Be(half);
+        File.Exists(File_ + ".bad").Should().BeFalse();
+    }
+
+    [Fact]
     public void A_layout_that_could_not_be_opened_at_startup_is_read_once_watching_starts()
     {
         File.WriteAllText(File_, InitialLayout);

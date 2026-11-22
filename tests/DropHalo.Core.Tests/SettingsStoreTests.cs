@@ -219,10 +219,21 @@ public sealed class SettingsStoreTests : IDisposable
             load.Should().Throw<IOException>();
         }
 
-        waits.Should().NotBeEmpty().And.BeInAscendingOrder();
-        waits.Aggregate(TimeSpan.Zero, (sum, wait) => sum + wait).Should().BeLessThan(TimeSpan.FromSeconds(1));
+        waits.Select(wait => wait.TotalMilliseconds).Should().Equal(50, 100, 200, 400);
         File.ReadAllBytes(File_).Should().Equal(saved);
         new SettingsStore(File_).Current.Language.Should().Be(LanguageSetting.German);
+    }
+
+    [Fact]
+    public void A_settings_file_that_opens_the_first_time_or_is_missing_is_never_waited_for()
+    {
+        var waits = 0;
+
+        new SettingsStore(File_, _ => waits++).Current.Should().Be(AppSettings.Default);
+        SaveGermanSettings();
+        new SettingsStore(File_, _ => waits++).Current.Language.Should().Be(LanguageSetting.German);
+
+        waits.Should().Be(0);
     }
 
     [WindowsFact("Windows file sharing only.")]
