@@ -17,8 +17,16 @@ main:
             git config user.email 'mirror@users.noreply.cnb.cool'
             git fetch https://cnb.cool/shhield-ai/drophalo main
             git merge --ff-only FETCH_HEAD
+            cnb_head=$(git rev-parse HEAD)
             git fetch https://github.com/gavin-k/draghalo.git main --tags
-            git merge --allow-unrelated-histories -X theirs --no-edit FETCH_HEAD
+            if ! git merge-base --is-ancestor FETCH_HEAD HEAD; then
+              git merge --allow-unrelated-histories --no-ff -X theirs --no-edit FETCH_HEAD
+              git rm -rf --ignore-unmatch -q updates/
+              if git rev-parse --verify -q "$cnb_head^{tree}:updates" >/dev/null; then
+                git checkout "$cnb_head" -- updates/
+              fi
+              git diff --cached --quiet || git commit --amend --no-edit
+            fi
             git -c credential.helper= -c 'credential.helper=!f() { echo username=cnb; echo password=$CNB_TOKEN; }; f' push https://cnb.cool/shhield-ai/drophalo --tags
             python3 scripts/sync-cnb-release.py
             git -c credential.helper= -c 'credential.helper=!f() { echo username=cnb; echo password=$CNB_TOKEN; }; f' push https://cnb.cool/shhield-ai/drophalo HEAD:main --tags

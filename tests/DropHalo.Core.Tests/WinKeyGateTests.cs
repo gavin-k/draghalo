@@ -84,6 +84,19 @@ public class WinKeyGateTests
     }
 
     [Fact]
+    public void Pruning_keeps_a_swallowed_press_because_the_system_never_saw_it_go_down()
+    {
+        _gate.Swallow(true, true, 0x5B).Should().BeTrue();
+
+        // Windows reports a swallowed key as up for the whole press, so asking it proves nothing.
+        _gate.PruneReleased(_ => false);
+
+        _gate.HasHeldKeys.Should().BeTrue();
+        _gate.Swallow(true, false, 0x5B).Should().BeTrue("the repeat belongs to the swallowed press");
+        _gate.Swallow(false, false, 0x5B).Should().BeTrue("a lone key-up would reach Windows");
+    }
+
+    [Fact]
     public void Never_swallows_when_win_is_not_bound()
     {
         var gate = new WinKeyGate(KeyBindings.Default with { Bindings = [new(WheelMode.Convert, Modifiers.Shift)] });

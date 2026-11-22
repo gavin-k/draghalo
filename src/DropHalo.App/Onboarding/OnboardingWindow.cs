@@ -107,12 +107,20 @@ internal sealed class OnboardingWindow
 
     public HWND Handle => new(WinRT.Interop.WindowNative.GetWindowHandle(_window));
 
-    /// <summary>Set before <see cref="Close"/> so the close is not turned into a hide.</summary>
+    /// <summary>
+    /// Set once the app is quitting: the window is not shown again and a close is not turned into a hide.
+    /// </summary>
     public bool Quitting { get; set; }
 
     /// <summary>Shows the guide, the first time centred on the primary work area.</summary>
     public void Show()
     {
+        // A second launch can ask for the guide while the app is already on its way out.
+        if (Quitting)
+        {
+            return;
+        }
+
         if (!_placed)
         {
             var area = DisplayArea.Primary.WorkArea;
@@ -124,6 +132,16 @@ internal sealed class OnboardingWindow
 
         FileLog.Info("onboarding: shown");
         _window.Activate();
+    }
+
+    /// <summary>
+    /// Takes the guide off the screen for good, without marking it as seen. It lives on until
+    /// <see cref="Close"/>, for the job outcomes still on their way to it.
+    /// </summary>
+    public void Withdraw()
+    {
+        Quitting = true;
+        _window.AppWindow.Hide();
     }
 
     public void Close()

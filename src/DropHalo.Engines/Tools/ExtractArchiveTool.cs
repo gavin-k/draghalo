@@ -17,7 +17,11 @@ public sealed class ExtractArchiveTool(SharpCompressArchiveConverter archives, T
     private const int BufferSize = 1 << 20;
 
     private static readonly HashSet<string> Reserved = new(
-        ["CON", "PRN", "AUX", "NUL", .. Enumerable.Range(1, 9).SelectMany(i => new[] { $"COM{i}", $"LPT{i}" })],
+        [
+            "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
+            "COM\u00B9", "COM\u00B2", "COM\u00B3", "LPT\u00B9", "LPT\u00B2", "LPT\u00B3",
+            .. Enumerable.Range(1, 9).SelectMany(i => new[] { $"COM{i}", $"LPT{i}" }),
+        ],
         StringComparer.OrdinalIgnoreCase);
 
     private readonly TimeProvider _time = time ?? TimeProvider.System;
@@ -89,11 +93,32 @@ public sealed class ExtractArchiveTool(SharpCompressArchiveConverter archives, T
         var target = Inside(root, path, names);
         if (entry.IsDirectory)
         {
-            Directory.CreateDirectory(target);
+            if (File.Exists(target))
+            {
+                throw new InvalidDataException(L.T("压缩包内的名称处理后冲突：{0}，已停止解压", path));
+            }
+
+            try
+            {
+                Directory.CreateDirectory(target);
+            }
+            catch (IOException ex)
+            {
+                throw new InvalidDataException(L.T("压缩包内的名称处理后冲突：{0}，已停止解压", path), ex);
+            }
+
             return false;
         }
 
-        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        }
+        catch (IOException ex)
+        {
+            throw new InvalidDataException(L.T("压缩包内的名称处理后冲突：{0}，已停止解压", path), ex);
+        }
+
         if (File.Exists(target) || Directory.Exists(target))
         {
             throw new InvalidDataException(L.T("压缩包内的名称处理后冲突：{0}，已停止解压", path));

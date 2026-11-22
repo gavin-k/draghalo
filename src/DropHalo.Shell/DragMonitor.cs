@@ -49,6 +49,8 @@ public sealed unsafe class DragMonitor(ModifierTapper tapper, WinKeyGate winKeys
     private long _pointer;
     private long _dragId;
     private volatile DragPhase _phase;
+    private int _pressedVk;
+    private Func<int, bool>? _stillDown;
 
     /// <summary>Raised on the hook thread, inside the hook callback.</summary>
     public event Action<DragPhase>? PhaseChanged;
@@ -204,12 +206,27 @@ public sealed unsafe class DragMonitor(ModifierTapper tapper, WinKeyGate winKeys
                 var vk = (VIRTUAL_KEY)((KBDLLHOOKSTRUCT*)lParam.Value)->vkCode;
                 var down = (uint)wParam.Value is PInvoke.WM_KEYDOWN or PInvoke.WM_SYSKEYDOWN;
 
-                // A button-up the hook never saw (it was skipped, or landed on the secure desktop) would leave
-                // the phase stuck, a Shift tap opening the wheel with nothing dragged and every Win press
-                // swallowed. The physical button settles it.
-                if (down && _phase != DragPhase.Idle && !ButtonIsDown())
+                // A button-up or key-up the hook never saw (it was skipped, or landed on the secure desktop)
+                // would leave the phase or held keys stuck. Physical key state settles both on the next press,
+                // except for keys this hook swallowed: Windows never saw those go down, so the trackers keep
+                // them until their own key-up.
+                if (down)
                 {
-                    EndDrag();
+                    if (_phase != DragPhase.Idle && !ButtonIsDown())
+                    {
+                        EndDrag();
+                    }
+
+                    if (tapper.HasHeldKeys || winKeys.HasHeldKeys || typeAhead.HasHeldKeys)
+                    {
+                        // One delegate for the life of the hook: a local function capturing the key would
+                        // allocate on every key-down, system-wide.
+                        _pressedVk = (int)vk;
+                        var stillDown = _stillDown ??= StillDown;
+                        tapper.PruneReleased(stillDown);
+                        winKeys.PruneReleased(stillDown);
+                        typeAhead.PruneReleased(stillDown);
+                    }
                 }
 
                 var dragging = _phase != DragPhase.Idle;
@@ -231,6 +248,11 @@ public sealed unsafe class DragMonitor(ModifierTapper tapper, WinKeyGate winKeys
                     tapper.OnModifier(modifier, down, dragging, (int)vk);
                     if (modifier == Modifiers.Win && winKeys.Swallow(down, dragging, (int)vk))
                     {
+                        if (down)
+                        {
+                            tapper.OnSwallowed((int)vk);
+                        }
+
                         return new LRESULT(1);
                     }
                 }
@@ -243,6 +265,12 @@ public sealed unsafe class DragMonitor(ModifierTapper tapper, WinKeyGate winKeys
 
         return PInvoke.CallNextHookEx(default, code, wParam, lParam);
     }
+
+    /// <summary>
+    /// Whether Windows has <paramref name="key"/> down. The key this event is for counts as down: its
+    /// async state changes only after the hook returns.
+    /// </summary>
+    private bool StillDown(int key) => key == _pressedVk || (PInvoke.GetAsyncKeyState(key) & 0x8000) != 0;
 
     private void PollDragImage()
     {

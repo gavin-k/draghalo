@@ -12,8 +12,9 @@ namespace DropHalo.Acceptance;
 
 /// <summary>
 /// <see cref="DragMonitor"/> with the default key bindings during a real drag: phases, the three
-/// default taps, a Win tap that must not open Start, and a long Shift hold that must not count.
-/// The drag is cancelled with Esc, so nothing is dropped anywhere.
+/// default taps, a Win tap that must not open Start, a long Shift hold that must not count, and a
+/// Shift tap under a held Win that must stay Win+Shift. The drag is cancelled with Esc, so nothing is
+/// dropped anywhere.
 /// </summary>
 internal static class HooksScenario
 {
@@ -63,6 +64,31 @@ internal static class HooksScenario
             Input.Key(VIRTUAL_KEY.VK_LSHIFT, up: true);
             Thread.Sleep(300);
             checks.Check("Shift held 500 ms is not a tap", invoked.IsEmpty, $"invoked [{string.Join(", ", invoked.Select(i => i.Mode))}]");
+
+            // The hook swallows a bound Win during a drag, so Windows reports that Win as up while it is
+            // held. The next key-down must not make the trackers forget it: Shift under it is Win+Shift,
+            // which is not bound, and the Win key-up stays swallowed.
+            invoked.Clear();
+            var fgHeld = PInvoke.GetForegroundWindow();
+            Input.Key(VIRTUAL_KEY.VK_LWIN, up: false);
+            Thread.Sleep(80);
+            Input.Key(VIRTUAL_KEY.VK_LSHIFT, up: false);
+            Thread.Sleep(60);
+            Input.Key(VIRTUAL_KEY.VK_LSHIFT, up: true);
+            Thread.Sleep(60);
+            Input.Key(VIRTUAL_KEY.VK_LWIN, up: true);
+            Thread.Sleep(800);
+            var startHeld = StartMenuVisible();
+            var fgHeldAfter = PInvoke.GetForegroundWindow();
+            checks.Check("Shift tap under a held Win opens no wheel", invoked.IsEmpty, $"invoked [{string.Join(", ", invoked.Select(i => i.Mode))}]");
+            checks.Check("Win held across a Shift tap did not open Start or Search", !startHeld && fgHeldAfter == fgHeld,
+                $"Start visible={startHeld}; foreground \"{Title(fgHeld)}\" -> \"{Title(fgHeldAfter)}\"");
+            if (startHeld || fgHeldAfter != fgHeld)
+            {
+                Input.Key(VIRTUAL_KEY.VK_ESCAPE, up: false);
+                Input.Key(VIRTUAL_KEY.VK_ESCAPE, up: true);
+                Thread.Sleep(400);
+            }
 
             Input.Key(VIRTUAL_KEY.VK_ESCAPE, up: false);
             Input.Key(VIRTUAL_KEY.VK_ESCAPE, up: true);

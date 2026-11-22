@@ -157,6 +157,20 @@ public sealed class SidecarProcessRunnerTests
         }
     }
 
+    [Fact]
+    public async Task Chatty_stdout_after_callback_failure_drains_without_pipe_deadlock()
+    {
+        var script = OperatingSystem.IsWindows()
+            ? "for /L %i in (1,1,4000) do @echo 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            : "i=1; while [ $i -le 4000 ]; do echo 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef; i=$((i+1)); done";
+
+        var act = () => new SidecarProcessRunner()
+            .RunAsync(Shell(script), _ => throw new InvalidOperationException("stop listening"), CancellationToken.None)
+            .WaitAsync(TimeSpan.FromSeconds(10));
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("stop listening");
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

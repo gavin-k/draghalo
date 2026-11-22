@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Text.RegularExpressions;
 using DropHalo.Core.Conversion;
 using DropHalo.Core.Jobs;
 using DropHalo.Core.Wheel;
@@ -10,7 +11,7 @@ namespace DropHalo.Core.Tools;
 /// the file into place through <see cref="OutputFiles"/>, so naming, conflicts, rollback and undo work as for any
 /// engine; the script never names its own output. Stateless, as the queue reuses the instance for retries.
 /// </summary>
-public sealed class ScriptTool(ToolManifest manifest, string folder, IProcessRunner runner, CommandResolver resolver, TimeProvider? time = null) : IUserTool
+public sealed partial class ScriptTool(ToolManifest manifest, string folder, IProcessRunner runner, CommandResolver resolver, TimeProvider? time = null, Func<Settings.UserToolSettings>? trust = null) : IUserTool
 {
     private readonly TimeProvider _time = time ?? TimeProvider.System;
     private readonly ScriptSpec _script = manifest.Script ?? throw new ArgumentException("A script tool needs a script.", nameof(manifest));
@@ -44,12 +45,21 @@ public sealed class ScriptTool(ToolManifest manifest, string folder, IProcessRun
     /// <summary>The command's path, or null when it cannot be found; a few file-exists calls, cheap enough for every wheel open.</summary>
     public CommandResolution? Command => resolver.Resolve(_script.Command, Folder);
 
-    public Availability Check(ConversionRequest request) => Command is null
+    private bool IsUntrusted => trust is not null && TrustKey is { } key && !trust().IsTrusted(Id, key);
+
+    public Availability Check(ConversionRequest request) => IsUntrusted
+        ? Availability.Unavailable(Settings.UserToolSettings.UntrustedReason) with { Cause = UnavailableCause.UntrustedTool }
+        : Command is null
         ? Availability.Unavailable(L.T("找不到 {0}", _script.Command)) with { Cause = UnavailableCause.MissingOptionalModule }
         : Availability.Available;
 
     public async Task<ConversionResult> RunAsync(ConversionRequest request, IProgress<double> progress, CancellationToken cancellationToken)
     {
+        if (IsUntrusted)
+        {
+            return new(false, [], Settings.UserToolSettings.UntrustedReason);
+        }
+
         if (Command is not { } command)
         {
             return new(false, [], L.T("找不到 {0}", _script.Command));
@@ -70,12 +80,13 @@ public sealed class ScriptTool(ToolManifest manifest, string folder, IProcessRun
                 // Once for all the sources, the output named after the first, as the built-in merge does.
                 var first = request with { SourcePaths = [request.SourcePaths[0]] };
                 outputs = await OutputFiles.ForEachSourceAsync(first, progress,
-                    (source, index, within) => RunOneAsync(command.Path, request, request.SourcePaths, source, index, within, detail, cancellationToken), cancellationToken).ConfigureAwait(false);
+                    (source, index, within) => RunOneAsync(command.Path, first, request.SourcePaths, source, index, within, detail, cancellationToken), cancellationToken).ConfigureAwait(false);
             }
 
             if (!script.Output.WritesFile)
             {
-                return new ConversionResult(true, []) { Undo = new UndoPlan.None(), Detail = detail.Text };
+                var totalRuns = script.PerFile ? request.SourcePaths.Count : 1;
+                return new ConversionResult(true, []) { Skipped = detail.SkippedCount >= totalRuns, Undo = new UndoPlan.None(), Detail = detail.Text };
             }
 
             return ConversionResult.Written(outputs) with
@@ -100,7 +111,11 @@ public sealed class ScriptTool(ToolManifest manifest, string folder, IProcessRun
         var output = _script.Output;
         if (!output.WritesFile)
         {
-            await RunScriptAsync(executable, inputs, null, Path.GetDirectoryName(namedAfter) ?? "", null, within, detail, cancellationToken).ConfigureAwait(false);
+            if (!await RunScriptAsync(executable, inputs, null, Path.GetDirectoryName(namedAfter) ?? "", null, within, detail, cancellationToken).ConfigureAwait(false))
+            {
+                detail.SkippedCount++;
+            }
+
             return null;
         }
 
@@ -173,12 +188,15 @@ public sealed class ScriptTool(ToolManifest manifest, string folder, IProcessRun
                 continue;
             }
 
-            arguments.Add(arg
-                .Replace("{input}", inputs[0])
-                .Replace("{inputs}", string.Join(' ', inputs))
-                .Replace("{output}", output ?? "")
-                .Replace("{outputDir}", outputDir)
-                .Replace("{toolDir}", Folder));
+            arguments.Add(ArgPlaceholderRegex().Replace(arg, m => m.Groups[1].Value switch
+            {
+                "input" => inputs[0],
+                "inputs" => string.Join(' ', inputs),
+                "output" => output ?? "",
+                "outputDir" => outputDir,
+                "toolDir" => Folder,
+                _ => m.Value,
+            }));
         }
 
         var environment = new Dictionary<string, string>
@@ -239,9 +257,13 @@ public sealed class ScriptTool(ToolManifest manifest, string folder, IProcessRun
     private sealed class Detail
     {
         public string? Text { get; set; }
+        public int SkippedCount { get; set; }
     }
 
     private sealed class ScriptFailure(string message) : Exception(message);
 
     private sealed class ScriptSkipped : Exception;
+
+    [GeneratedRegex(@"\{(input|inputs|output|outputDir|toolDir)\}")]
+    private static partial Regex ArgPlaceholderRegex();
 }

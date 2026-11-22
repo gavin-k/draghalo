@@ -29,6 +29,43 @@ public sealed class MagickImageConverter(TimeProvider? time = null) : IConverter
     /// <summary>Everything it writes: <see cref="Formats"/> and icons.</summary>
     private static readonly Dictionary<string, MagickFormat> Outputs = new(Formats, StringComparer.Ordinal) { ["ico"] = MagickFormat.Ico };
 
+    /// <summary>Safe non-vector image formats Magick may decode from raster/icon files without invoking vector/script delegates.</summary>
+    internal static readonly HashSet<MagickFormat> SafeRasterFormats =
+    [
+        MagickFormat.Jpeg, MagickFormat.Jpg,
+        MagickFormat.Png, MagickFormat.Png8, MagickFormat.Png00, MagickFormat.Png24, MagickFormat.Png32, MagickFormat.Png48, MagickFormat.Png64, MagickFormat.APng,
+        MagickFormat.WebP,
+        MagickFormat.Avif, MagickFormat.Heic, MagickFormat.Heif,
+        MagickFormat.Gif, MagickFormat.Gif87,
+        MagickFormat.Bmp, MagickFormat.Bmp2, MagickFormat.Bmp3,
+        MagickFormat.Tiff, MagickFormat.Tiff64, MagickFormat.Tif,
+        MagickFormat.Ico, MagickFormat.Icon, MagickFormat.Cur,
+        MagickFormat.Psd, MagickFormat.Psb,
+    ];
+
+    private static readonly bool LimitsConfigured = ConfigureLimits();
+
+    private static bool ConfigureLimits()
+    {
+        ResourceLimits.Width = 32_768;
+        ResourceLimits.Height = 32_768;
+        ResourceLimits.ListLength = 512;
+        ResourceLimits.Disk = 4UL << 30;
+        return true;
+    }
+
+    internal static MagickFormat EnsureSafeRasterFile(string source, MagickFormat? formatHint = null)
+    {
+        _ = LimitsConfigured;
+        var info = formatHint is { } hint ? new MagickImageInfo(source, new MagickReadSettings { Format = hint }) : new MagickImageInfo(source);
+        if (!SafeRasterFormats.Contains(info.Format))
+        {
+            throw new InvalidDataException(L.T("文件内容不是有效的 {0}", FormatRegistry.FromPath(source)?.DisplayName ?? Path.GetExtension(source)));
+        }
+
+        return info.Format;
+    }
+
     /// <summary>
     /// Everything it reads. HEIC is decoded by the libheif inside Magick.NET, not by Windows; PSD gives the
     /// merged image its file carries, ICO its largest picture, SVG is drawn at the size it states.
@@ -146,24 +183,38 @@ public sealed class MagickImageConverter(TimeProvider? time = null) : IConverter
     /// <summary>The first frame of <paramref name="source"/>, its largest picture for an icon; an SVG that refers outside itself is refused.</summary>
     internal static MagickImage Read(string source)
     {
+        _ = LimitsConfigured;
         switch (FormatRegistry.FromPath(source)?.Id)
         {
             case "svg":
-                if (SvgGuard.FindExternal(File.ReadAllText(source)) is { } external)
+                var bytes = File.ReadAllBytes(source);
+                byte[]? safeSvg;
+                try
                 {
-                    throw new InvalidDataException(L.T("SVG 引用了它以外的内容（{0}），为了安全不转换", external));
+                    safeSvg = SvgGuard.PrepareSafeUtf8(bytes, out var external);
+                    if (external is not null)
+                    {
+                        throw new InvalidDataException(L.T("SVG 引用了它以外的内容（{0}），为了安全不转换", external));
+                    }
+                }
+                catch (System.Xml.XmlException ex)
+                {
+                    throw new InvalidDataException(L.T("{0} 无法读取：{1}", Path.GetFileName(source), ex.Message), ex);
                 }
 
-                return new MagickImage(source, new MagickReadSettings { BackgroundColor = MagickColors.None });
+                return new MagickImage(safeSvg!, new MagickReadSettings { Format = MagickFormat.Svg, BackgroundColor = MagickColors.None });
 
             case "ico":
-                using (var pictures = new MagickImageCollection(source))
+                using (var pictures = new MagickImageCollection(source, new MagickReadSettings { Format = MagickFormat.Ico }))
                 {
-                    return (MagickImage)pictures.MaxBy(p => p.Width * p.Height)!.Clone();
+                    var largest = pictures.MaxBy(p => (ulong)p.Width * p.Height)
+                        ?? throw new InvalidDataException(L.T("文件内容不是有效的 {0}", "ICO"));
+                    return (MagickImage)largest.Clone();
                 }
 
             default:
-                return new MagickImage(source);
+                var format = EnsureSafeRasterFile(source);
+                return new MagickImage(source, new MagickReadSettings { Format = format, FrameCount = 1 });
         }
     }
 

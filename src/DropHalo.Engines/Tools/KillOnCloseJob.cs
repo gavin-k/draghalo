@@ -55,6 +55,14 @@ internal sealed class KillOnCloseJob : IDisposable
                             continue; // Exited between the snapshot and OpenProcess.
                         }
 
+                        if (error == 5)
+                        {
+                            // A member lowered our access to its process handle; terminate via the job handle instead.
+                            Check(TerminateJobObject(_job, 1));
+                            await Task.Run(Process.WaitForExit).ConfigureAwait(false);
+                            return;
+                        }
+
                         throw new Win32Exception(error);
                     }
 
@@ -231,6 +239,13 @@ internal sealed class KillOnCloseJob : IDisposable
 
     private static PROCESS_INFORMATION CreateSuspended(ProcessStartInfo start, SafeFileHandle input, SafeFileHandle output, SafeFileHandle error)
     {
+        if (start.Environment.Any(p => p.Key.Contains('\0', StringComparison.Ordinal) || (p.Value?.Contains('\0', StringComparison.Ordinal) ?? false)))
+        {
+            throw new Win32Exception(87);
+        }
+
+        var (applicationName, commandLine) = FormatProcessCommand(start.FileName, start.ArgumentList);
+
         nuint size = 0;
         InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref size);
         var attributes = Marshal.AllocHGlobal(checked((nint)size));
@@ -257,16 +272,9 @@ internal sealed class KillOnCloseJob : IDisposable
                 },
                 AttributeList = attributes,
             };
-            var command = new StringBuilder();
-            AppendArgument(command, start.FileName);
-            foreach (var argument in start.ArgumentList)
-            {
-                command.Append(' ');
-                AppendArgument(command, argument);
-            }
 
             // CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT | CREATE_NO_WINDOW
-            Check(CreateProcessW(start.FileName, (command.ToString() + "\0").ToCharArray(), IntPtr.Zero, IntPtr.Zero, true, 0x08080404,
+            Check(CreateProcessW(applicationName, (commandLine + "\0").ToCharArray(), IntPtr.Zero, IntPtr.Zero, true, 0x08080404,
                 environment, start.WorkingDirectory, ref startup, out var info));
             return info;
         }
@@ -286,11 +294,65 @@ internal sealed class KillOnCloseJob : IDisposable
         }
     }
 
-    private static void AppendArgument(StringBuilder command, string argument)
+    internal static (string Application, string CommandLine) FormatProcessCommand(string fileName, IReadOnlyList<string> arguments, string? cmdPath = null)
     {
-        if (argument.Length > 0 && !argument.Any(c => c is ' ' or '\t' or '\n' or '\v' or '"'))
+        if (fileName.Contains('\0', StringComparison.Ordinal) || arguments.Any(a => a.Contains('\0', StringComparison.Ordinal)))
+        {
+            throw new Win32Exception(87);
+        }
+
+        var normalized = fileName.TrimEnd(' ', '.');
+        var isBatch = Path.GetExtension(normalized) is var ext
+            && (ext.Equals(".bat", StringComparison.OrdinalIgnoreCase) || ext.Equals(".cmd", StringComparison.OrdinalIgnoreCase));
+        if (isBatch)
+        {
+            if (fileName.IndexOfAny(['"', '%', '\r', '\n']) >= 0
+                || arguments.Any(a => a.IndexOfAny(['"', '%', '!', '\r', '\n']) >= 0))
+            {
+                throw new Win32Exception(87);
+            }
+
+            var shell = cmdPath ?? Path.Combine(Environment.SystemDirectory, "cmd.exe");
+            var batchCommand = new StringBuilder();
+            AppendArgument(batchCommand, shell, isBatch: false);
+            batchCommand.Append(" /d /s /c \"");
+            AppendArgument(batchCommand, normalized, isBatch: true, forceQuote: true);
+            foreach (var argument in arguments)
+            {
+                batchCommand.Append(' ');
+                AppendArgument(batchCommand, argument, isBatch: true);
+            }
+
+            batchCommand.Append('"');
+            return (shell, batchCommand.ToString());
+        }
+
+        var command = new StringBuilder();
+        AppendArgument(command, fileName, isBatch: false);
+        foreach (var argument in arguments)
+        {
+            command.Append(' ');
+            AppendArgument(command, argument, isBatch: false);
+        }
+
+        return (fileName, command.ToString());
+    }
+
+    private static void AppendArgument(StringBuilder command, string argument, bool isBatch, bool forceQuote = false)
+    {
+        if (!forceQuote
+            && argument.Length > 0
+            && !argument.Any(c => c is ' ' or '\t' or '\n' or '\v' or '\r' or '"')
+            && (!isBatch || argument.IndexOfAny(['&', '|', '<', '>', '^', '(', ')', ';', ',', '=', '!']) < 0))
         {
             command.Append(argument);
+            return;
+        }
+
+        if (isBatch)
+        {
+            // cmd.exe does not treat \" as an escape; quotes were already rejected above.
+            command.Append('"').Append(argument).Append('"');
             return;
         }
 

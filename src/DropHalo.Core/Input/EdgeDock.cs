@@ -23,7 +23,7 @@ public sealed class EdgeDock(KeyBindings bindings)
     public const int ZoneDip = 2;
 
     private volatile KeyBindings _bindings = bindings;
-    private DockSide? _visiting;
+    private (DockSide Side, int Left, int Right)? _visiting;
 
     /// <summary>False with the dock switched off in Settings.</summary>
     public bool Enabled => _bindings.EdgeDock;
@@ -40,13 +40,14 @@ public sealed class EdgeDock(KeyBindings bindings)
     public DockSide? OnMove(int x, int left, int right, int zone, Func<DockSide, bool> isOpen)
     {
         DockSide? side = !Enabled ? null : x < left + zone ? DockSide.Left : x >= right - zone ? DockSide.Right : null;
-        if (side == _visiting)
+        (DockSide Side, int Left, int Right)? visit = side is { } s ? (s, left, right) : null;
+        if (visit == _visiting)
         {
             return null;
         }
 
-        _visiting = side;
-        return side is { } s && isOpen(s) ? s : null;
+        _visiting = visit;
+        return side is { } reached && isOpen(reached) ? reached : null;
     }
 
     /// <summary>The drag ended.</summary>

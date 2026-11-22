@@ -7,6 +7,7 @@ using Windows.Win32.Graphics.Gdi;
 using Windows.Win32.System.Com;
 using Windows.Win32.System.Ole;
 using Windows.Win32.System.SystemServices;
+using Windows.Win32.UI.Input.KeyboardAndMouse;
 using Windows.Win32.UI.Shell;
 using Windows.Win32.UI.WindowsAndMessaging;
 
@@ -49,11 +50,13 @@ public sealed record WheelPlacement(int CenterX, int CenterY, double Scale, IRea
 public sealed unsafe class DropTargetHost : IDisposable
 {
     private const uint PlacementChanged = PInvoke.WM_APP + 1;
+    private const uint DestroyHost = PInvoke.WM_APP + 2;
     private const string ClassName = "DropHalo.DropTargetHost";
 
     private readonly Target _target;
     private Thread? _thread;
     private HWND _hwnd;
+    private ushort _classAtom;
     private WNDPROC? _wndProc;
     private volatile WheelPlacement? _placement;
     private object? _shown; // host thread only
@@ -124,7 +127,7 @@ public sealed unsafe class DropTargetHost : IDisposable
             return;
         }
 
-        PInvoke.PostMessage(_hwnd, PInvoke.WM_DESTROY, default, default);
+        PInvoke.PostMessage(_hwnd, DestroyHost, default, default);
         _thread.Join(2000);
         _thread = null;
     }
@@ -153,6 +156,13 @@ public sealed unsafe class DropTargetHost : IDisposable
             PInvoke.DispatchMessage(in msg);
         }
 
+        if (_classAtom != 0)
+        {
+            using var module = PInvoke.GetModuleHandle((string?)null);
+            PInvoke.UnregisterClass(ClassName, module);
+            _classAtom = 0;
+        }
+
         PInvoke.OleUninitialize();
     }
 
@@ -170,7 +180,8 @@ public sealed unsafe class DropTargetHost : IDisposable
                 hbrBackground = (HBRUSH)PInvoke.GetStockObject(GET_STOCK_OBJECT_FLAGS.BLACK_BRUSH).Value,
                 lpszClassName = className,
             };
-            if (PInvoke.RegisterClassEx(in wc) == 0)
+            _classAtom = PInvoke.RegisterClassEx(in wc);
+            if (_classAtom == 0)
             {
                 throw new System.ComponentModel.Win32Exception();
             }
@@ -193,40 +204,54 @@ public sealed unsafe class DropTargetHost : IDisposable
         return hwnd;
     }
 
+    private void SyncPlacement(HWND hwnd)
+    {
+        var placement = _placement;
+        var sameShowing = _shown is not null && _shown == placement?.Showing;
+        if (!sameShowing)
+        {
+            _target.Reset();
+            if (_shown is not null)
+            {
+                PInvoke.ShowWindow(hwnd, SHOW_WINDOW_CMD.SW_HIDE);
+            }
+
+            _shown = placement?.Showing;
+        }
+
+        if (placement is null)
+        {
+            return;
+        }
+
+        PInvoke.SetWindowPos(
+            hwnd,
+            HWND.HWND_TOPMOST,
+            PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_XVIRTUALSCREEN),
+            PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_YVIRTUALSCREEN),
+            PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_CXVIRTUALSCREEN),
+            PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_CYVIRTUALSCREEN),
+            SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE | SET_WINDOW_POS_FLAGS.SWP_SHOWWINDOW);
+
+        if (sameShowing && _target.IsEntered(placement.Showing))
+        {
+            // Nudge OLE to re-run DragOver when sectors or an outer ring change under a stationary pointer.
+            PInvoke.SendInput([new INPUT { type = INPUT_TYPE.INPUT_MOUSE }], sizeof(INPUT));
+        }
+    }
+
     private LRESULT WndProc(HWND hwnd, uint msg, WPARAM wParam, LPARAM lParam)
     {
         switch (msg)
         {
             case PlacementChanged:
-                var placement = _placement;
-                if (_shown != placement?.Showing)
-                {
-                    _target.Reset();
-                    if (_shown is not null)
-                    {
-                        PInvoke.ShowWindow(hwnd, SHOW_WINDOW_CMD.SW_HIDE);
-                    }
-
-                    _shown = placement?.Showing;
-                }
-
-                if (placement is null)
-                {
-                    return default;
-                }
-
-                PInvoke.SetWindowPos(
-                    hwnd,
-                    HWND.HWND_TOPMOST,
-                    PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_XVIRTUALSCREEN),
-                    PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_YVIRTUALSCREEN),
-                    PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_CXVIRTUALSCREEN),
-                    PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_CYVIRTUALSCREEN),
-                    SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE | SET_WINDOW_POS_FLAGS.SWP_SHOWWINDOW);
+                SyncPlacement(hwnd);
+                return default;
+            case DestroyHost:
+                PInvoke.DestroyWindow(hwnd);
                 return default;
             case PInvoke.WM_DESTROY:
                 PInvoke.RevokeDragDrop(hwnd);
-                PInvoke.DestroyWindow(hwnd);
                 PInvoke.PostQuitMessage(0);
                 return default;
         }
@@ -299,26 +324,37 @@ public sealed unsafe class DropTargetHost : IDisposable
         {
             PInvoke.SHCreateShellItemArrayFromDataObject((System.Runtime.InteropServices.ComTypes.IDataObject)data, typeof(IShellItemArray).GUID, out var created).ThrowOnFailure();
             var items = (IShellItemArray)created;
-            items.GetCount(out var count);
-            for (uint i = 0; i < count; i++)
+            try
             {
-                items.GetItemAt(i, out var item);
-                try
+                items.GetCount(out var count);
+                for (uint i = 0; i < count; i++)
                 {
-                    item.GetDisplayName(SIGDN.SIGDN_FILESYSPATH, out var name);
+                    items.GetItemAt(i, out var item);
                     try
                     {
-                        paths.Add(name.ToString());
+                        item.GetDisplayName(SIGDN.SIGDN_FILESYSPATH, out var name);
+                        try
+                        {
+                            paths.Add(name.ToString());
+                        }
+                        finally
+                        {
+                            Marshal.FreeCoTaskMem((nint)name.Value);
+                        }
+                    }
+                    catch (COMException)
+                    {
+                        // Not in the file system: a mail attachment, a phone's photo.
                     }
                     finally
                     {
-                        Marshal.FreeCoTaskMem((nint)name.Value);
+                        Marshal.ReleaseComObject(item);
                     }
                 }
-                catch (COMException)
-                {
-                    // Not in the file system: a mail attachment, a phone's photo.
-                }
+            }
+            finally
+            {
+                Marshal.ReleaseComObject(items);
             }
         }
         catch (COMException)
@@ -335,16 +371,34 @@ public sealed unsafe class DropTargetHost : IDisposable
         try
         {
             data.EnumFormatEtc((uint)DATADIR.DATADIR_GET, out var formats);
-            var format = default(FORMATETC);
-            uint fetched;
-            Span<char> name = stackalloc char[128];
-            while (formats.Next(1, &format, &fetched).Value == 0 && fetched == 1) // S_FALSE once the list runs out
+            try
             {
-                fixed (char* p = name)
+                var format = default(FORMATETC);
+                uint fetched;
+                Span<char> name = stackalloc char[128];
+                while (formats.Next(1, &format, &fetched).Value == 0 && fetched == 1) // S_FALSE once the list runs out
                 {
-                    var length = PInvoke.GetClipboardFormatName(format.cfFormat, p, name.Length);
-                    names.Add(length > 0 ? new string(p, 0, length) : $"{(CLIPBOARD_FORMAT)format.cfFormat}({format.cfFormat})");
+                    try
+                    {
+                        fixed (char* p = name)
+                        {
+                            var length = PInvoke.GetClipboardFormatName(format.cfFormat, p, name.Length);
+                            names.Add(length > 0 ? new string(p, 0, length) : $"{(CLIPBOARD_FORMAT)format.cfFormat}({format.cfFormat})");
+                        }
+                    }
+                    finally
+                    {
+                        if (format.ptd is not null)
+                        {
+                            Marshal.FreeCoTaskMem((nint)format.ptd);
+                            format.ptd = null;
+                        }
+                    }
                 }
+            }
+            finally
+            {
+                Marshal.ReleaseComObject(formats);
             }
         }
         catch (COMException ex)
@@ -365,6 +419,8 @@ public sealed unsafe class DropTargetHost : IDisposable
         private object? _finishedShowing;
         private SectorGate? _gate;
 
+        public bool IsEntered(object showing) => _entered?.Showing == showing;
+
         /// <summary>Forget the drag. Runs when the host hides, so the next showing gets a fresh gate.</summary>
         public void Reset()
         {
@@ -377,6 +433,11 @@ public sealed unsafe class DropTargetHost : IDisposable
 
         public void DragEnter(IDataObject pDataObj, MODIFIERKEYS_FLAGS grfKeyState, POINTL pt, DROPEFFECT* pdwEffect)
         {
+            if (host._placement is { } pending && host._shown != pending.Showing)
+            {
+                host.SyncPlacement(host._hwnd);
+            }
+
             if (host._placement is not { } placement || host._shown != placement.Showing || _finishedShowing == placement.Showing)
             {
                 *pdwEffect = DROPEFFECT.DROPEFFECT_NONE;

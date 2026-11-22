@@ -16,7 +16,7 @@ grep -v '^#' scripts/sidecars.lock | while read -r name arch url sum; do
   [[ -z "$name" ]] && continue
   if [[ $# -gt 0 && " $* " != *" $arch "* ]]; then continue; fi
   dest=$ROOT/$name/$arch
-  if [[ -f $dest/.sha256 && "$(cat "$dest/.sha256")" == "$sum" ]]; then
+  if [[ -f $dest/.sha256 && "$(cat "$dest/.sha256")" == "$sum" && -f $dest/ffmpeg.exe && -f $dest/ffprobe.exe ]]; then
     echo "==> $name/$arch up to date"
     continue
   fi
@@ -34,6 +34,7 @@ grep -v '^#' scripts/sidecars.lock | while read -r name arch url sum; do
   fi
 
   work=$(mktemp -d "$CACHE/unpack.XXXXXX")
+  trap 'rm -rf "$work"' EXIT
   unzip -q "$zip" -d "$work"
   top=$(find "$work" -mindepth 1 -maxdepth 1 -type d | head -1)
   rm -rf "$dest"
@@ -44,6 +45,7 @@ grep -v '^#' scripts/sidecars.lock | while read -r name arch url sum; do
   printf 'Binary: %s\nSHA-256: %s\nBuilt by: https://github.com/BtbN/FFmpeg-Builds (LGPL variant, shared libraries)\nFFmpeg source: https://github.com/FFmpeg/FFmpeg/commit/%s\n' \
     "$url" "$sum" "$(sed -E 's/^ffmpeg-n?[^-]*-[0-9]+-g([0-9a-f]+)-.*/\1/' <<<"$build")" > "$dest/SOURCE.txt"
   rm -rf "$work"
+  trap - EXIT
   echo "$sum" > "$dest/.sha256"
   echo "==> $name/$arch ready in $dest"
 done

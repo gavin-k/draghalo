@@ -222,9 +222,14 @@ internal sealed partial class SettingsWindow
                 return;
             }
 
+            if (_window.Content?.XamlRoot is not { } xamlRoot)
+            {
+                return;
+            }
+
             var confirm = new ContentDialog
             {
-                XamlRoot = _window.Content.XamlRoot,
+                XamlRoot = xamlRoot,
                 Title = L.T("安装 DropHalo {0}？", release.Version),
                 Content = L.T("下载并验证后，DropHalo 会关闭、安装更新并重新打开。你的设置和工具会保留，任务列表会清空。"),
                 PrimaryButtonText = L.T("下载并安装"), CloseButtonText = L.T("取消"), DefaultButton = ContentDialogButton.Close,

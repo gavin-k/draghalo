@@ -427,8 +427,12 @@ FodyWeavers.xsd
 *.cab
 *.msi
 *.msix
+*.msixbundle
 *.msm
 *.msp
+
+# macOS Finder metadata
+.DS_Store
 
 # Official VS Code C# Dev Kit Extension exclusion
 #*.lscache

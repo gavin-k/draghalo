@@ -83,9 +83,14 @@ public sealed class OcrTool(ITextRecognizer recognizer, TimeProvider? time = nul
                     return null;
                 }
 
-                lines += text.Count(line => line.Length > 0);
                 var all = string.Join("\r\n", text) + "\r\n";
-                return await OutputFiles.WriteAsync(plan, source, i, now, temp => File.WriteAllTextAsync(temp, all, Utf8WithBom, cancellationToken), cancellationToken: cancellationToken).ConfigureAwait(false);
+                var writtenPath = await OutputFiles.WriteAsync(plan, source, i, now, temp => File.WriteAllTextAsync(temp, all, Utf8WithBom, cancellationToken), cancellationToken: cancellationToken).ConfigureAwait(false);
+                if (writtenPath is not null)
+                {
+                    lines += text.Count(line => line.Length > 0);
+                }
+
+                return writtenPath;
             }, cancellationToken), cancellationToken).ConfigureAwait(false);
 
             if (empty.Count == request.SourcePaths.Count)
@@ -93,8 +98,8 @@ public sealed class OcrTool(ITextRecognizer recognizer, TimeProvider? time = nul
                 return new(true, []) { Skipped = true, UnchangedPaths = empty, Detail = L.T("没有认出文字") };
             }
 
-            var notes = new[] { L.T("认出 {0} 行，识别语言 {1}", lines, recognizer.Language), empty.Count > 0 ? L.T("另有 {0} 个没有认出文字", empty.Count) : null };
-            return ConversionResult.Written(written) with { UnchangedPaths = empty, Detail = string.Join(L.T("；"), notes.OfType<string>()) };
+            var notes = new[] { written.Count > 0 ? L.T("认出 {0} 行，识别语言 {1}", lines, recognizer.Language) : null, empty.Count > 0 ? L.T("另有 {0} 个没有认出文字", empty.Count) : null };
+            return ConversionResult.Written(written) with { UnchangedPaths = empty, Detail = string.Join(L.T("；"), notes.OfType<string>()) is { Length: > 0 } d ? d : null };
         }
         catch (InvalidDataException ex)
         {
@@ -129,6 +134,16 @@ public sealed class OcrTool(ITextRecognizer recognizer, TimeProvider? time = nul
         using (var image = MagickImageConverter.Read(source))
         {
             image.AutoOrient();
+            if (image.GetColorProfile() is not null)
+            {
+                image.TransformColorSpace(ColorProfiles.SRGB);
+            }
+
+            if (image.ColorSpace is not (ColorSpace.sRGB or ColorSpace.RGB))
+            {
+                image.ColorSpace = ColorSpace.sRGB;
+            }
+
             if (image.HasAlpha)
             {
                 image.BackgroundColor = MagickColors.White;
