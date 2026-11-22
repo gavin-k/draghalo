@@ -71,7 +71,11 @@ public sealed class LayoutStore : IDisposable
         return next;
     }
 
-    /// <summary>Reads outside edits; on I/O failure keeps the current layout and retries if watching.</summary>
+    /// <summary>
+    /// Reads outside edits. A file that cannot be opened keeps the current layout and, if watching, is tried again
+    /// until it can. One that does not parse may be half-way through an edit: it stays where it is and is tried a few
+    /// more times, then left until it changes again.
+    /// </summary>
     public bool Reload()
     {
         bool moved;
@@ -83,7 +87,13 @@ public sealed class LayoutStore : IDisposable
                 moved = ReloadLocked(moveBadAside: false);
                 _readRetries = 0;
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or NotSupportedException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                LoadProblem = ex.Message;
+                _debounce?.Change(Debounce, Timeout.InfiniteTimeSpan);
+                return false;
+            }
+            catch (Exception ex) when (ex is System.Text.Json.JsonException or NotSupportedException)
             {
                 LoadProblem = ex.Message;
                 if (_readRetries++ < 3)

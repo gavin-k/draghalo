@@ -151,6 +151,38 @@ public sealed class LayoutStoreFailureTests : IDisposable
     }
 
     [Fact]
+    public void A_reload_keeps_trying_for_as_long_as_the_layout_cannot_be_opened()
+    {
+        File.WriteAllText(File_, InitialLayout);
+        var clock = new FakeTimeProvider();
+        using var store = new LayoutStore(File_, clock);
+        var previous = store.Current;
+        var editedStamp = File.GetLastWriteTimeUtc(File_).AddSeconds(2);
+        using (var held = new FileStream(File_, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            held.SetLength(0);
+            held.Write(System.Text.Encoding.UTF8.GetBytes(EditedLayout));
+            held.Flush(flushToDisk: true);
+            File.SetLastWriteTimeUtc(held.SafeFileHandle, editedStamp);
+            store.Watch();
+
+            store.Reload().Should().BeFalse();
+            for (var tries = 0; tries < 10; tries++)
+            {
+                clock.Advance(TimeSpan.FromMilliseconds(300));
+            }
+
+            store.Current.Should().BeSameAs(previous);
+            store.LoadProblem.Should().NotBeNullOrEmpty();
+        }
+
+        clock.Advance(TimeSpan.FromMilliseconds(300));
+
+        store.SlotsFor(WheelMode.Tools, MediaKind.Image)!.Single()!.Item.Should().Be("tool.ocr");
+        store.LoadProblem.Should().BeNull();
+    }
+
+    [Fact]
     public void A_bad_layout_that_cannot_be_moved_aside_is_not_replaced_by_the_next_edit()
     {
         const string bad = """{ "version": 1, "wheels": { "tools": { "image": [ { "item": "tool.ocr" } ] } }, "installed": [ """;
