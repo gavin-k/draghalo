@@ -12,7 +12,7 @@ main:
       stages:
         - name: Mirror public source and original signed installers
           script: |
-            set -euo pipefail
+            set -eu
             git config user.name 'DropHalo mirror'
             git config user.email 'mirror@users.noreply.cnb.cool'
             git fetch https://cnb.cool/shhield-ai/drophalo main
