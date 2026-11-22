@@ -147,7 +147,7 @@ public sealed class TransferAction(bool copy, IFileOperations files, IDesktop de
         return (plan, replace, skipped);
     }
 
-    private static bool Exists(string path) => File.Exists(path) || Directory.Exists(path);
+    private static bool Exists(string path) => Path.Exists(path);
 
     private static bool IsSameOrInside(string folder, string item)
     {

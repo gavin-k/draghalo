@@ -148,7 +148,7 @@ internal sealed record OutputSnapshot(string Fingerprint, string ContentFingerpr
     internal static bool TryGetIdentity(string path, out ItemIdentity identity)
     {
         identity = default;
-        if (!File.Exists(path) && !Directory.Exists(path))
+        if (!Path.Exists(path))
         {
             return false;
         }
