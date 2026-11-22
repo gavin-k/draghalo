@@ -395,4 +395,111 @@ public sealed class MagickImageConverterTests : IDisposable
         var info = new MagickImageInfo(result.OutputPaths[0]);
         (info.Width, info.Height).Should().Be((48u, 48u));
     }
+
+    [Theory]
+    [InlineData("""<image data-note="a>b" href="https://example.com/a.png" width="9" height="9"/>""", "https://example.com/a.png")]
+    [InlineData("""<image href="&#x68;&#x74;&#x74;&#x70;&#x73;://example.com/e.png" width="9" height="9"/>""", "https://example.com/e.png")]
+    [InlineData("""<rect width="9" height="9" fill="url(/*x*/https://example.com/p.svg#x)"/>""", "https://example.com/p.svg#x")]
+    [InlineData("""<style>@\69mport "https://example.com/esc.css";</style>""", "@import \"https://example.com/esc.css\"")]
+    [InlineData("""<?xml-stylesheet type="text/css" href="https://example.com/pi.css"?><rect width="9" height="9"/>""", "https://example.com/pi.css")]
+    [InlineData("""<image id="i" width="9" height="9"><set attributeName="href" to="https://example.com/smil.png"/></image>""", "https://example.com/smil.png")]
+    [InlineData("""<image id="i" width="9" height="9"><animate attributeName="xlink:href" values="#local;https://example.com/anim.png"/></image>""", "https://example.com/anim.png")]
+    [InlineData("""<image href="data:image/%73vg+xml,&lt;svg/&gt;" width="9" height="9"/>""", "data:image/%73vg+xml")]
+    [InlineData("""<rect width="9" height="9" style="--a:'/*'; fill:url(https://example.com/ssrf.png); --b:'*/'"/>""", "https://example.com/ssrf.png")]
+    [InlineData("""<rect width="9" height="9" style='--x:"url(\"#"; fill:url("https://example.com/leak.png")'/>""", "https://example.com/leak.png")]
+    [InlineData("""<rect width="9" height="9" style='background-image: image-set("https://example.com/1x.png" 1x)'/>""", "https://example.com/1x.png")]
+    public async Task Svg_obfuscated_external_references_are_refused(string inside, string named)
+    {
+        var source = Path.Combine(_dir, "trap.svg");
+        await File.WriteAllTextAsync(source, $"""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="9" height="9">{inside}</svg>""");
+
+        var result = await Run(new([source], "png", ""));
+
+        result.Succeeded.Should().BeFalse();
+        result.Error.Should().Contain(named);
+    }
+
+    [Fact]
+    public async Task Standard_w3c_and_html5_doctype_svgs_and_utf16_svgs_convert_cleanly_while_evil_doctypes_are_refused()
+    {
+        var w3c = Path.Combine(_dir, "illustrator.svg");
+        await File.WriteAllTextAsync(w3c, """
+            <?xml version="1.0" encoding="utf-8"?>
+            <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+              "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12"><rect width="12" height="12" fill="red"/></svg>
+            """);
+        var rW3c = await Run(new([w3c], "png", ""));
+        rW3c.Succeeded.Should().BeTrue(rW3c.Error);
+
+        var html5 = Path.Combine(_dir, "html5.svg");
+        await File.WriteAllTextAsync(html5, """
+            <!DOCTYPE svg>
+            <?xml-stylesheet type="text/css" href="#inline"?>
+            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><style id="inline">rect { fill: green; }</style><rect width="10" height="10"/></svg>
+            """);
+        var rHtml5 = await Run(new([html5], "png", ""));
+        rHtml5.Succeeded.Should().BeTrue(rHtml5.Error);
+
+        var utf16Ok = Path.Combine(_dir, "utf16-valid.svg");
+        await File.WriteAllBytesAsync(utf16Ok, System.Text.Encoding.Unicode.GetBytes("""
+            <?xml version="1.0" encoding="utf-16"?>
+            <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="blue"/></svg>
+            """));
+        var rUtf16 = await Run(new([utf16Ok], "png", ""));
+        rUtf16.Succeeded.Should().BeTrue(rUtf16.Error);
+
+        var evilDtd = Path.Combine(_dir, "evil-dtd.svg");
+        await File.WriteAllTextAsync(evilDtd, """
+            <!DOCTYPE svg SYSTEM "https://example.com/evil.dtd">
+            <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8"/></svg>
+            """);
+        var rEvil = await Run(new([evilDtd], "png", ""));
+        rEvil.Succeeded.Should().BeFalse();
+        rEvil.Error.Should().Contain("https://example.com/evil.dtd");
+
+        var subsetDtd = Path.Combine(_dir, "subset-dtd.svg");
+        await File.WriteAllTextAsync(subsetDtd, """
+            <!DOCTYPE svg [ <!ATTLIST image href CDATA "https://example.com/default.png"> ]>
+            <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8"/></svg>
+            """);
+        var rSubset = await Run(new([subsetDtd], "png", ""));
+        rSubset.Succeeded.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Batch_command_formatting_uses_cmd_s_and_prevents_quote_stripping_injection()
+    {
+#pragma warning disable CA1416 // Pure string formatting helper on KillOnCloseJob, tested cross-platform.
+        var (app, cmdLine) = DropHalo.Engines.Tools.KillOnCloseJob.FormatProcessCommand(
+            @"C:\Users\Gavin Lee\AppData\Local\DropHalo\tools\demo\run.cmd.",
+            [@"--in", @"C:\Downloads\a & calc.exe & .jpg", @"C:\Out Dir\"],
+            cmdPath: @"C:\Windows\System32\cmd.exe");
+
+        app.Should().Be(@"C:\Windows\System32\cmd.exe");
+        cmdLine.Should().Be(@"C:\Windows\System32\cmd.exe /d /s /c """"C:\Users\Gavin Lee\AppData\Local\DropHalo\tools\demo\run.cmd"" --in ""C:\Downloads\a & calc.exe & .jpg"" ""C:\Out Dir\""""");
+
+        Action bang = () => DropHalo.Engines.Tools.KillOnCloseJob.FormatProcessCommand(@"C:\tools\run.bat", ["hello!var!"], @"C:\Windows\System32\cmd.exe");
+        bang.Should().Throw<System.ComponentModel.Win32Exception>();
+#pragma warning restore CA1416
+    }
+
+    [Fact]
+    public async Task Utf16_svg_and_disguised_svg_renamed_to_png_are_refused()
+    {
+        var utf16 = Path.Combine(_dir, "utf16.svg");
+        await File.WriteAllBytesAsync(utf16, System.Text.Encoding.Unicode.GetBytes(
+            """<svg xmlns="http://www.w3.org/2000/svg" width="9" height="9"><image href="https://example.com/u16.png" width="9" height="9"/></svg>"""));
+
+        var r1 = await Run(new([utf16], "png", ""));
+        r1.Succeeded.Should().BeFalse();
+        r1.Error.Should().Contain("https://example.com/u16.png");
+
+        var disguised = Path.Combine(_dir, "fake.png");
+        await File.WriteAllTextAsync(disguised,
+            """<svg xmlns="http://www.w3.org/2000/svg" width="9" height="9"><image href="https://example.com/sneak.png" width="9" height="9"/></svg>""");
+
+        var r2 = await Run(new([disguised], "jpg", ""));
+        r2.Succeeded.Should().BeFalse();
+    }
 }

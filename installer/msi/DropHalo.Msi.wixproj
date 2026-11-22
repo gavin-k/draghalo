@@ -15,7 +15,7 @@
       1169 gd-GB). ICE61: AllowSameVersionUpgrades lets a rebuild of the same version replace the last one.
     -->
     <SuppressIces>ICE03;ICE61</SuppressIces>
-    <DefineConstants>PublishDir=$(PublishDir);ProductVersion=$(ProductVersion);AppDir=$(MSBuildThisFileDirectory)..\..\src\DropHalo.App</DefineConstants>
+    <DefineConstants>PublishDir=$([MSBuild]::EnsureTrailingSlash('$(PublishDir)'));ProductVersion=$(ProductVersion);AppDir=$(MSBuildThisFileDirectory)..\..\src\DropHalo.App</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="WixToolset.Util.wixext" />

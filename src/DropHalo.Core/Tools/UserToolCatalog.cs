@@ -28,6 +28,7 @@ public sealed class UserToolCatalog : IDisposable
     private readonly TimeProvider _time;
     private readonly IReadOnlyList<IWheelOperation> _builtIns;
     private readonly ConversionGraph? _graph;
+    private readonly Func<Settings.UserToolSettings>? _trust;
     private readonly Lock _gate = new();
     private FileSystemWatcher? _watcher;
     private ITimer? _debounce;
@@ -35,7 +36,8 @@ public sealed class UserToolCatalog : IDisposable
 
     /// <param name="builtIns">The items a recipe step may name, by id; only these, never another user tool.</param>
     /// <param name="graph">What a recipe's convert steps run through; without it they fail when run.</param>
-    public UserToolCatalog(string toolsDirectory, IProcessRunner runner, CommandResolver resolver, TimeProvider? time = null, IReadOnlyList<IWheelOperation>? builtIns = null, ConversionGraph? graph = null)
+    /// <param name="trust">Live script trust settings; when supplied, untrusted scripts are refused at execution time too.</param>
+    public UserToolCatalog(string toolsDirectory, IProcessRunner runner, CommandResolver resolver, TimeProvider? time = null, IReadOnlyList<IWheelOperation>? builtIns = null, ConversionGraph? graph = null, Func<Settings.UserToolSettings>? trust = null)
     {
         Directory = toolsDirectory;
         _runner = runner;
@@ -43,6 +45,7 @@ public sealed class UserToolCatalog : IDisposable
         _time = time ?? TimeProvider.System;
         _builtIns = builtIns ?? [];
         _graph = graph;
+        _trust = trust;
     }
 
     public string Directory { get; }
@@ -243,7 +246,7 @@ public sealed class UserToolCatalog : IDisposable
                 seen[manifest.Id] = folder;
                 tools.Add(manifest.IsRecipe
                     ? new RecipeTool(manifest, folder, _builtIns, _graph)
-                    : new ScriptTool(manifest, folder, _runner, _resolver, _time));
+                    : new ScriptTool(manifest, folder, _runner, _resolver, _time, _trust));
             }
             else if (result.ReadFailed && Current.Tools.FirstOrDefault(t => t.Folder == folder) is { } previous && seen.TryAdd(previous.Id, folder))
             {

@@ -24,6 +24,9 @@ internal static class Program
                                                    repeated subtitle and ZIP conversions through real Explorer drags
           DropHalo.Acceptance language --exe <DropHalo.exe>
                                                    language confirmation, cancel, save failure and automatic restart
+          DropHalo.Acceptance quit --exe <DropHalo.exe> [--megabytes 200]
+                                                   --quit while a ZIP of that size is repacked: the job is cancelled
+                                                   and leaves nothing behind
           DropHalo.Acceptance updates --exe <DropHalo.exe>
                                                    offline startup, source persistence, real checks and install cancellation
           DropHalo.Acceptance dock --exe <DropHalo.exe> [--iterations 10] [--copy-first]
@@ -105,6 +108,15 @@ internal static class Program
 
                 Log.Open("archives");
                 return AppScenario.RunArchives(Path.GetFullPath(archiveExe), archiveIterations);
+            case "quit" when ArgValue(args, "--exe") is { } quitExe:
+                if (!int.TryParse(ArgValue(args, "--megabytes") ?? "200", out var megabytes) || megabytes < 4)
+                {
+                    Console.Error.WriteLine("--megabytes must be an integer of at least 4.");
+                    return 2;
+                }
+
+                Log.Open("quit");
+                return AppScenario.RunQuit(Path.GetFullPath(quitExe), megabytes);
             default:
                 Console.WriteLine(Usage);
                 return 2;

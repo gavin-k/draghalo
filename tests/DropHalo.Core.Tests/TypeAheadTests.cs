@@ -93,6 +93,19 @@ public class TypeAheadTests
     }
 
     [Fact]
+    public void Pruning_keeps_a_taken_key_because_the_system_never_saw_it_go_down()
+    {
+        _search.Listening = true;
+        _search.Swallow(B, true, Modifiers.None).Should().BeTrue();
+
+        // Windows reports a swallowed key as up for the whole press, so asking it proves nothing.
+        _search.PruneReleased(_ => false);
+
+        _search.HasHeldKeys.Should().BeTrue();
+        _search.Swallow(B, false, Modifiers.None).Should().BeTrue("a lone key-up would reach the drag source");
+    }
+
+    [Fact]
     public void Passes_a_key_pressed_before_the_wheel_opened_to_its_up()
     {
         _search.Swallow(B, true, Modifiers.None);

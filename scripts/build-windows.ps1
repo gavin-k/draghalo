@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Build, test and package DropHalo on Windows.
 
@@ -51,19 +51,24 @@ foreach ($t in 'dotnet', 'winapp') {
 function Invoke-Checked([string]$title, [scriptblock]$cmd) {
     Write-Host "`n==> $title" -ForegroundColor Cyan
     $sw = [Diagnostics.Stopwatch]::StartNew()
+    $global:LASTEXITCODE = 0
     & $cmd
     if ($LASTEXITCODE -ne 0) { throw "$title failed (exit $LASTEXITCODE)" }
     Write-Host "    done in $([int]$sw.Elapsed.TotalSeconds)s" -ForegroundColor Green
 }
 
 $winappVersion = '?'
-if (((winapp --version 2>&1) | Out-String) -match '(\d+\.\d+[\d.]*)') { $winappVersion = $Matches[1] }
+try {
+    $verOut = & { $ErrorActionPreference = 'Continue'; winapp --version 2>&1 } | Out-String
+    if ($verOut -match '(\d+\.\d+[\d.]*)') { $winappVersion = $Matches[1] }
+} catch { }
 Write-Host "DropHalo build  ·  $Configuration | $Platform  ·  dotnet $(dotnet --version)  ·  winapp $winappVersion"
 
 # The app copies tools/sidecars/ffmpeg/<arch> next to itself, and the Engines tests run that ffmpeg from the PATH.
 Write-Host "`n==> fetch the ffmpeg sidecar ($Arch)" -ForegroundColor Cyan
 & (Join-Path $RepoRoot 'scripts\fetch-sidecars.ps1') -Arch $Arch
-$env:Path = (Join-Path $RepoRoot "tools\sidecars\ffmpeg\$Arch") + ';' + $env:Path
+$HostArch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
+$env:Path = (Join-Path $RepoRoot "tools\sidecars\ffmpeg\$HostArch") + ';' + $env:Path
 
 Invoke-Checked "dotnet build DropHalo.slnx -c $Configuration -p:Platform=$Platform" {
     dotnet build DropHalo.slnx -c $Configuration -p:Platform=$Platform
@@ -72,14 +77,16 @@ Invoke-Checked "dotnet build DropHalo.slnx -c $Configuration -p:Platform=$Platfo
 if ($SkipTests) {
     Write-Host "`n==> tests skipped (-SkipTests)"
 } else {
-    # The test project is AnyCPU; test it directly instead of through the solution platform.
+    if ($HostArch -ne $Arch) {
+        & (Join-Path $RepoRoot 'scripts\fetch-sidecars.ps1') -Arch $HostArch
+    }
+    # Both test projects are AnyCPU in DropHalo.slnx; test them without -p:Platform so --no-build reuses the solution build.
     Invoke-Checked 'dotnet test tests/DropHalo.Core.Tests' {
-        dotnet test tests/DropHalo.Core.Tests/DropHalo.Core.Tests.csproj -c $Configuration `
+        dotnet test tests/DropHalo.Core.Tests/DropHalo.Core.Tests.csproj -c $Configuration --no-build `
             --logger "trx;LogFileName=core.trx" --results-directory (Join-Path $Artifacts 'test-results')
     }
-    # Engines tests are x64 | ARM64 like the engines, so they reuse the solution build above.
     Invoke-Checked 'dotnet test tests/DropHalo.Engines.Tests' {
-        dotnet test tests/DropHalo.Engines.Tests/DropHalo.Engines.Tests.csproj -c $Configuration -p:Platform=$Platform --no-build `
+        dotnet test tests/DropHalo.Engines.Tests/DropHalo.Engines.Tests.csproj -c $Configuration --no-build `
             --logger "trx;LogFileName=engines.trx" --results-directory (Join-Path $Artifacts 'test-results')
     }
 }

@@ -86,12 +86,20 @@ internal sealed class QueueWindow
 
     public HWND Handle => new(WinRT.Interop.WindowNative.GetWindowHandle(_window));
 
-    /// <summary>Set before <see cref="Close"/> so the close is not turned into a hide.</summary>
+    /// <summary>
+    /// Set once the app is quitting: the window is not shown again and a close is not turned into a hide.
+    /// </summary>
     public bool Quitting { get; set; }
 
     /// <summary>Shows the window, the first time in the bottom-right of the primary work area.</summary>
     public void Show(bool activate = true)
     {
+        // A second launch can ask for the window while the app is already on its way out.
+        if (Quitting)
+        {
+            return;
+        }
+
         if (!_placed)
         {
             var area = DisplayArea.Primary.WorkArea;
@@ -109,6 +117,16 @@ internal sealed class QueueWindow
         {
             _window.AppWindow.Show(activateWindow: false);
         }
+    }
+
+    /// <summary>
+    /// Takes the window off the screen for good. It lives on until <see cref="Close"/>, for the job updates
+    /// still on their way to it.
+    /// </summary>
+    public void Withdraw()
+    {
+        Quitting = true;
+        _window.AppWindow.Hide();
     }
 
     public void Close()

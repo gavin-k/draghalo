@@ -23,10 +23,15 @@ public sealed class TypeAhead
     private const byte Taken = 2;
 
     private readonly byte[] _keys = new byte[256];
+    private int _activeCount;
+    private int _passedCount;
     private volatile bool _listening;
 
     /// <summary>Raised on the calling thread with a lower-case letter, a digit or <see cref="Backspace"/>, auto-repeats included.</summary>
     public event Action<char>? Typed;
+
+    /// <summary>True when at least one search key is currently tracked between key-down and key-up.</summary>
+    public bool HasHeldKeys => _activeCount > 0;
 
     /// <summary>Whether keys are taken now; set from any thread while the Convert wheel is open.</summary>
     public bool Listening
@@ -47,14 +52,29 @@ public sealed class TypeAhead
 
         if (!isDown)
         {
-            var taken = _keys[vk] == Taken;
-            _keys[vk] = Up;
-            return taken;
+            var state = _keys[vk];
+            if (state != Up)
+            {
+                _keys[vk] = Up;
+                _activeCount--;
+                if (state == Passed)
+                {
+                    _passedCount--;
+                }
+            }
+
+            return state == Taken;
         }
 
         if (_keys[vk] == Up)
         {
-            _keys[vk] = _listening && (held & (Modifiers.Ctrl | Modifiers.Alt | Modifiers.Win)) == 0 ? Taken : Passed;
+            var take = _listening && (held & (Modifiers.Ctrl | Modifiers.Alt | Modifiers.Win)) == 0;
+            _keys[vk] = take ? Taken : Passed;
+            _activeCount++;
+            if (!take)
+            {
+                _passedCount++;
+            }
         }
 
         if (_keys[vk] != Taken)
@@ -68,6 +88,33 @@ public sealed class TypeAhead
         }
 
         return true;
+    }
+
+    /// <summary>Resets keys whose key-up was lost to the secure desktop.</summary>
+    /// <remarks>
+    /// Only keys that reached Windows are checked. Windows never saw a taken key-down, so it reports
+    /// that key as up for the whole press; resetting it would let its key-up through alone.
+    /// </remarks>
+    public void PruneReleased(Func<int, bool> isPhysicallyDown)
+    {
+        // This runs inside the keyboard hook on every key-down, so it stops at the last passed key
+        // instead of walking the whole table.
+        var remaining = _passedCount;
+        for (var vk = 0; remaining > 0 && vk < _keys.Length; vk++)
+        {
+            if (_keys[vk] != Passed)
+            {
+                continue;
+            }
+
+            remaining--;
+            if (!isPhysicallyDown(vk))
+            {
+                _keys[vk] = Up;
+                _activeCount--;
+                _passedCount--;
+            }
+        }
     }
 
     /// <summary>The character a key types into a search, or null for keys a search ignores.</summary>

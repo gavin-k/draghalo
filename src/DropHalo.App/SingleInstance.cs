@@ -11,14 +11,24 @@ internal sealed class SingleInstance : IDisposable
 {
     private const string Name = @"Local\DropHalo.App";
     private readonly Mutex _mutex;
+    private readonly bool _ownsMutex;
     private readonly EventWaitHandle _show = new(false, EventResetMode.AutoReset, Name + ".Show");
     private readonly EventWaitHandle _quit = new(false, EventResetMode.AutoReset, Name + ".Quit");
     private readonly List<RegisteredWaitHandle> _waits = [];
 
     public SingleInstance()
     {
-        _mutex = new Mutex(initiallyOwned: true, Name, out var first);
-        IsFirst = first;
+        _mutex = new Mutex(initiallyOwned: false, Name);
+        try
+        {
+            _ownsMutex = _mutex.WaitOne(0);
+        }
+        catch (AbandonedMutexException)
+        {
+            _ownsMutex = true;
+        }
+
+        IsFirst = _ownsMutex;
     }
 
     public bool IsFirst { get; }
@@ -41,11 +51,27 @@ internal sealed class SingleInstance : IDisposable
     {
         foreach (var wait in _waits)
         {
-            wait.Unregister(null);
+            using var drained = new ManualResetEvent(false);
+            if (wait.Unregister(drained))
+            {
+                drained.WaitOne(TimeSpan.FromSeconds(1));
+            }
         }
 
+        _waits.Clear();
         _show.Dispose();
         _quit.Dispose();
+        if (_ownsMutex)
+        {
+            try
+            {
+                _mutex.ReleaseMutex();
+            }
+            catch (ApplicationException)
+            {
+            }
+        }
+
         _mutex.Dispose();
     }
 }

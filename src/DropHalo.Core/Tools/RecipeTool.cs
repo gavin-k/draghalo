@@ -69,9 +69,11 @@ public sealed class RecipeTool : IUserTool
         }
 
         // Where the last step writes: the job's folder, or beside the first dragged item. Never the scratch folder.
-        var destination = request.OutputDirectory.Length > 0 ? request.OutputDirectory : Path.GetDirectoryName(request.SourcePaths[0]) ?? "";
+        var destination = request.OutputDirectory.Length > 0
+            ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(request.OutputDirectory))
+            : Path.GetDirectoryName(Path.GetFullPath(request.SourcePaths[0]))!;
         var scratch = Path.Combine(destination, $".{Guid.NewGuid():N}{OutputFiles.TempSuffix}");
-        IReadOnlyList<string> inputs = request.SourcePaths;
+        List<string> inputs = [.. request.SourcePaths.Select(Path.GetFullPath)];
         try
         {
             for (var i = 0; i < steps.Count; i++)
@@ -90,6 +92,41 @@ public sealed class RecipeTool : IUserTool
                 {
                     // The job's own request, so Written, Conflicts and the naming settings are the job's.
                     var final = Prepare(request, step, target) with { SourcePaths = inputs, OutputDirectory = destination };
+                    if (step.IsConvert && inputs.Select(FormatRegistry.FromPath).Distinct().Count() > 1)
+                    {
+                        var mixedOutputs = await OutputFiles.ForEachSourceAsync(final, within, async (input, index, each) =>
+                        {
+                            var (itemRunner, itemTarget, itemMissing) = Resolve(i, [input]);
+                            if (itemRunner is null)
+                            {
+                                throw new InvalidDataException(itemMissing!);
+                            }
+
+                            var single = final with { SourcePaths = [input], TargetFormatId = itemTarget };
+                            var check = itemRunner.Check(single);
+                            if (!check.IsAvailable)
+                            {
+                                throw new InvalidDataException(check.Reason);
+                            }
+
+                            var singleResult = await itemRunner.RunAsync(single, each, cancellationToken).ConfigureAwait(false);
+                            if (!singleResult.Succeeded)
+                            {
+                                throw new InvalidDataException(singleResult.Error);
+                            }
+
+                            return singleResult.OutputPaths.Count > 0 ? singleResult.OutputPaths[0] : null;
+                        }, cancellationToken).ConfigureAwait(false);
+                        var mixedResult = ConversionResult.Written(mixedOutputs);
+                        return Manifest.Undo == "none" ? mixedResult with { Undo = new UndoPlan.None() } : mixedResult;
+                    }
+
+                    var finalCheck = runner.Check(final);
+                    if (!finalCheck.IsAvailable)
+                    {
+                        return Failed(i, step, finalCheck.Reason);
+                    }
+
                     var result = await runner.RunAsync(final, within, cancellationToken).ConfigureAwait(false);
                     if (!result.Succeeded)
                     {
@@ -102,7 +139,7 @@ public sealed class RecipeTool : IUserTool
                         for (var j = 0; j < inputs.Count; j++)
                         {
                             var input = inputs[j];
-                            if (!result.UnchangedPaths.Contains(input)
+                            if (!result.UnchangedPaths.Contains(input, StringComparer.OrdinalIgnoreCase)
                                 || !input.StartsWith(scratch + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                             {
                                 continue;
@@ -144,7 +181,14 @@ public sealed class RecipeTool : IUserTool
                 var next = new List<string>();
                 if (runner is IWheelOperation { WorksOnBatch: true })
                 {
-                    var result = await runner.RunAsync(new ConversionRequest(inputs, target, scratch, step.Options), within, cancellationToken).ConfigureAwait(false);
+                    var batchRequest = new ConversionRequest(inputs, target, scratch, step.Options);
+                    var batchCheck = runner.Check(batchRequest);
+                    if (!batchCheck.IsAvailable)
+                    {
+                        return Failed(i, step, batchCheck.Reason);
+                    }
+
+                    var result = await runner.RunAsync(batchRequest, within, cancellationToken).ConfigureAwait(false);
                     if (!result.Succeeded)
                     {
                         return Failed(i, step, result.Error);
@@ -157,9 +201,22 @@ public sealed class RecipeTool : IUserTool
                     for (var j = 0; j < inputs.Count; j++)
                     {
                         var input = inputs[j];
+                        var (itemRunner, itemTarget, itemMissing) = step.IsConvert ? Resolve(i, [input]) : (runner, target, null);
+                        if (itemRunner is null)
+                        {
+                            return Failed(i, step, L.T("{0}：{1}", Path.GetFileName(input), itemMissing!));
+                        }
+
                         var done = j;
                         var each = new InlineProgress(p => within.Report((done + Math.Clamp(p, 0, 1)) / inputs.Count));
-                        var result = await runner.RunAsync(new ConversionRequest([input], target, scratch, step.Options), each, cancellationToken).ConfigureAwait(false);
+                        var itemRequest = new ConversionRequest([input], itemTarget, scratch, step.Options);
+                        var itemCheck = itemRunner.Check(itemRequest);
+                        if (!itemCheck.IsAvailable)
+                        {
+                            return Failed(i, step, itemCheck.Reason is { Length: > 0 } reason ? L.T("{0}：{1}", Path.GetFileName(input), reason) : Path.GetFileName(input));
+                        }
+
+                        var result = await itemRunner.RunAsync(itemRequest, each, cancellationToken).ConfigureAwait(false);
                         if (!result.Succeeded)
                         {
                             return Failed(i, step, result.Error is { } error ? L.T("{0}：{1}", Path.GetFileName(input), error) : Path.GetFileName(input));

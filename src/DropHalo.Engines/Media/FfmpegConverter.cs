@@ -199,7 +199,16 @@ public sealed class FfmpegConverter : IConverter
     {
         var lines = new List<string>();
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        var result = await new SidecarProcess(ffmpeg).RunAsync(["-hide_banner", "-encoders"], lines.Add, timeout.Token).ConfigureAwait(false);
+        SidecarResult result;
+        try
+        {
+            result = await new SidecarProcess(ffmpeg).RunAsync(["-hide_banner", "-encoders"], lines.Add, timeout.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException ex)
+        {
+            throw new InvalidDataException(L.T("ffmpeg 无法运行（退出码 {0}）", -1), ex);
+        }
+
         var encoders = FfmpegPlan.ParseEncoders(lines);
         if (result.ExitCode != 0 || encoders.Count == 0)
         {

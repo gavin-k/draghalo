@@ -58,6 +58,11 @@ internal static class PdfDocx
     private static void Write(string source, string temp, IProgress<double> progress, CancellationToken cancellationToken)
     {
         using var pdf = PdfDocument.Open(source);
+        if (pdf.NumberOfPages == 0)
+        {
+            throw new InvalidDataException(L.T("{0} 没有页面", Path.GetFileName(source)));
+        }
+
         using var zip = new ZipArchive(File.Create(temp), ZipArchiveMode.Create);
         DocxPackage.WriteText(zip, "[Content_Types].xml", DocxPackage.ContentTypes);
         DocxPackage.WriteText(zip, "_rels/.rels", DocxPackage.PackageRelationships);
