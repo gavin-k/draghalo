@@ -204,6 +204,26 @@ public sealed class LayoutStoreFailureTests : IDisposable
     }
 
     [Fact]
+    public void A_reload_stops_trying_a_layout_that_does_not_parse_after_a_few_tries()
+    {
+        File.WriteAllText(File_, InitialLayout);
+        var clock = new FakeTimeProvider();
+        var time = new CountingTime(clock);
+        using var store = new LayoutStore(File_, time);
+        File.WriteAllText(File_, """{ "version": 1, "wheels": """);
+        File.SetLastWriteTimeUtc(File_, File.GetLastWriteTimeUtc(File_).AddSeconds(2));
+        store.Watch();
+
+        store.Reload().Should().BeFalse();
+        for (var tries = 0; tries < 10; tries++)
+        {
+            clock.Advance(TimeSpan.FromMilliseconds(300));
+        }
+
+        time.Armed.Should().Be(3);
+    }
+
+    [Fact]
     public void A_layout_that_could_not_be_opened_at_startup_is_read_once_watching_starts()
     {
         File.WriteAllText(File_, InitialLayout);
@@ -289,5 +309,31 @@ public sealed class LayoutStoreFailureTests : IDisposable
         changes.Should().HaveCount(1);
         File.ReadAllText(File_).Should().Be(EditedLayout);
         File.GetLastWriteTimeUtc(File_).Should().Be(editedStamp);
+    }
+
+    /// <summary>The given clock, counting how often one of its timers is set to run.</summary>
+    private sealed class CountingTime(FakeTimeProvider clock) : TimeProvider
+    {
+        public int Armed { get; private set; }
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period) =>
+            new Counted(clock.CreateTimer(callback, state, dueTime, period), this);
+
+        private sealed class Counted(ITimer timer, CountingTime owner) : ITimer
+        {
+            public bool Change(TimeSpan dueTime, TimeSpan period)
+            {
+                if (dueTime != Timeout.InfiniteTimeSpan)
+                {
+                    owner.Armed++;
+                }
+
+                return timer.Change(dueTime, period);
+            }
+
+            public void Dispose() => timer.Dispose();
+
+            public ValueTask DisposeAsync() => timer.DisposeAsync();
+        }
     }
 }
