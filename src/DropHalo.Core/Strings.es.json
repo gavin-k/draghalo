@@ -36,6 +36,8 @@
   "复制路径": "Copiar ruta",
   "工具": "Herramientas",
   "工具轮盘": "Rueda de herramientas",
+  "已取消，{0} 项已复制到 {1}": "Cancelado; {0} {0|elemento ya copiado|elementos ya copiados} a {1}",
+  "已取消，{0} 项已移动到 {1}": "Cancelado; {0} {0|elemento ya movido|elementos ya movidos} a {1}",
   "已复制 {0} 个路径": "{0} {0|ruta copiada|rutas copiadas}",
   "已复制到 {0}": "Copiado a {0}",
   "已复制路径": "Ruta copiada",

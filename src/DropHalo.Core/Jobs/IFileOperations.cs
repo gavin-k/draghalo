@@ -6,9 +6,15 @@ public interface IFileOperations
     /// <summary>Send files to the Recycle Bin. Never a permanent delete; files that are already gone are ignored.</summary>
     Task RecycleAsync(IReadOnlyList<string> paths, CancellationToken cancellationToken = default);
 
-    /// <summary>Moves the items and returns their actual destinations, including any names the Shell numbered.</summary>
+    /// <summary>
+    /// Moves the items and returns their actual destinations, including any names the Shell numbered. Canceled
+    /// after some items arrived, it throws <see cref="PartialTransferException"/> naming those.
+    /// </summary>
     Task<IReadOnlyList<FileMove>> MoveAsync(IReadOnlyList<FileMove> moves, CancellationToken cancellationToken = default);
 
-    /// <summary>Copies the items and returns their actual destinations, including any names the Shell numbered.</summary>
+    /// <summary>
+    /// Copies the items and returns their actual destinations, including any names the Shell numbered. Canceled
+    /// after some items arrived, it throws <see cref="PartialTransferException"/> naming those.
+    /// </summary>
     Task<IReadOnlyList<FileMove>> CopyAsync(IReadOnlyList<FileMove> copies, CancellationToken cancellationToken = default);
 }

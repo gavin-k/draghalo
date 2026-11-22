@@ -20,12 +20,32 @@ public sealed record ConflictAnswer(ConflictPolicy Policy, bool ForTheRest = fal
 /// and does not bring the old items back.
 /// </summary>
 /// <param name="prompt">Asks for <see cref="ConflictPolicy.Ask"/>; without one, a taken name is numbered.</param>
-public sealed class JobConflicts(IFileOperations files, IConflictPrompt? prompt, IReadOnlyList<string> sources, CancellationToken cancellationToken)
+public sealed class JobConflicts
 {
-    private readonly List<string> _own = [.. sources.Select(Full)];
+    private readonly IFileOperations _files;
+    private readonly IConflictPrompt? _prompt;
+    private readonly CancellationToken _cancellationToken;
+    private readonly HashSet<string> _ownSet = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<(string Path, bool IsFolder)> _own = [];
+    private HashSet<OutputSnapshot.ItemIdentity>? _ownIdentities;
     private readonly Lock _gate = new();
     private ConflictPolicy? _forTheRest;
     private int _replaced;
+
+    public JobConflicts(IFileOperations files, IConflictPrompt? prompt, IReadOnlyList<string> sources, CancellationToken cancellationToken)
+    {
+        _files = files;
+        _prompt = prompt;
+        _cancellationToken = cancellationToken;
+        foreach (var source in sources)
+        {
+            var full = Full(source);
+            if (_ownSet.Add(full))
+            {
+                _own.Add((full, Directory.Exists(full)));
+            }
+        }
+    }
 
     /// <summary>Old items this job recycled to make room for its outputs.</summary>
     public int Replaced => Volatile.Read(ref _replaced);
@@ -60,13 +80,13 @@ public sealed class JobConflicts(IFileOperations files, IConflictPrompt? prompt,
             }
         }
 
-        if (prompt is null)
+        if (_prompt is null)
         {
             return ConflictPolicy.AutoNumber;
         }
 
-        var answer = await prompt.AskAsync(target, more, cancellationToken).ConfigureAwait(false);
-        cancellationToken.ThrowIfCancellationRequested();
+        var answer = await _prompt.AskAsync(target, more, _cancellationToken).ConfigureAwait(false);
+        _cancellationToken.ThrowIfCancellationRequested();
         var settled = answer.Policy is ConflictPolicy.OverwriteToRecycleBin or ConflictPolicy.AutoNumber ? answer.Policy : ConflictPolicy.Skip;
         if (answer.ForTheRest)
         {
@@ -90,7 +110,7 @@ public sealed class JobConflicts(IFileOperations files, IConflictPrompt? prompt,
             throw new InvalidOperationException($"{target} belongs to this job and is never replaced.");
         }
 
-        await files.RecycleAsync([target], cancellationToken).ConfigureAwait(false);
+        await _files.RecycleAsync([target], _cancellationToken).ConfigureAwait(false);
         if (File.Exists(target) || Directory.Exists(target))
         {
             throw new IOException(L.T("{0} 没能移到回收站，没有替换它", Path.GetFileName(target)));
@@ -102,9 +122,18 @@ public sealed class JobConflicts(IFileOperations files, IConflictPrompt? prompt,
     /// <summary>Notes an output this job wrote, so a later item never replaces it.</summary>
     public void Wrote(string path)
     {
+        var full = Full(path);
+        var isFolder = Directory.Exists(full);
         lock (_gate)
         {
-            _own.Add(Full(path));
+            if (_ownSet.Add(full))
+            {
+                _own.Add((full, isFolder));
+                if (_ownIdentities is not null && OutputSnapshot.TryGetIdentity(full, out var id))
+                {
+                    _ownIdentities.Add(id);
+                }
+            }
         }
     }
 
@@ -113,12 +142,40 @@ public sealed class JobConflicts(IFileOperations files, IConflictPrompt? prompt,
         var full = Full(target);
         lock (_gate)
         {
-            return _own.Any(own => own.Equals(full, StringComparison.OrdinalIgnoreCase) || IsInside(own, full));
+            if (_ownSet.Contains(full))
+            {
+                return true;
+            }
+
+            foreach (var (own, isFolder) in _own)
+            {
+                if (IsInside(own, full) || (isFolder && IsInside(full, own)))
+                {
+                    return true;
+                }
+            }
+
+            if (_ownIdentities is null)
+            {
+                _ownIdentities = [];
+                foreach (var (own, _) in _own)
+                {
+                    if (OutputSnapshot.TryGetIdentity(own, out var ownId))
+                    {
+                        _ownIdentities.Add(ownId);
+                    }
+                }
+            }
+
+            return OutputSnapshot.TryGetIdentity(full, out var targetId) && _ownIdentities.Contains(targetId);
         }
     }
 
-    private static bool IsInside(string path, string folder) =>
-        path.StartsWith(folder + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    private static bool IsInside(string path, string folder)
+    {
+        var prefix = Path.EndsInDirectorySeparator(folder) ? folder : folder + Path.DirectorySeparatorChar;
+        return path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+    }
 
     private static string Full(string path) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
 }
