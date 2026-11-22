@@ -339,6 +339,53 @@ public sealed class OutputFilesTests : IDisposable
     }
 
     [Fact]
+    public void A_staged_folder_that_got_a_new_identity_is_rebound_node_by_node()
+    {
+        var staged = StageAndMove("renumbered", out var final);
+
+        // FAT and exFAT may give a moved folder a new ID. Nothing here does, so the staged one is made not to match.
+        var renumbered = staged with { Root = staged.Root with { Identity = default } };
+
+        renumbered.RebindAfterMove(final).Should().NotBeNull().And.Be(OutputSnapshot.Capture(final));
+
+        File.WriteAllText(Path.Combine(final, "sub", "b.txt"), "changed");
+        renumbered.RebindAfterMove(final).Should().BeNull();
+    }
+
+    [Fact]
+    public void A_folder_changed_after_staging_is_not_owned_as_it_is_now()
+    {
+        var staged = StageAndMove("touched", out var final);
+        File.WriteAllText(Path.Combine(final, "sub", "b.txt"), "changed");
+
+        var rebound = staged.RebindAfterMove(final);
+
+        (rebound is null || !rebound.MetadataMatches(final)).Should().BeTrue("rollback asks the metadata first");
+        (rebound is null || !rebound.Matches(final)).Should().BeTrue("undo asks the whole fingerprint");
+    }
+
+    [Fact]
+    public void A_folder_that_is_still_the_same_item_keeps_its_staged_snapshot()
+    {
+        var staged = StageAndMove("kept", out var final);
+
+        // The same instance: nothing under the folder was read again.
+        staged.RebindAfterMove(final).Should().BeSameAs(staged.Snapshot).And.Be(OutputSnapshot.Capture(final));
+    }
+
+    private OutputSnapshot.StagedOutput StageAndMove(string name, out string final)
+    {
+        var temp = Path.Combine(_dir, "." + name + OutputFiles.TempSuffix);
+        final = Path.Combine(_dir, name);
+        Directory.CreateDirectory(Path.Combine(temp, "sub"));
+        File.WriteAllText(Path.Combine(temp, "a.txt"), "alpha");
+        File.WriteAllText(Path.Combine(temp, "sub", "b.txt"), "beta");
+        var staged = OutputSnapshot.Stage(temp)!;
+        Directory.Move(temp, final);
+        return staged;
+    }
+
+    [Fact]
     public async Task Same_item_and_job_conflicts_resolve_multi_level_ancestor_symlinks_and_scale_linearly()
     {
         var realRoot = Path.Combine(_dir, "real-root");

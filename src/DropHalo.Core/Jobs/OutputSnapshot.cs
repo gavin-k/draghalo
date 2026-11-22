@@ -14,15 +14,31 @@ internal sealed record OutputSnapshot(string Fingerprint, string ContentFingerpr
 
     internal readonly record struct ItemIdentity(ulong Volume, ulong Low, ulong High, string? CanonicalPath);
 
-    internal sealed record TreeNode(bool IsFolder, long LastWriteTicks, long Length, byte[]? FileSha256, (string Name, TreeNode Node)[]? Children);
+    /// <summary>What tells an item from another one put in its place: its volume and file ID, or else when it was created.</summary>
+    internal readonly record struct NodeIdentity(ulong Volume, ulong Low, ulong High, long? Created);
+
+    internal sealed record TreeNode(bool IsFolder, NodeIdentity Identity, long LastWriteTicks, long Length, byte[]? FileSha256, (string Name, TreeNode Node)[]? Children);
 
     internal sealed record StagedOutput(OutputSnapshot Snapshot, TreeNode Root)
     {
-        /// <summary>Rebinds file-system identity after an atomic rename without re-reading file contents.</summary>
+        /// <summary>
+        /// The snapshot of the staged item at the path it was renamed to, without re-reading file contents. Null when what
+        /// is there now is not what was staged.
+        /// </summary>
         public OutputSnapshot? RebindAfterMove(string path)
         {
             try
             {
+                // A rename leaves everything under a folder as it was. When the folder is still the same item too, nothing
+                // in the fingerprint has changed; a volume that renumbers a moved folder gets the walk below.
+                if (Root.IsFolder
+                    && (File.GetAttributes(path) & (FileAttributes.Directory | FileAttributes.ReparsePoint)) == FileAttributes.Directory
+                    && ReadIdentity(path) == Root.Identity
+                    && File.GetLastWriteTimeUtc(path).Ticks == Root.LastWriteTicks)
+                {
+                    return Snapshot;
+                }
+
                 using var fullHash = SHA256.Create();
                 using var fullSink = new CryptoStream(Stream.Null, fullHash, CryptoStreamMode.Write);
                 using var full = new BinaryWriter(fullSink);
@@ -189,7 +205,7 @@ internal sealed record OutputSnapshot(string Fingerprint, string ContentFingerpr
         return Path.TrimEndingDirectorySeparator(current);
     }
 
-    private static void WriteIdentity(string path, BinaryWriter full, BinaryWriter meta)
+    private static NodeIdentity ReadIdentity(string path)
     {
         if (OperatingSystem.IsWindows())
         {
@@ -199,19 +215,32 @@ internal sealed record OutputSnapshot(string Fingerprint, string ContentFingerpr
                 OpenExisting, BackupSemantics | OpenReparsePoint, IntPtr.Zero);
             if (!handle.IsInvalid && TryReadWindowsIdentity(handle, out var identity))
             {
-                full.Write(identity.Volume);
-                full.Write(identity.Low);
-                full.Write(identity.High);
-                meta.Write(identity.Volume);
-                meta.Write(identity.Low);
-                meta.Write(identity.High);
-                return;
+                return new(identity.Volume, identity.Low, identity.High, null);
             }
         }
 
-        var created = File.GetCreationTimeUtc(path).Ticks;
-        full.Write(created);
-        meta.Write(created);
+        return new(0, 0, 0, File.GetCreationTimeUtc(path).Ticks);
+    }
+
+    private static NodeIdentity WriteIdentity(string path, BinaryWriter full, BinaryWriter meta)
+    {
+        var identity = ReadIdentity(path);
+        if (identity.Created is { } created)
+        {
+            full.Write(created);
+            meta.Write(created);
+        }
+        else
+        {
+            full.Write(identity.Volume);
+            full.Write(identity.Low);
+            full.Write(identity.High);
+            meta.Write(identity.Volume);
+            meta.Write(identity.Low);
+            meta.Write(identity.High);
+        }
+
+        return identity;
     }
 
     private static TreeNode WriteSinglePass(string path, BinaryWriter full, BinaryWriter content, BinaryWriter meta)
@@ -227,7 +256,7 @@ internal sealed record OutputSnapshot(string Fingerprint, string ContentFingerpr
         content.Write(folder);
         meta.Write(folder);
 
-        WriteIdentity(path, full, meta);
+        var identity = WriteIdentity(path, full, meta);
 
         var lastWrite = File.GetLastWriteTimeUtc(path).Ticks;
         full.Write(lastWrite);
@@ -250,7 +279,7 @@ internal sealed record OutputSnapshot(string Fingerprint, string ContentFingerpr
                 children[i] = (name, WriteSinglePass(entries[i], full, content, meta));
             }
 
-            return new(true, lastWrite, 0, null, children);
+            return new(true, identity, lastWrite, 0, null, children);
         }
 
         using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
@@ -261,7 +290,7 @@ internal sealed record OutputSnapshot(string Fingerprint, string ContentFingerpr
         content.Write(length);
         content.Write(digest);
         meta.Write(length);
-        return new(false, lastWrite, length, digest, null);
+        return new(false, identity, lastWrite, length, digest, null);
     }
 
     private static bool RebindNode(string path, TreeNode node, BinaryWriter full, BinaryWriter meta)
