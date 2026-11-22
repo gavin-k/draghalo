@@ -116,6 +116,41 @@ public sealed class SettingsStoreTests : IDisposable
         new SettingsStore(File_).Current.Wheel.BackgroundOpacity.Should().Be(expected);
     }
 
+    [Theory]
+    [InlineData(0, 0, 50, 100)]
+    [InlineData(-5, 99, 50, 100)]
+    [InlineData(250, 600, 250, 600)]
+    [InlineData(60000, 60000, 5000, 5000)]
+    public void Hand_edited_key_timings_stay_in_the_supported_range(int tap, int longPress, int expectedTap, int expectedLongPress)
+    {
+        new SettingsStore(File_).Update(s => s with { Keys = s.Keys with { TapWindowMs = 1234, LongPressMs = 2345 } });
+        var json = File.ReadAllText(File_);
+        json.Should().Contain("\"tapWindowMs\": 1234").And.Contain("\"longPressMs\": 2345");
+        File.WriteAllText(File_, json.Replace("\"tapWindowMs\": 1234", $"\"tapWindowMs\": {tap}").Replace("\"longPressMs\": 2345", $"\"longPressMs\": {longPress}"));
+
+        var keys = new SettingsStore(File_).Current.Keys;
+
+        keys.TapWindowMs.Should().Be(expectedTap);
+        keys.LongPressMs.Should().Be(expectedLongPress);
+        keys.Bindings.Should().Equal(KeyBindings.Default.Bindings);
+    }
+
+    [Fact]
+    public void A_save_that_fails_changes_nothing_and_leaves_no_temp_file()
+    {
+        var store = new SettingsStore(File_);
+        var announced = 0;
+        store.Changed += _ => announced++;
+        Directory.CreateDirectory(File_); // a file cannot be renamed over a folder
+
+        var failure = Record.Exception(() => store.Update(s => s with { OnboardingDone = true }));
+
+        (failure is IOException or UnauthorizedAccessException).Should().BeTrue($"the save should fail on the file system, not with {failure}");
+        store.Current.OnboardingDone.Should().BeFalse();
+        announced.Should().Be(0);
+        Directory.GetFiles(_dir).Should().BeEmpty();
+    }
+
     [Fact]
     public void Unreadable_file_is_moved_aside_and_defaults_are_used()
     {
@@ -332,6 +367,19 @@ public sealed class SettingsStoreTests : IDisposable
         recent.For(MediaKind.Image, WheelMode.Convert).Should().Equal("webp");
         File.ReadAllBytes(path).Should().Equal(saved);
         new RecentItems(path: path).For(MediaKind.Image, WheelMode.Convert).Should().Equal("png");
+    }
+
+    [Fact]
+    public void A_recent_list_that_cannot_be_saved_is_still_kept_for_this_run()
+    {
+        var path = Path.Combine(_dir, "recent.json");
+        Directory.CreateDirectory(path); // a file cannot be renamed over a folder
+        var recent = new RecentItems(path: path);
+
+        recent.Touch(MediaKind.Image, WheelMode.Convert, "png");
+
+        recent.For(MediaKind.Image, WheelMode.Convert).Should().Equal("png");
+        Directory.GetFiles(_dir).Should().BeEmpty();
     }
 
     [Fact]
