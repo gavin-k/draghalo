@@ -328,6 +328,27 @@ public sealed class SettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public void A_recent_file_that_could_not_be_read_at_startup_is_left_alone()
+    {
+        var path = Path.Combine(_dir, "recent.json");
+        new RecentItems(path: path).Touch(MediaKind.Image, WheelMode.Convert, "png");
+        var saved = File.ReadAllBytes(path);
+        RecentItems recent;
+        using (new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            recent = new RecentItems(path: path);
+        }
+
+        recent.LoadProblem.Should().Contain("recent.json");
+
+        recent.Touch(MediaKind.Image, WheelMode.Convert, "webp");
+
+        recent.For(MediaKind.Image, WheelMode.Convert).Should().Equal("webp");
+        File.ReadAllBytes(path).Should().Equal(saved);
+        new RecentItems(path: path).For(MediaKind.Image, WheelMode.Convert).Should().Equal("png");
+    }
+
+    [Fact]
     public void Unreadable_recent_file_starts_empty()
     {
         var path = Path.Combine(_dir, "recent.json");

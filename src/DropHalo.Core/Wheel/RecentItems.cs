@@ -5,7 +5,8 @@ namespace DropHalo.Core.Wheel;
 
 /// <summary>
 /// Most-recently-used items per (media kind, wheel mode), newest first. With a <paramref name="path"/>
-/// the lists are loaded from it and saved back after every <see cref="Touch"/>.
+/// the lists are loaded from it and saved back after every <see cref="Touch"/>. A file that could not be read
+/// is left as it is: the lists of that run are then kept in memory only.
 /// </summary>
 public sealed class RecentItems : IRecentItems
 {
@@ -13,6 +14,7 @@ public sealed class RecentItems : IRecentItems
     private readonly Lock _gate = new();
     private readonly int _capacity;
     private readonly string? _path;
+    private readonly bool _unread;
 
     public RecentItems(int capacity = 3, string? path = null)
     {
@@ -39,6 +41,7 @@ public sealed class RecentItems : IRecentItems
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             LoadProblem = $"{Path.GetFileName(path)} could not be read ({ex.Message}); using defaults";
+            _unread = true;
         }
     }
 
@@ -69,7 +72,7 @@ public sealed class RecentItems : IRecentItems
                 list.RemoveRange(_capacity, list.Count - _capacity);
             }
 
-            if (_path is not null)
+            if (_path is not null && !_unread)
             {
                 var snapshot = _lists.ToDictionary(e => $"{e.Key.Item1}.{e.Key.Item2}", e => e.Value.ToList());
                 try
