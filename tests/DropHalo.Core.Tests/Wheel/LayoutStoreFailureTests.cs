@@ -97,6 +97,189 @@ public sealed class LayoutStoreFailureTests : IDisposable
     }
 
     [Fact]
+    public void A_layout_that_could_not_be_read_at_startup_is_read_before_the_next_edit()
+    {
+        File.WriteAllText(File_, InitialLayout);
+        LayoutStore unread;
+        using (new FileStream(File_, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            unread = new LayoutStore(File_);
+        }
+
+        using var store = unread;
+        store.LoadProblem.Should().NotBeNullOrEmpty();
+        store.SlotsFor(WheelMode.Tools, MediaKind.Image).Should().BeNull();
+
+        store.Update(layout => layout.With(WheelMode.Tools, MediaKind.Video, [new LayoutSlot("tool.ocr")]));
+
+        store.LoadProblem.Should().BeNull();
+        using var reloaded = new LayoutStore(File_);
+        reloaded.SlotsFor(WheelMode.Tools, MediaKind.Image)!.Single()!.Item.Should().Be("tool.compress-image");
+        reloaded.SlotsFor(WheelMode.Tools, MediaKind.Video)!.Single()!.Item.Should().Be("tool.ocr");
+    }
+
+    [Fact]
+    public void An_edit_fails_and_keeps_the_file_while_the_layout_still_cannot_be_read()
+    {
+        File.WriteAllText(File_, InitialLayout);
+        using (new FileStream(File_, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            using var store = new LayoutStore(File_);
+
+            var edit = () => store.Update(layout => layout.With(WheelMode.Tools, MediaKind.Video, [new LayoutSlot("tool.ocr")]));
+
+            edit.Should().Throw<IOException>();
+        }
+
+        File.ReadAllText(File_).Should().Be(InitialLayout);
+    }
+
+    [WindowsFact("Windows file sharing only.")]
+    public void A_layout_that_is_still_being_written_is_not_moved_aside_by_an_edit()
+    {
+        File.WriteAllText(File_, InitialLayout);
+        using var store = new LayoutStore(File_);
+        // Emptied and not written yet, by a writer that lets others read, write and rename it meanwhile.
+        using (new FileStream(File_, FileMode.Create, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete))
+        {
+            var edit = () => store.Update(layout => layout.With(WheelMode.Tools, MediaKind.Video, [new LayoutSlot("tool.ocr")]));
+
+            edit.Should().Throw<IOException>();
+            File.Exists(File_).Should().BeTrue();
+            File.Exists(File_ + ".bad").Should().BeFalse();
+        }
+    }
+
+    [Fact]
+    public void A_reload_keeps_trying_for_as_long_as_the_layout_cannot_be_opened()
+    {
+        File.WriteAllText(File_, InitialLayout);
+        var clock = new FakeTimeProvider();
+        using var store = new LayoutStore(File_, clock);
+        var previous = store.Current;
+        var editedStamp = File.GetLastWriteTimeUtc(File_).AddSeconds(2);
+        using (var held = new FileStream(File_, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            held.SetLength(0);
+            held.Write(System.Text.Encoding.UTF8.GetBytes(EditedLayout));
+            held.Flush(flushToDisk: true);
+            File.SetLastWriteTimeUtc(held.SafeFileHandle, editedStamp);
+            store.Watch();
+
+            store.Reload().Should().BeFalse();
+            for (var tries = 0; tries < 10; tries++)
+            {
+                clock.Advance(TimeSpan.FromMilliseconds(300));
+            }
+
+            store.Current.Should().BeSameAs(previous);
+            store.LoadProblem.Should().NotBeNullOrEmpty();
+        }
+
+        clock.Advance(TimeSpan.FromMilliseconds(300));
+
+        store.SlotsFor(WheelMode.Tools, MediaKind.Image)!.Single()!.Item.Should().Be("tool.ocr");
+        store.LoadProblem.Should().BeNull();
+    }
+
+    [Fact]
+    public void A_reload_leaves_a_layout_that_does_not_parse_where_it_is()
+    {
+        const string half = """{ "version": 1, "wheels": { "tools": { "image": [ """;
+        File.WriteAllText(File_, InitialLayout);
+        using var store = new LayoutStore(File_);
+        var previous = store.Current;
+        var changes = new List<WheelLayout>();
+        store.Changed += changes.Add;
+        File.WriteAllText(File_, half);
+        File.SetLastWriteTimeUtc(File_, File.GetLastWriteTimeUtc(File_).AddSeconds(2));
+
+        store.Reload().Should().BeFalse();
+
+        store.Current.Should().BeSameAs(previous);
+        store.LoadProblem.Should().NotBeNullOrEmpty();
+        changes.Should().BeEmpty();
+        File.ReadAllText(File_).Should().Be(half);
+        File.Exists(File_ + ".bad").Should().BeFalse();
+    }
+
+    [Fact]
+    public void A_reload_stops_trying_a_layout_that_does_not_parse_after_a_few_tries()
+    {
+        File.WriteAllText(File_, InitialLayout);
+        var clock = new FakeTimeProvider();
+        var time = new CountingTime(clock);
+        using var store = new LayoutStore(File_, time);
+        File.WriteAllText(File_, """{ "version": 1, "wheels": """);
+        File.SetLastWriteTimeUtc(File_, File.GetLastWriteTimeUtc(File_).AddSeconds(2));
+        store.Watch();
+
+        store.Reload().Should().BeFalse();
+        for (var tries = 0; tries < 10; tries++)
+        {
+            clock.Advance(TimeSpan.FromMilliseconds(300));
+        }
+
+        time.Armed.Should().Be(3);
+    }
+
+    [Fact]
+    public void A_layout_that_could_not_be_opened_at_startup_is_read_once_watching_starts()
+    {
+        File.WriteAllText(File_, InitialLayout);
+        var clock = new FakeTimeProvider();
+        LayoutStore unread;
+        using (new FileStream(File_, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            unread = new LayoutStore(File_, clock);
+        }
+
+        using var store = unread;
+        var changes = new List<WheelLayout>();
+        store.Changed += changes.Add;
+        store.SlotsFor(WheelMode.Tools, MediaKind.Image).Should().BeNull();
+
+        store.Watch();
+        clock.Advance(TimeSpan.FromMilliseconds(300));
+
+        store.SlotsFor(WheelMode.Tools, MediaKind.Image)!.Single()!.Item.Should().Be("tool.compress-image");
+        store.LoadProblem.Should().BeNull();
+        changes.Should().ContainSingle().Which.Should().BeSameAs(store.Current);
+    }
+
+    [Fact]
+    public void A_bad_layout_moved_aside_at_startup_is_not_announced_again_once_watching_starts()
+    {
+        File.WriteAllText(File_, """{ "version": 1, "wheels": """);
+        var clock = new FakeTimeProvider();
+        using var store = new LayoutStore(File_, clock);
+        var changes = new List<WheelLayout>();
+        store.Changed += changes.Add;
+        store.LoadProblem.Should().Contain("layout.json.bad");
+
+        store.Watch();
+        clock.Advance(TimeSpan.FromMilliseconds(300));
+
+        changes.Should().BeEmpty();
+        store.LoadProblem.Should().Contain("layout.json.bad");
+    }
+
+    [Fact]
+    public void A_bad_layout_that_cannot_be_moved_aside_is_not_replaced_by_the_next_edit()
+    {
+        const string bad = """{ "version": 1, "wheels": { "tools": { "image": [ { "item": "tool.ocr" } ] } }, "installed": [ """;
+        File.WriteAllText(File_, bad);
+        Directory.CreateDirectory(File_ + ".bad");
+        using var store = new LayoutStore(File_);
+        store.LoadProblem.Should().NotBeNullOrEmpty();
+
+        var edit = () => store.Update(layout => layout.With(WheelMode.Tools, MediaKind.Video, [new LayoutSlot("tool.trim")]));
+
+        edit.Should().Throw<IOException>();
+        File.ReadAllText(File_).Should().Be(bad);
+    }
+
+    [Fact]
     public void A_no_op_update_notifies_an_external_reload_once_without_rewriting_the_file()
     {
         File.WriteAllText(File_, InitialLayout);
@@ -126,5 +309,31 @@ public sealed class LayoutStoreFailureTests : IDisposable
         changes.Should().HaveCount(1);
         File.ReadAllText(File_).Should().Be(EditedLayout);
         File.GetLastWriteTimeUtc(File_).Should().Be(editedStamp);
+    }
+
+    /// <summary>The given clock, counting how often one of its timers is set to run.</summary>
+    private sealed class CountingTime(FakeTimeProvider clock) : TimeProvider
+    {
+        public int Armed { get; private set; }
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period) =>
+            new Counted(clock.CreateTimer(callback, state, dueTime, period), this);
+
+        private sealed class Counted(ITimer timer, CountingTime owner) : ITimer
+        {
+            public bool Change(TimeSpan dueTime, TimeSpan period)
+            {
+                if (dueTime != Timeout.InfiniteTimeSpan)
+                {
+                    owner.Armed++;
+                }
+
+                return timer.Change(dueTime, period);
+            }
+
+            public void Dispose() => timer.Dispose();
+
+            public ValueTask DisposeAsync() => timer.DisposeAsync();
+        }
     }
 }

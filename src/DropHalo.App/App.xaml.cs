@@ -297,8 +297,16 @@ public partial class App : Application
 
         foreach (var tool in snapshot.Tools.Where(t => !layout.Current.Installed.Contains(t.Id)))
         {
-            var placed = layout.Install(tool.Manifest, builtIns);
-            FileLog.Info($"layout: {tool.Id} {(placed ? "placed" : "left unplaced: its sector holds a full group")}");
+            try
+            {
+                var placed = layout.Install(tool.Manifest, builtIns);
+                FileLog.Info($"layout: {tool.Id} {(placed ? "placed" : "left unplaced: its sector holds a full group")}");
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Thrown out of a dispatcher callback this would end the app; the next read of the folder tries again.
+                FileLog.Error($"layout: could not place {tool.Id}", ex);
+            }
         }
 
         var ids = snapshot.Tools.Select(t => t.Id).ToHashSet();

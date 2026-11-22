@@ -116,6 +116,41 @@ public sealed class SettingsStoreTests : IDisposable
         new SettingsStore(File_).Current.Wheel.BackgroundOpacity.Should().Be(expected);
     }
 
+    [Theory]
+    [InlineData(0, 0, 50, 100)]
+    [InlineData(-5, 99, 50, 100)]
+    [InlineData(250, 600, 250, 600)]
+    [InlineData(60000, 60000, 5000, 5000)]
+    public void Hand_edited_key_timings_stay_in_the_supported_range(int tap, int longPress, int expectedTap, int expectedLongPress)
+    {
+        new SettingsStore(File_).Update(s => s with { Keys = s.Keys with { TapWindowMs = 1234, LongPressMs = 2345 } });
+        var json = File.ReadAllText(File_);
+        json.Should().Contain("\"tapWindowMs\": 1234").And.Contain("\"longPressMs\": 2345");
+        File.WriteAllText(File_, json.Replace("\"tapWindowMs\": 1234", $"\"tapWindowMs\": {tap}").Replace("\"longPressMs\": 2345", $"\"longPressMs\": {longPress}"));
+
+        var keys = new SettingsStore(File_).Current.Keys;
+
+        keys.TapWindowMs.Should().Be(expectedTap);
+        keys.LongPressMs.Should().Be(expectedLongPress);
+        keys.Bindings.Should().Equal(KeyBindings.Default.Bindings);
+    }
+
+    [Fact]
+    public void A_save_that_fails_changes_nothing_and_leaves_no_temp_file()
+    {
+        var store = new SettingsStore(File_);
+        var announced = 0;
+        store.Changed += _ => announced++;
+        Directory.CreateDirectory(File_); // a file cannot be renamed over a folder
+
+        var failure = Record.Exception(() => store.Update(s => s with { OnboardingDone = true }));
+
+        (failure is IOException or UnauthorizedAccessException).Should().BeTrue($"the save should fail on the file system, not with {failure}");
+        store.Current.OnboardingDone.Should().BeFalse();
+        announced.Should().Be(0);
+        Directory.GetFiles(_dir).Should().BeEmpty();
+    }
+
     [Fact]
     public void Unreadable_file_is_moved_aside_and_defaults_are_used()
     {
@@ -128,6 +163,103 @@ public sealed class SettingsStoreTests : IDisposable
         File.Exists(File_ + ".bad").Should().BeTrue();
         File.Exists(File_).Should().BeFalse();
     }
+
+    [Fact]
+    public void A_bad_file_that_cannot_be_moved_aside_fails_the_load_and_is_kept()
+    {
+        const string bad = "{ \"version\": 2, \"language\": \"German\", ";
+        File.WriteAllText(File_, bad);
+        Directory.CreateDirectory(File_ + ".bad");
+
+        var load = () => new SettingsStore(File_, _ => { });
+
+        load.Should().Throw<IOException>();
+        File.ReadAllText(File_).Should().Be(bad);
+
+        Directory.Delete(File_ + ".bad");
+        var store = new SettingsStore(File_);
+
+        store.Current.Should().Be(AppSettings.Default);
+        store.LoadProblem.Should().Contain("settings.json.bad");
+        File.ReadAllText(File_ + ".bad").Should().Be(bad);
+    }
+
+    [Fact]
+    public void A_settings_file_that_is_locked_for_a_moment_is_read_once_it_is_free()
+    {
+        SaveGermanSettings();
+        using var held = new FileStream(File_, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        var waits = 0;
+
+        var store = new SettingsStore(File_, _ =>
+        {
+            if (++waits == 2)
+            {
+                held.Dispose();
+            }
+        });
+
+        waits.Should().Be(2);
+        store.LoadProblem.Should().BeNull();
+        store.Current.Language.Should().Be(LanguageSetting.German);
+        store.Current.UpdateSource.Should().Be(UpdateSource.GitHub);
+        store.Current.Tools.Trusted.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void A_settings_file_that_stays_locked_fails_the_load_and_is_left_alone()
+    {
+        SaveGermanSettings();
+        var saved = File.ReadAllBytes(File_);
+        var waits = new List<TimeSpan>();
+        using (new FileStream(File_, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            var load = () => new SettingsStore(File_, waits.Add);
+
+            load.Should().Throw<IOException>();
+        }
+
+        waits.Select(wait => wait.TotalMilliseconds).Should().Equal(50, 100, 200, 400);
+        File.ReadAllBytes(File_).Should().Equal(saved);
+        new SettingsStore(File_).Current.Language.Should().Be(LanguageSetting.German);
+    }
+
+    [Fact]
+    public void A_settings_file_that_opens_the_first_time_or_is_missing_is_never_waited_for()
+    {
+        var waits = 0;
+
+        new SettingsStore(File_, _ => waits++).Current.Should().Be(AppSettings.Default);
+        SaveGermanSettings();
+        new SettingsStore(File_, _ => waits++).Current.Language.Should().Be(LanguageSetting.German);
+
+        waits.Should().Be(0);
+    }
+
+    [WindowsFact("Windows file sharing only.")]
+    public void A_settings_file_that_is_still_being_written_fails_the_load_and_is_not_moved_aside()
+    {
+        SaveGermanSettings();
+        var waits = 0;
+        // Emptied and not written yet, by a writer that lets others read, write and rename it meanwhile.
+        using (new FileStream(File_, FileMode.Create, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete))
+        {
+            var load = () => new SettingsStore(File_, _ => waits++);
+
+            load.Should().Throw<IOException>();
+            File.Exists(File_).Should().BeTrue();
+            File.Exists(File_ + ".bad").Should().BeFalse();
+        }
+
+        waits.Should().Be(4);
+    }
+
+    private void SaveGermanSettings() => new SettingsStore(File_).Update(s => s with
+    {
+        Language = LanguageSetting.German,
+        UpdateSource = UpdateSource.GitHub,
+        Tools = s.Tools.Trust("user.strip", "abc123"),
+    });
 
     [Fact]
     public void Switched_on_tools_round_trip_and_a_missing_section_is_empty()
@@ -243,6 +375,40 @@ public sealed class SettingsStoreTests : IDisposable
         again.For(MediaKind.Image, WheelMode.Convert).Should().Equal("webp", "png");
         again.For(MediaKind.Video, WheelMode.Tools).Should().Equal("trim");
         again.LoadProblem.Should().BeNull();
+    }
+
+    [Fact]
+    public void A_recent_file_that_could_not_be_read_at_startup_is_left_alone()
+    {
+        var path = Path.Combine(_dir, "recent.json");
+        new RecentItems(path: path).Touch(MediaKind.Image, WheelMode.Convert, "png");
+        var saved = File.ReadAllBytes(path);
+        RecentItems recent;
+        using (new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            recent = new RecentItems(path: path);
+        }
+
+        recent.LoadProblem.Should().Contain("recent.json");
+
+        recent.Touch(MediaKind.Image, WheelMode.Convert, "webp");
+
+        recent.For(MediaKind.Image, WheelMode.Convert).Should().Equal("webp");
+        File.ReadAllBytes(path).Should().Equal(saved);
+        new RecentItems(path: path).For(MediaKind.Image, WheelMode.Convert).Should().Equal("png");
+    }
+
+    [Fact]
+    public void A_recent_list_that_cannot_be_saved_is_still_kept_for_this_run()
+    {
+        var path = Path.Combine(_dir, "recent.json");
+        Directory.CreateDirectory(path); // a file cannot be renamed over a folder
+        var recent = new RecentItems(path: path);
+
+        recent.Touch(MediaKind.Image, WheelMode.Convert, "png");
+
+        recent.For(MediaKind.Image, WheelMode.Convert).Should().Equal("png");
+        Directory.GetFiles(_dir).Should().BeEmpty();
     }
 
     [Fact]

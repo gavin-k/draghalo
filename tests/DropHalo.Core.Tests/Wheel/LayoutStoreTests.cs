@@ -149,6 +149,44 @@ public sealed class LayoutStoreTests : IDisposable
     }
 
     [Fact]
+    public void A_group_whose_items_are_all_blank_is_dropped()
+    {
+        File.WriteAllText(File_, """{ "version": 1, "wheels": { "tools": { "pdf": [ { "group": { "name": { "zh": "空" }, "items": [ "", "" ] } }, { "item": "tool.split-pdf" } ] } }, "installed": [] }""");
+
+        var store = new LayoutStore(File_);
+
+        store.LoadProblem.Should().BeNull();
+        Ids(store.SlotsFor(WheelMode.Tools, MediaKind.Pdf)).Should().Equal(null, "tool.split-pdf");
+    }
+
+    [Fact]
+    public void A_slot_that_names_an_item_and_a_group_keeps_the_item()
+    {
+        File.WriteAllText(File_, """{ "version": 1, "wheels": { "tools": { "pdf": [ { "item": "tool.split-pdf", "group": { "name": { "zh": "空" }, "items": [ "tool.merge-pdf" ] } } ] } }, "installed": [] }""");
+
+        var store = new LayoutStore(File_);
+
+        var slot = store.SlotsFor(WheelMode.Tools, MediaKind.Pdf)!.Single()!;
+        slot.Item.Should().Be("tool.split-pdf");
+        slot.Group.Should().BeNull();
+    }
+
+    [Fact]
+    public void An_outside_edit_that_keeps_the_write_time_is_noticed_by_its_length()
+    {
+        File.WriteAllText(File_, """{ "version": 1, "wheels": { "tools": { "pdf": [ { "item": "tool.split-pdf" } ] } }, "installed": [] }""");
+        using var store = new LayoutStore(File_);
+        var written = File.GetLastWriteTimeUtc(File_);
+        File.WriteAllText(File_, """{ "version": 1, "wheels": { "tools": { "pdf": [ { "item": "tool.merge-pdf" }, { "item": "tool.split-pdf" } ] } }, "installed": [] }""");
+        File.SetLastWriteTimeUtc(File_, written);
+        File.GetLastWriteTimeUtc(File_).Should().Be(written);
+
+        store.Reload().Should().BeTrue();
+
+        Ids(store.SlotsFor(WheelMode.Tools, MediaKind.Pdf)).Should().Equal("tool.merge-pdf", "tool.split-pdf");
+    }
+
+    [Fact]
     public void A_file_written_with_a_utf8_bom_is_read_as_an_agent_on_Windows_PowerShell_writes_one()
     {
         File.WriteAllText(File_, """{ "version": 1, "wheels": { "tools": { "pdf": [ { "item": "tool.split-pdf" }, { "item": "tool.merge-pdf" } ] } }, "installed": [] }""", new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
