@@ -736,7 +736,7 @@ public sealed class JobQueueTests : IDisposable
         queue.WhenIdleAsync().IsCompleted.Should().BeTrue();
     }
 
-    /// <summary>Really removes what it recycles, and lets something else act while the first removal is under way.</summary>
+    /// <summary>Really removes what it recycles, and lets something else act right after the first removal.</summary>
     private sealed class DeletingFiles(Action duringFirstRecycle) : IFileOperations
     {
         private Action? _during = duringFirstRecycle;
