@@ -349,6 +349,59 @@ public sealed class FileActionsTests : IDisposable
         job.Outputs.Should().Equal(actual);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_transfer_canceled_part_way_reports_and_can_undo_what_arrived(bool copy)
+    {
+        var a = File("source/a.txt", "first");
+        var b = File("source/b.txt", "second");
+        var destination = Folder("destination");
+        var arrived = Path.Combine(destination, "a.txt");
+        _desktop.Pick = destination;
+        var files = new InterruptedFiles(arrive: 1);
+        var action = new TransferAction(copy, files, _desktop);
+        await using var queue = new JobQueue(new ConversionGraph(), new UndoLedger(files));
+
+        var job = queue.Enqueue(new([a, b], action.Id, ""), action.Label, action);
+        await files.Waiting.WaitAsync(TimeSpan.FromSeconds(30));
+        queue.Cancel(job.Id).Should().BeTrue();
+        await queue.WhenIdleAsync();
+
+        job.State.Should().Be(JobState.Done, "an item that arrived is not a job that did nothing");
+        job.Outputs.Should().Equal(arrived);
+        job.Detail.Should().Be(copy ? "已取消，1 项已复制到 destination" : "已取消，1 项已移动到 destination");
+        System.IO.File.Exists(a).Should().Be(copy);
+
+        (await queue.UndoAsync(job.Id)).Should().BeTrue();
+        System.IO.File.Exists(arrived).Should().BeFalse();
+        System.IO.File.ReadAllText(a).Should().Be("first");
+        System.IO.File.ReadAllText(b).Should().Be("second");
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_transfer_canceled_before_anything_arrived_is_canceled(bool copy)
+    {
+        var a = File("source/a.txt", "first");
+        var destination = Folder("destination");
+        _desktop.Pick = destination;
+        var files = new InterruptedFiles(arrive: 0);
+        var action = new TransferAction(copy, files, _desktop);
+        await using var queue = new JobQueue(new ConversionGraph(), new UndoLedger(files));
+
+        var job = queue.Enqueue(new([a], action.Id, ""), action.Label, action);
+        await files.Waiting.WaitAsync(TimeSpan.FromSeconds(30));
+        queue.Cancel(job.Id).Should().BeTrue();
+        await queue.WhenIdleAsync();
+
+        job.State.Should().Be(JobState.Canceled);
+        job.Outputs.Should().BeEmpty();
+        Directory.GetFileSystemEntries(destination).Should().BeEmpty();
+        System.IO.File.ReadAllText(a).Should().Be("first");
+    }
+
     [Fact]
     public async Task A_taken_name_is_skipped_when_the_policy_says_skip()
     {
@@ -523,6 +576,63 @@ public sealed class FileActionsTests : IDisposable
             }
 
             return Task.FromResult<IReadOnlyList<FileMove>>(transferred);
+        }
+    }
+
+    /// <summary>Really transfers the first items of its first call, waits to be canceled and reports what arrived; later calls run through.</summary>
+    private sealed class InterruptedFiles(int arrive) : IFileOperations
+    {
+        private readonly TaskCompletionSource _waiting = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private bool _interrupted;
+
+        /// <summary>Completes once the first items have arrived and the call waits for its cancellation.</summary>
+        public Task Waiting => _waiting.Task;
+
+        public Task RecycleAsync(IReadOnlyList<string> paths, CancellationToken cancellationToken = default)
+        {
+            foreach (var path in paths)
+            {
+                System.IO.File.Delete(path);
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<FileMove>> MoveAsync(IReadOnlyList<FileMove> moves, CancellationToken cancellationToken = default) => Transfer(moves, copy: false, cancellationToken);
+
+        public Task<IReadOnlyList<FileMove>> CopyAsync(IReadOnlyList<FileMove> copies, CancellationToken cancellationToken = default) => Transfer(copies, copy: true, cancellationToken);
+
+        private async Task<IReadOnlyList<FileMove>> Transfer(IReadOnlyList<FileMove> items, bool copy, CancellationToken cancellationToken)
+        {
+            var transferred = new List<FileMove>();
+            foreach (var item in items)
+            {
+                if (!_interrupted && transferred.Count == arrive)
+                {
+                    _interrupted = true;
+                    var canceled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    await using (cancellationToken.Register(canceled.SetResult))
+                    {
+                        _waiting.SetResult();
+                        await canceled.Task;
+                    }
+
+                    throw new PartialTransferException(transferred, cancellationToken);
+                }
+
+                if (copy)
+                {
+                    System.IO.File.Copy(item.From, item.To);
+                }
+                else
+                {
+                    System.IO.File.Move(item.From, item.To);
+                }
+
+                transferred.Add(item);
+            }
+
+            return transferred;
         }
     }
 }

@@ -36,6 +36,8 @@
   "复制路径": "Pfad kopieren",
   "工具": "Werkzeuge",
   "工具轮盘": "Werkzeugrad",
+  "已取消，{0} 项已复制到 {1}": "Abgebrochen; {0} {0|Element|Elemente} bereits nach {1} kopiert",
+  "已取消，{0} 项已移动到 {1}": "Abgebrochen; {0} {0|Element|Elemente} bereits nach {1} verschoben",
   "已复制 {0} 个路径": "{0} {0|Pfad|Pfade} kopiert",
   "已复制到 {0}": "Nach {0} kopiert",
   "已复制路径": "Pfad kopiert",
