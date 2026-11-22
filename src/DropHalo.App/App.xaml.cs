@@ -152,8 +152,11 @@ public partial class App : Application
                 winKey.Rebind(changed.Keys);
                 longPress.Rebind(changed.Keys);
                 edgeDock.Rebind(changed.Keys);
-                queueWindow.ShowKeys(changed.Keys.KeysFor(WheelMode.Convert));
-                ui.TryEnqueue(() => _wheel?.SetBackgroundOpacity(changed.Wheel.BackgroundOpacity));
+                ui.TryEnqueue(() =>
+                {
+                    queueWindow.ShowKeys(changed.Keys.KeysFor(WheelMode.Convert));
+                    _wheel?.SetBackgroundOpacity(changed.Wheel.BackgroundOpacity);
+                });
             };
             var onboarding = _onboarding = new OnboardingWindow(settings, _queue, ui, settingsWindow.Show);
             _wheel = new WheelWindow(white: commandLine.Contains("--white-wheel"));
@@ -311,10 +314,39 @@ public partial class App : Application
 
     private void Restart()
     {
-        var start = new ProcessStartInfo(Environment.ProcessPath!)
+        var executable = Environment.ProcessPath!;
+        var workDir = Path.GetTempPath();
+        if (SettingsWindow.HasPackageIdentity())
+        {
+            var appsRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "WindowsApps");
+            string? familyAlias = null;
+            try
+            {
+                familyAlias = Path.Combine(appsRoot, Windows.ApplicationModel.Package.Current.Id.FamilyName, "drophalo.exe");
+            }
+            catch (InvalidOperationException)
+            {
+            }
+
+            var globalAlias = Path.Combine(appsRoot, "drophalo.exe");
+            if (familyAlias is not null && File.Exists(familyAlias))
+            {
+                executable = familyAlias;
+            }
+            else if (File.Exists(globalAlias))
+            {
+                executable = globalAlias;
+            }
+        }
+        else if (Path.GetDirectoryName(executable) is { Length: > 0 } dir && Directory.Exists(dir))
+        {
+            workDir = dir;
+        }
+
+        var start = new ProcessStartInfo(executable)
         {
             UseShellExecute = false,
-            WorkingDirectory = AppContext.BaseDirectory,
+            WorkingDirectory = workDir,
             ArgumentList =
             {
                 "--data-dir", Path.GetFullPath(DataDir(Environment.GetCommandLineArgs())),
@@ -327,7 +359,7 @@ public partial class App : Application
         Shutdown();
     }
 
-    private void Shutdown()
+    private async void Shutdown()
     {
         if (_shuttingDown)
         {
@@ -335,26 +367,59 @@ public partial class App : Application
         }
 
         _shuttingDown = true;
-        FileLog.Info("shutting down");
-        _tray?.Dispose();
-        _controller?.Dispose();
-        _monitor?.Dispose();
-        _host?.Dispose();
-        _wheel?.Close();
-        _dock?.Close();
-        _settingsWindow?.Close();
-        _onboarding?.Close();
-        _queueWindow?.Close();
-        if (_queue is not null && !_queue.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(2)))
+        try
         {
-            FileLog.Info("a job was still running at exit");
-        }
+            FileLog.Info("shutting down");
 
-        _catalog?.Dispose();
-        _layout?.Dispose();
-        _network?.Dispose();
-        FileLog.Flush(TimeSpan.FromSeconds(1));
-        _instance?.Dispose();
-        Exit();
+            // Only Exit, below, ends the message loop. Left at its default, the last window closing would, and
+            // nothing after the await that follows would run: no drain, no flush.
+            DispatcherShutdownMode = DispatcherShutdownMode.OnExplicitShutdown;
+            _tray?.Dispose();
+            _tray = null;
+            _controller?.Dispose();
+            _monitor?.Dispose();
+            _host?.Dispose();
+
+            // Off the screen at once, but closed only after the drain: while it is awaited this thread goes on
+            // running what is queued for the windows, a cancelled job's last update among it.
+            _dock?.Withdraw();
+            _settingsWindow?.Withdraw();
+            _onboarding?.Withdraw();
+            _queueWindow?.Withdraw();
+            if (_queue is not null)
+            {
+                var drain = _queue.DisposeAsync().AsTask();
+                if (await Task.WhenAny(drain, Task.Delay(TimeSpan.FromSeconds(2))).ConfigureAwait(true) != drain)
+                {
+                    FileLog.Info("a job was still running at exit");
+                }
+            }
+
+            _wheel?.Close();
+            _dock?.Close();
+            _settingsWindow?.Close();
+            _onboarding?.Close();
+            _queueWindow?.Close();
+        }
+        catch (Exception ex)
+        {
+            FileLog.Error("error while shutting down", ex);
+        }
+        finally
+        {
+            try
+            {
+                _catalog?.Dispose();
+                _layout?.Dispose();
+                _network?.Dispose();
+                FileLog.Flush(TimeSpan.FromSeconds(1));
+                _instance?.Dispose();
+            }
+            finally
+            {
+                // Nothing else ends the message loop any more.
+                Exit();
+            }
+        }
     }
 }

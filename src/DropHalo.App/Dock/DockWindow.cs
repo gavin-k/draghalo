@@ -192,10 +192,19 @@ internal sealed class DockWindow
         };
     }
 
-    /// <summary>Set before <see cref="Close"/> so the close is not turned into a hide.</summary>
+    /// <summary>
+    /// Set once the app is quitting: the dock is not shown again and a close is not turned into a hide.
+    /// </summary>
     public bool Quitting { get; set; }
 
     public bool IsVisible => _window.AppWindow.IsVisible;
+
+    /// <summary>Takes the dock off the screen for good. It lives on until <see cref="Close"/>.</summary>
+    public void Withdraw()
+    {
+        Quitting = true;
+        Hide("quitting");
+    }
 
     public void Close()
     {
@@ -292,6 +301,7 @@ internal sealed class DockWindow
     private async void OnDrop(object sender, DragEventArgs e)
     {
         _over = false;
+        _idleGrace.Stop();
         _dropSurface.BorderBrush = Brush("DwBorderBrush");
         e.AcceptedOperation = DataPackageOperation.None;
         if (Quitting || !IsVisible || _draggingOut || !e.DataView.Contains(StandardDataFormats.StorageItems))
@@ -299,11 +309,12 @@ internal sealed class DockWindow
             return;
         }
 
-        var deferral = e.GetDeferral();
+        DragOperationDeferral? deferral = null;
         var generation = _dropGeneration;
         _pendingDrops++;
         try
         {
+            deferral = e.GetDeferral();
             var items = await e.DataView.GetStorageItemsAsync();
             if (generation != _dropGeneration)
             {
@@ -333,7 +344,7 @@ internal sealed class DockWindow
                 _pendingDrops--;
             }
 
-            deferral.Complete();
+            deferral?.Complete();
         }
 
         if (generation == _dropGeneration)

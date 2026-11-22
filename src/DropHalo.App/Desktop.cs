@@ -44,13 +44,20 @@ internal sealed class Desktop(DispatcherQueue ui) : IDesktop, IConflictPrompt
         var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var thread = new Thread(() =>
         {
-            if (Explorer.Rename(path) is { } problem)
+            try
             {
-                done.SetException(new IOException(L.T("资源管理器没能打开重命名（{0}）", problem)));
+                if (Explorer.Rename(path) is { } problem)
+                {
+                    done.TrySetException(new IOException(L.T("资源管理器没能打开重命名（{0}）", problem)));
+                }
+                else
+                {
+                    done.TrySetResult();
+                }
             }
-            else
+            catch (Exception ex)
             {
-                done.SetResult();
+                done.TrySetException(ex);
             }
         })
         { IsBackground = true, Name = "Rename" };

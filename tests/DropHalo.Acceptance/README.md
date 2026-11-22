@@ -17,12 +17,15 @@ DropHalo.Acceptance.exe app --exe C:\path\DropHalo.exe --explorer
 DropHalo.Acceptance.exe archives --exe C:\path\DropHalo.exe --iterations 30
 DropHalo.Acceptance.exe performance --exe C:\path\DropHalo.exe --iterations 100
 DropHalo.Acceptance.exe language --exe C:\path\DropHalo.exe
+DropHalo.Acceptance.exe quit --exe C:\path\DropHalo.exe
 DropHalo.Acceptance.exe dock --exe C:\path\DropHalo.exe --iterations 10
 ```
 
 `source` verifies that a window covering Explorer receives no mouse press. `archives` repeats image conversion and undo, cancellation, edge placement, subtitle conversion, and ZIP repacking using fresh files. `performance` also accepts `--reopen-explorer` and `--grouped`.
 
 `dialogs` exercises cancellation around native window creation and while the dialogs are visible. `Verify-UpdateHandoff.ps1` can run outside the interactive session. It runs the update helper against a temporary fixture and substitutes the system install and restart calls.
+
+`quit` sends `--quit` while a 200 MB ZIP is being repacked as 7z. It checks that the job is cancelled before the process ends, that only the source ZIP is left in its folder, and that the app exits with code 0 and logs no errors. The job must still be running when the app is told to quit: raise `--megabytes` on a machine that finishes it sooner. The scenario owns a unique profile and removes its test directory afterwards.
 
 `dock` alternates a four-item Explorer drop and four separate drops into the occupied dock, then clicks 全部拖出, cancels a drag, and copies the full batch to a new folder. It checks that every file and nested folder arrives, the originals stay in place, and the app remains responsive. It owns a unique profile and test directory and refuses to run while another instance is open.
 
