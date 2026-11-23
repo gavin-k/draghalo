@@ -422,4 +422,17 @@ public sealed class SettingsStoreTests : IDisposable
         recent.For(MediaKind.Image, WheelMode.Convert).Should().BeEmpty();
         recent.LoadProblem.Should().NotBeNull();
     }
+
+    [Fact]
+    public void Dock_position_round_trips_and_defaults_to_null()
+    {
+        var store = new SettingsStore(File_);
+        store.Current.DockPosition.Should().BeNull();
+
+        store.Update(s => s with { DockPosition = new(-1500, 300) });
+        new SettingsStore(File_).Current.DockPosition.Should().Be(new DockPosition(-1500, 300));
+
+        store.Update(s => s with { DockPosition = null });
+        new SettingsStore(File_).Current.DockPosition.Should().BeNull();
+    }
 }
