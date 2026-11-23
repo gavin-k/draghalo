@@ -60,6 +60,7 @@ internal sealed class DockWindow
     private int _pendingDrops;
     private bool _over;
     private bool _moving;
+    private bool _moved;
     private PointInt32 _moveFrom;
     private System.Drawing.Point _pressCursor;
     private long? _lastPressAt;
@@ -374,16 +375,29 @@ internal sealed class DockWindow
 
         _pressCursor = cursor;
         _moveFrom = _window.AppWindow.Position;
-        _moving = true;
+        (_moving, _moved) = (true, false);
     }
 
     private void OnHandleMoved(object sender, PointerRoutedEventArgs e)
     {
         // The screen position, not the event's: the window moves under the pointer.
-        if (_moving && PInvoke.GetCursorPos(out var cursor))
+        if (!_moving || !PInvoke.GetCursorPos(out var cursor))
         {
-            _window.AppWindow.Move(new PointInt32(_moveFrom.X + cursor.X - _pressCursor.X, _moveFrom.Y + cursor.Y - _pressCursor.Y));
+            return;
         }
+
+        // Inside Windows' drag rectangle around the press it is still a click: a hand's slip neither moves the dock nor
+        // saves a place, and the first click of a double-click stays a click.
+        var (dx, dy) = (cursor.X - _pressCursor.X, cursor.Y - _pressCursor.Y);
+        if (!_moved
+            && Math.Abs(dx) * 2 <= PInvoke.GetSystemMetrics(Windows.Win32.UI.WindowsAndMessaging.SYSTEM_METRICS_INDEX.SM_CXDRAG)
+            && Math.Abs(dy) * 2 <= PInvoke.GetSystemMetrics(Windows.Win32.UI.WindowsAndMessaging.SYSTEM_METRICS_INDEX.SM_CYDRAG))
+        {
+            return;
+        }
+
+        _moved = true;
+        _window.AppWindow.Move(new PointInt32(_moveFrom.X + dx, _moveFrom.Y + dy));
     }
 
     /// <summary>Pulls a moved dock back inside its monitor's work area and remembers where it was left.</summary>
@@ -395,6 +409,12 @@ internal sealed class DockWindow
         }
 
         _moving = false;
+        if (_moved && PInvoke.GetCursorPos(out var cursor))
+        {
+            // Where the pointer let go: its last moves can still be queued behind a busy UI thread.
+            _window.AppWindow.Move(new PointInt32(_moveFrom.X + cursor.X - _pressCursor.X, _moveFrom.Y + cursor.Y - _pressCursor.Y));
+        }
+
         var at = _window.AppWindow.Position;
         if ((at.X == _moveFrom.X && at.Y == _moveFrom.Y) || Area(new System.Drawing.Point(at.X, at.Y)) is not { } area)
         {

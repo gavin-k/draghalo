@@ -11,7 +11,9 @@ internal static partial class AppScenario
     /// <summary>
     /// The dock moves by its title and opens there again: dragged by the title it follows the pointer and the place
     /// it is left is saved; the next drag opens it there; double-clicking the title forgets the place and puts the
-    /// dock back against the screen edge. A file dropped on the title still lands in the dock.
+    /// dock back against the screen edge. A click on the title that slips a pixel or two is still a click: it neither
+    /// moves the dock nor saves a place, and a double-click whose first click slips still resets. A file dropped on the
+    /// title still lands in the dock.
     /// </summary>
     public static int RunDockMove(string exe)
     {
@@ -100,18 +102,39 @@ internal static partial class AppScenario
                 return checks.Report(Name);
             }
 
-            if (DockTitleCentre(checks) is not { } handle)
+            if (DockTitleCentre(checks) is not { } handle || DockRect() is not { } placed)
             {
                 return checks.Report(Name);
             }
 
+            // Let go while still 2 px off the press point: a hand's slip, not a move.
+            log.Mark();
+            Input.MoveTo(handle.X, handle.Y);
+            Thread.Sleep(150);
+            Input.LeftDown();
+            Thread.Sleep(60);
+            Input.MoveTo(handle.X + 2, handle.Y + 1);
+            Thread.Sleep(120);
+            Input.LeftUp();
+            Thread.Sleep(800);
+            var slipped = DockRect() ?? Rectangle.Empty;
+            checks.Check("a click on the title that slips 2 px neither moves the dock nor saves a new place",
+                log.Find("dock: moved to") is null && slipped == placed && SavedDockPosition(settings) == where,
+                $"{log.Find("dock: moved to") ?? "no move logged"}; window {placed.Location} -> {slipped.Location}; "
+                + $"settings dockPosition {SavedDockPosition(settings) ?? "unreadable"}, left at {where}");
+            Thread.Sleep((int)PInvoke.GetDoubleClickTime() + 200); // so the next press does not pair with this click
+
+            // The first click of the double-click slips 2 px too; the second presses where the first did.
             log.Mark();
             Input.MoveTo(handle.X, handle.Y);
             Thread.Sleep(150);
             Input.LeftDown();
             Thread.Sleep(30);
+            Input.MoveTo(handle.X + 2, handle.Y + 1);
+            Thread.Sleep(30);
             Input.LeftUp();
-            Thread.Sleep(80);
+            Input.MoveTo(handle.X, handle.Y);
+            Thread.Sleep(50);
             Input.LeftDown();
             Thread.Sleep(30);
             Input.LeftUp();
@@ -121,7 +144,7 @@ internal static partial class AppScenario
             var edge = DockRect() ?? Rectangle.Empty;
             var work = Screen.FromPoint(new Point(edge.Left + edge.Width / 2, edge.Top + edge.Height / 2)).WorkingArea;
             var atEdge = Math.Abs(edge.Left - work.Left) <= 2 || Math.Abs(edge.Right - work.Right) <= 2;
-            checks.Check("double-clicking the title forgets the place and puts the dock back against the screen edge",
+            checks.Check("double-clicking the title, the first click slipping 2 px, forgets the place and puts the dock back against the screen edge",
                 reset is not null && forgotten && atEdge && DockVisible(),
                 $"{reset ?? "no 'dock: position reset' within 3 s"}; settings dockPosition {SavedDockPosition(settings) ?? "unreadable"}; "
                 + $"window {edge}; work area {work}; {log.Find("dock: moved to") ?? "no move logged"}");

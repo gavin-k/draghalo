@@ -45,3 +45,4 @@ GetAncestor
 SetForegroundWindow
 AttachThreadInput
 GetCurrentThreadId
+GetDoubleClickTime
