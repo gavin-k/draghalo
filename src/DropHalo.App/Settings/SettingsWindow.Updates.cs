@@ -171,10 +171,19 @@ internal sealed partial class SettingsWindow
         SetUpdatePhase(UpdatePhase.Checking);
         try
         {
-            var release = await new UpdateClient(_updateHttp).CheckAsync(settings.UpdateSource, CurrentVersion, UpdateArchitecture, _packaged, settings.Privacy, token).ConfigureAwait(true);
+            var release = await new UpdateClient(_updateHttp).CheckNewestAsync(settings.UpdateSource, CurrentVersion, UpdateArchitecture, _packaged, settings.Privacy,
+                sourceFailed: (source, ex) => FileLog.Error($"update: {source} check failed", ex), token).ConfigureAwait(true);
             token.ThrowIfCancellationRequested();
             _availableUpdate = release;
-            _updateStatus.Text = release is null ? L.T("已是最新版本：{0}", CurrentVersion.ToString(3)) : L.T("发现新版本：{0}", release.Version);
+            if (release is { } fallback && fallback.Source != settings.UpdateSource)
+            {
+                FileLog.Info($"update: {settings.UpdateSource} has nothing newer or failed; offering {fallback.Version} from {fallback.Source}");
+                _updateStatus.Text = L.T("发现新版本：{0}（CNB 镜像暂时没有这个版本，这次从 GitHub 下载）", fallback.Version);
+            }
+            else
+            {
+                _updateStatus.Text = release is null ? L.T("已是最新版本：{0}", CurrentVersion.ToString(3)) : L.T("发现新版本：{0}", release.Version);
+            }
             if (!manual && release is not null)
             {
                 _updateNotify(release.Version);
