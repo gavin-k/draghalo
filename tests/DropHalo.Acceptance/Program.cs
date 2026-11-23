@@ -33,6 +33,8 @@ internal static class Program
                                                    multi-file Explorer drops, 全部拖出 cancellation and copying
           DropHalo.Acceptance dockmove --exe <DropHalo.exe>
                                                    moves the dock by its title, reopens it there, double-click resets it
+          DropHalo.Acceptance layout --exe <DropHalo.exe>
+                                                   drags sectors on the 轮盘排布 disc in Settings to swap them
           DropHalo.Acceptance --dragsource <file> --at X,Y   (internal) WinForms drag source
           DropHalo.Acceptance --locate <file>                (internal) hook-free Explorer item locator
         """;
@@ -95,6 +97,9 @@ internal static class Program
             case "dockmove" when ArgValue(args, "--exe") is { } dockMoveExe:
                 Log.Open("dockmove");
                 return AppScenario.RunDockMove(Path.GetFullPath(dockMoveExe));
+            case "layout" when ArgValue(args, "--exe") is { } layoutExe:
+                Log.Open("layout");
+                return AppScenario.RunLayoutDisc(Path.GetFullPath(layoutExe));
             case "performance" when ArgValue(args, "--exe") is { } performanceExe:
                 if (!int.TryParse(ArgValue(args, "--iterations") ?? "30", out var iterations) || iterations < 1)
                 {

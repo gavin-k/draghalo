@@ -30,6 +30,7 @@ IUIAutomationSelectionItemPattern
 IUIAutomationSelectionPattern
 IUIAutomationValuePattern
 IUIAutomationExpandCollapsePattern
+IUIAutomationScrollPattern
 GetClassName
 SendMessage
 WM_GETTEXT
