@@ -28,6 +28,7 @@
   "例如 photo.jpg 转成 PNG：{0}.png": "Exemple : photo.jpg vers PNG : {0}.png",
   "停靠栏": "Zone de dépôt",
   "停靠栏 · {0} 个文件": "Zone de dépôt · {0} {0|fichier|fichiers}",
+  "拖动这里移动停靠栏，双击回到屏幕边缘": "Faites glisser ici pour déplacer la zone de dépôt ; double-cliquez pour la remettre au bord de l’écran",
   "允许运行": "Autoriser l’exécution",
   "允许运行 {0}": "Autoriser l’exécution de {0}",
   "先移到圆心": "Allez d’abord au centre",

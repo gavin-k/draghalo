@@ -28,6 +28,7 @@
   "例如 photo.jpg 转成 PNG：{0}.png": "Por ejemplo, photo.jpg a PNG: {0}.png",
   "停靠栏": "Bandeja",
   "停靠栏 · {0} 个文件": "Bandeja · {0} {0|archivo|archivos}",
+  "拖动这里移动停靠栏，双击回到屏幕边缘": "Arrastra aquí para mover la bandeja; haz doble clic para devolverla al borde de la pantalla",
   "允许运行": "Permitir ejecución",
   "允许运行 {0}": "Permitir ejecutar {0}",
   "先移到圆心": "Ve primero al centro",

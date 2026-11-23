@@ -1,13 +1,17 @@
 using DropHalo.App.Diagnostics;
 using DropHalo.App.Styles;
 using DropHalo.Core.Input;
+using DropHalo.Core.Settings;
+using DockPosition = DropHalo.Core.Settings.DockPosition;
 using DropHalo.Shell;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Input;
 using Microsoft.UI.Text;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Graphics;
@@ -19,7 +23,8 @@ using Windows.Win32.UI.HiDpi;
 namespace DropHalo.App.Dock;
 
 /// <summary>
-/// The dock: a confirmed drag (<see cref="EdgeDock"/>) opens a strip on the opposite screen edge, where
+/// The dock: a confirmed drag (<see cref="EdgeDock"/>) opens a strip on the opposite screen edge, or where the
+/// user last dragged it by its title (<see cref="AppSettings.DockPosition"/>), where
 /// files can be dropped and left, from several folders one after another, then
 /// dragged out together or one by one: onto the wheel, into a folder, into a mail. Dropping copies
 /// nothing and moves nothing, the dock only remembers the paths; dragging out offers copy and link only,
@@ -39,11 +44,13 @@ internal sealed class DockWindow
     private readonly Window _window;
     private readonly DispatcherQueue _ui;
     private readonly Func<bool> _wheelOpen;
+    private readonly SettingsStore _settings;
     private readonly Dictionary<string, IStorageItem> _files = new(StringComparer.OrdinalIgnoreCase);
     private readonly StackPanel _rows = new() { Spacing = 8 };
     private readonly TextBlock _title = new() { FontSize = 20, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Foreground = Brush("DwTextBrush") };
     private readonly Border _empty;
     private readonly Button _clear;
+    private readonly Border _handle;
     private readonly Border _dropSurface;
     private readonly Border _all;
     private readonly DispatcherQueueTimer _idleGrace;
@@ -52,11 +59,17 @@ internal sealed class DockWindow
     private int _dropGeneration;
     private int _pendingDrops;
     private bool _over;
+    private bool _moving;
+    private PointInt32 _moveFrom;
+    private System.Drawing.Point _pressCursor;
+    private long? _lastPressAt;
+    private System.Drawing.Point _lastPress;
 
-    public DockWindow(DispatcherQueue ui, DragMonitor monitor, Func<bool> wheelOpen)
+    public DockWindow(DispatcherQueue ui, DragMonitor monitor, Func<bool> wheelOpen, SettingsStore settings)
     {
         _ui = ui;
         _wheelOpen = wheelOpen;
+        _settings = settings;
         _window = new Window { Title = L.T("DropHalo 停靠栏") };
         _window.AppWindow.SetIcon("Assets/DropHalo.ico");
         var presenter = OverlappedPresenter.Create();
@@ -129,6 +142,32 @@ internal sealed class DockWindow
         };
         Grid.SetRow(_dropSurface, 1);
 
+        // The title is the handle the dock is moved by: the window has no title bar of its own.
+        AutomationProperties.SetAutomationId(_title, "dock-title");
+        _handle = new Border
+        {
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            Child = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                Children =
+                {
+                    new FontIcon { Glyph = "\uE76F", FontSize = 16, VerticalAlignment = VerticalAlignment.Center, Foreground = Brush("DwText3Brush") },
+                    _title,
+                },
+            },
+        };
+        ToolTipService.SetToolTip(_handle, L.T("拖动这里移动停靠栏，双击回到屏幕边缘"));
+        _handle.PointerPressed += OnHandlePressed;
+        _handle.PointerMoved += OnHandleMoved;
+        _handle.PointerReleased += (_, e) =>
+        {
+            _handle.ReleasePointerCapture(e.Pointer);
+            EndMove();
+        };
+        _handle.PointerCaptureLost += (_, _) => EndMove();
+
         var root = new Grid
         {
             Padding = new Thickness(18),
@@ -146,7 +185,7 @@ internal sealed class DockWindow
                 new Grid
                 {
                     ColumnDefinitions = { new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }, new ColumnDefinition { Width = GridLength.Auto } },
-                    Children = { _title, clear },
+                    Children = { _handle, clear },
                 },
                 _dropSurface,
                 footer,
@@ -216,8 +255,9 @@ internal sealed class DockWindow
 
     /// <summary>
     /// A drag requests <paramref name="side"/> at <paramref name="x"/>, <paramref name="y"/> (physical pixels):
-    /// shows the dock along that edge of the work area, centred on the pointer. Not while the wheel is open,
-    /// whose drop target covers the screen, nor when the dock is already up.
+    /// shows the dock where the user last left it, else along that edge of the work area, centred on the pointer.
+    /// A saved position the pointer would be over gives way to the edge, as the dock would catch the drag there.
+    /// Not while the wheel is open, whose drop target covers the screen, nor when the dock is already up.
     /// </summary>
     private void Open(DockSide side, int x, int y)
     {
@@ -227,21 +267,52 @@ internal sealed class DockWindow
             return;
         }
 
-        var monitor = PInvoke.MonitorFromPoint(new System.Drawing.Point(x, y), MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST);
-        var scale = PInvoke.GetDpiForMonitor(monitor, MONITOR_DPI_TYPE.MDT_EFFECTIVE_DPI, out var dpi, out _).Succeeded ? dpi / 96.0 : 1.0;
-        var info = new MONITORINFO { cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<MONITORINFO>() };
-        if (!PInvoke.GetMonitorInfo(monitor, ref info))
+        var pointer = new System.Drawing.Point(x, y);
+        if (_settings.Current.DockPosition is { } saved && Area(new System.Drawing.Point(saved.Left, saved.Top)) is { } there
+            && saved.Place(there.Dock, there.Work, pointer) is { } placed)
+        {
+            _window.AppWindow.MoveAndResize(new RectInt32(placed.X, placed.Y, there.Dock.Width, there.Dock.Height));
+            _window.AppWindow.Show(activateWindow: false);
+            FileLog.Info($"dock: shown at the saved position, {placed.X},{placed.Y} {there.Dock.Width}x{there.Dock.Height} (pointer {x},{y})");
+            return;
+        }
+
+        if (Area(pointer) is not { } area)
         {
             return;
         }
 
-        var work = info.rcWork;
-        var (w, h) = (Math.Min((int)Math.Round(Width * scale), work.right - work.left), Math.Min((int)Math.Round(Height * scale), work.bottom - work.top));
-        var left = side == DockSide.Left ? work.left : work.right - w;
-        var top = Math.Clamp(y - h / 2, work.top, work.bottom - h);
-        _window.AppWindow.MoveAndResize(new RectInt32(left, top, w, h));
+        var rect = EdgeRect(side, y, area);
+        _window.AppWindow.MoveAndResize(rect);
         _window.AppWindow.Show(activateWindow: false);
-        FileLog.Info($"dock: shown at the {(side == DockSide.Left ? "left" : "right")} edge, {left},{top} {w}x{h} (pointer {x},{y})");
+        FileLog.Info($"dock: shown at the {(side == DockSide.Left ? "left" : "right")} edge, {rect.X},{rect.Y} {rect.Width}x{rect.Height} (pointer {x},{y})");
+    }
+
+    /// <summary>
+    /// The dock's size on the monitor nearest <paramref name="point"/> and that monitor's work area, in physical
+    /// pixels; null when Windows cannot say.
+    /// </summary>
+    private static MonitorArea? Area(System.Drawing.Point point)
+    {
+        var monitor = PInvoke.MonitorFromPoint(point, MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST);
+        var scale = PInvoke.GetDpiForMonitor(monitor, MONITOR_DPI_TYPE.MDT_EFFECTIVE_DPI, out var dpi, out _).Succeeded ? dpi / 96.0 : 1.0;
+        var info = new MONITORINFO { cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<MONITORINFO>() };
+        if (!PInvoke.GetMonitorInfo(monitor, ref info))
+        {
+            return null;
+        }
+
+        var work = System.Drawing.Rectangle.FromLTRB(info.rcWork.left, info.rcWork.top, info.rcWork.right, info.rcWork.bottom);
+        return new MonitorArea(new(Math.Min((int)Math.Round(Width * scale), work.Width), Math.Min((int)Math.Round(Height * scale), work.Height)), work);
+    }
+
+    /// <summary>The dock against <paramref name="side"/> of <paramref name="area"/>, centred on <paramref name="y"/> as far as it fits.</summary>
+    private static RectInt32 EdgeRect(DockSide side, int y, MonitorArea area)
+    {
+        var (w, h) = (area.Dock.Width, area.Dock.Height);
+        var left = side == DockSide.Left ? area.Work.Left : area.Work.Right - w;
+        var top = Math.Clamp(y - h / 2, area.Work.Top, area.Work.Bottom - h);
+        return new RectInt32(left, top, w, h);
     }
 
     private void DragEnded()
@@ -271,6 +342,99 @@ internal sealed class DockWindow
     {
         _dropGeneration++;
         _pendingDrops = 0;
+    }
+
+    // ---- moving the dock by its title ---------------------------------------------------------------
+
+    private void OnHandlePressed(object sender, PointerRoutedEventArgs e)
+    {
+        var point = e.GetCurrentPoint(_handle);
+        var pressed = e.Pointer.PointerDeviceType == PointerDeviceType.Mouse ? point.Properties.IsLeftButtonPressed : point.IsInContact;
+        if (!pressed || !PInvoke.GetCursorPos(out var cursor))
+        {
+            return;
+        }
+
+        // A double-click by Windows' own rules: DoubleTapped did not fire on this captured handle.
+        var now = Environment.TickCount64;
+        if (now - _lastPressAt <= PInvoke.GetDoubleClickTime()
+            && Math.Abs(cursor.X - _lastPress.X) * 2 <= PInvoke.GetSystemMetrics(Windows.Win32.UI.WindowsAndMessaging.SYSTEM_METRICS_INDEX.SM_CXDOUBLECLK)
+            && Math.Abs(cursor.Y - _lastPress.Y) * 2 <= PInvoke.GetSystemMetrics(Windows.Win32.UI.WindowsAndMessaging.SYSTEM_METRICS_INDEX.SM_CYDOUBLECLK))
+        {
+            _lastPressAt = null;
+            ResetPosition();
+            return;
+        }
+
+        (_lastPressAt, _lastPress) = (now, cursor);
+        if (!_handle.CapturePointer(e.Pointer))
+        {
+            return;
+        }
+
+        _pressCursor = cursor;
+        _moveFrom = _window.AppWindow.Position;
+        _moving = true;
+    }
+
+    private void OnHandleMoved(object sender, PointerRoutedEventArgs e)
+    {
+        // The screen position, not the event's: the window moves under the pointer.
+        if (_moving && PInvoke.GetCursorPos(out var cursor))
+        {
+            _window.AppWindow.Move(new PointInt32(_moveFrom.X + cursor.X - _pressCursor.X, _moveFrom.Y + cursor.Y - _pressCursor.Y));
+        }
+    }
+
+    /// <summary>Pulls a moved dock back inside its monitor's work area and remembers where it was left.</summary>
+    private void EndMove()
+    {
+        if (!_moving)
+        {
+            return;
+        }
+
+        _moving = false;
+        var at = _window.AppWindow.Position;
+        if ((at.X == _moveFrom.X && at.Y == _moveFrom.Y) || Area(new System.Drawing.Point(at.X, at.Y)) is not { } area)
+        {
+            return;
+        }
+
+        _lastPressAt = null;
+
+        var placed = new DockPosition(at.X, at.Y).Place(area.Dock, area.Work, new System.Drawing.Point(int.MinValue, int.MinValue))
+            ?? new System.Drawing.Point(at.X, at.Y);
+        _window.AppWindow.MoveAndResize(new RectInt32(placed.X, placed.Y, area.Dock.Width, area.Dock.Height));
+        SavePosition(new DockPosition(placed.X, placed.Y));
+        FileLog.Info($"dock: moved to {placed.X},{placed.Y}");
+    }
+
+    /// <summary>Forgets the saved position and puts the dock against the screen edge nearer its middle.</summary>
+    private void ResetPosition()
+    {
+        _moving = false;
+        SavePosition(null);
+        FileLog.Info("dock: position reset");
+        var (at, size) = (_window.AppWindow.Position, _window.AppWindow.Size);
+        var middle = new System.Drawing.Point(at.X + size.Width / 2, at.Y + size.Height / 2);
+        if (Area(middle) is { } area)
+        {
+            var side = middle.X < area.Work.Left + area.Work.Width / 2 ? DockSide.Left : DockSide.Right;
+            _window.AppWindow.MoveAndResize(EdgeRect(side, middle.Y, area));
+        }
+    }
+
+    private void SavePosition(DockPosition? position)
+    {
+        try
+        {
+            _settings.Update(s => s with { DockPosition = position });
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            FileLog.Error("dock: could not save where it was left", ex);
+        }
     }
 
     // ---- drops onto the dock ------------------------------------------------------------------------
@@ -488,4 +652,7 @@ internal sealed class DockWindow
     }
 
     private static Brush Brush(string key) => AppStyles.Brush(key);
+
+    /// <summary>The dock's size on a monitor and that monitor's work area, in physical pixels.</summary>
+    private readonly record struct MonitorArea(System.Drawing.Size Dock, System.Drawing.Rectangle Work);
 }

@@ -33,6 +33,10 @@ GetSystemMetrics
 VIRTUAL_KEY
 GetDpiForWindow
 
+// The dock (Dock/DockWindow.cs) moved by its title: the window moves under the pointer
+GetCursorPos
+GetDoubleClickTime
+
 // The wheel's frame check (Overlay/ScreenCopy.cs): copy its part of the screen with GDI
 CreateCompatibleDC
 DeleteDC

@@ -10,14 +10,14 @@ public sealed record DockPosition(int Left, int Top)
 {
     /// <summary>
     /// The top-left for a <paramref name="dock"/>-sized dock on a monitor whose work area is <paramref name="work"/>:
-    /// this position moved just far enough for the dock to lie inside it. Null when <paramref name="pointer"/> would
+    /// this position moved just far enough for the dock to lie inside it. Null when <paramref name="cursor"/> would
     /// then be over the dock, where it would catch the drag that is opening it; the dock goes to the edge instead.
     /// </summary>
-    public Point? Place(Size dock, Rectangle work, Point pointer)
+    public Point? Place(Size dock, Rectangle work, Point cursor)
     {
         var placed = new Point(
             Math.Clamp(Left, work.Left, Math.Max(work.Left, work.Right - dock.Width)),
             Math.Clamp(Top, work.Top, Math.Max(work.Top, work.Bottom - dock.Height)));
-        return new Rectangle(placed, dock).Contains(pointer) ? null : placed;
+        return new Rectangle(placed, dock).Contains(cursor) ? null : placed;
     }
 }

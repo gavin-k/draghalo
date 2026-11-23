@@ -28,6 +28,7 @@
   "例如 photo.jpg 转成 PNG：{0}.png": "For example, photo.jpg to PNG: {0}.png",
   "停靠栏": "Dock",
   "停靠栏 · {0} 个文件": "Dock · {0} {0|file|files}",
+  "拖动这里移动停靠栏，双击回到屏幕边缘": "Drag here to move the dock; double-click to put it back at the screen edge",
   "允许运行": "Allow to run",
   "允许运行 {0}": "Allow {0} to run",
   "先移到圆心": "Move to the center first",
