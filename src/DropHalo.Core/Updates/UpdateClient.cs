@@ -88,7 +88,9 @@ public sealed partial class UpdateClient(HttpClient http)
     /// <summary>
     /// The check Settings runs. With <paramref name="preferred"/> GitHub only GitHub is asked. With CNB, GitHub is asked
     /// too, within <paramref name="fallbackBudget"/> (10 s by default), so a mirror that lags or fails cannot hide a
-    /// release: the newer of the two is offered, CNB's on a tie. A source that fails is reported to
+    /// release: CNB's update is offered whenever CNB has one, GitHub's only when CNB has nothing newer or failed. GitHub's
+    /// downloads may not reach a CNB user, so an update CNB can deliver is never traded for a newer one it might not; a
+    /// mirror two releases behind takes two updates to catch up. A source that fails is reported to
     /// <paramref name="sourceFailed"/> and left out; when both fail, CNB's error is thrown. Cancelling
     /// <paramref name="cancellationToken"/> cancels the whole check and is never treated as a source failure.
     /// </summary>
@@ -124,7 +126,7 @@ public sealed partial class UpdateClient(HttpClient http)
             ExceptionDispatchInfo.Throw(cnbError);
         }
 
-        return gitHub is not null && (cnb is null || Version.Parse(gitHub.Version) > Version.Parse(cnb.Version)) ? gitHub : cnb;
+        return cnb ?? gitHub;
 
         async Task<(UpdateRelease? Release, Exception? Error)> Attempt(UpdateSource source, CancellationToken token)
         {

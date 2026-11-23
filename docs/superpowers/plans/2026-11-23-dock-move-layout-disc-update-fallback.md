@@ -10,7 +10,7 @@
 
 **Spec:** No separate spec file. The decisions taken with the user on 2026-11-23 are listed below and in Global Constraints.
 - The dock is moved by dragging its header. Its position is saved in settings.json and reused on every showing, pulled back inside the work area when monitors or resolution changed.
-- Update fallback: CNB stays the default. When CNB is the preferred source, GitHub is also asked, and the newer release wins. GitHub-preferred users never contact cnb.cool.
+- Update fallback: CNB stays the default. When CNB is the preferred source, GitHub is also asked, and the newer release wins. GitHub-preferred users never contact cnb.cool. (Changed at final review: CNB's update wins whenever CNB has one, GitHub's only when CNB has nothing newer or failed; the lines below that say the newer release wins describe the rule before that change. See `fix(updates): keep CNB's update when GitHub has a newer one`.)
 - The disc covers the Tools wheel (per file type) and the Actions wheel, with the same selectors as today; the Convert wheel is out of scope. Dropping a sector on another swaps them, and the button rows stay.
 
 ## Global Constraints

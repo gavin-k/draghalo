@@ -123,15 +123,24 @@ public sealed class UpdateClientTests
     }
 
 
-    [Theory]
-    [InlineData("0.1.5")]
-    [InlineData("0.1.6")]
-    public async Task CnbBehindGitHubOffersGitHub(string current)
+    [Fact]
+    public async Task CnbBehindGitHubOffersGitHub()
     {
+        // The mirror lags: its latest is what is installed, GitHub has a newer release.
         using var handler = new Responses { CnbTag = "v0.1.6", GitHubTag = "v0.1.7" };
         using var http = new HttpClient(handler);
-        var release = await new UpdateClient(http).CheckNewestAsync(UpdateSource.Cnb, Version.Parse(current), "x64", false, new(), null, default);
+        var release = await new UpdateClient(http).CheckNewestAsync(UpdateSource.Cnb, new(0, 1, 6), "x64", false, new(), null, default);
         release.Should().Be(new UpdateRelease(UpdateSource.GitHub, "0.1.7", "DropHalo-0.1.7-x64.msi", Package.Length, Sha256));
+    }
+
+    [Fact]
+    public async Task CnbsOwnUpdateIsOfferedEvenWhenGitHubIsNewer()
+    {
+        // GitHub's downloads may not reach a CNB user, so an update CNB can deliver is never traded for a newer one it cannot.
+        using var handler = new Responses { CnbTag = "v0.1.6", GitHubTag = "v0.1.7" };
+        using var http = new HttpClient(handler);
+        var release = await new UpdateClient(http).CheckNewestAsync(UpdateSource.Cnb, new(0, 1, 5), "x64", false, new(), null, default);
+        release.Should().Be(new UpdateRelease(UpdateSource.Cnb, "0.1.6", "DropHalo-0.1.6-x64.msi", Package.Length, Sha256));
     }
 
     [Fact]
