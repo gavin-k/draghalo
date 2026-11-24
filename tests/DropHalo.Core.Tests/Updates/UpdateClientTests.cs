@@ -122,27 +122,169 @@ public sealed class UpdateClientTests
         finally { if (Directory.Exists(dir)) { Directory.Delete(dir, true); } }
     }
 
+
+    [Fact]
+    public async Task CnbBehindGitHubOffersGitHub()
+    {
+        // The mirror lags: its latest is what is installed, GitHub has a newer release.
+        using var handler = new Responses { CnbTag = "v0.1.6", GitHubTag = "v0.1.7" };
+        using var http = new HttpClient(handler);
+        var release = await new UpdateClient(http).CheckNewestAsync(UpdateSource.Cnb, new(0, 1, 6), "x64", false, new(), null, default);
+        release.Should().Be(new UpdateRelease(UpdateSource.GitHub, "0.1.7", "DropHalo-0.1.7-x64.msi", Package.Length, Sha256));
+    }
+
+    [Fact]
+    public async Task CnbsOwnUpdateIsOfferedEvenWhenGitHubIsNewer()
+    {
+        // GitHub's downloads may not reach a CNB user, so an update CNB can deliver is never traded for a newer one it cannot.
+        using var handler = new Responses { CnbTag = "v0.1.6", GitHubTag = "v0.1.7" };
+        using var http = new HttpClient(handler);
+        var release = await new UpdateClient(http).CheckNewestAsync(UpdateSource.Cnb, new(0, 1, 5), "x64", false, new(), null, default);
+        release.Should().Be(new UpdateRelease(UpdateSource.Cnb, "0.1.6", "DropHalo-0.1.6-x64.msi", Package.Length, Sha256));
+    }
+
+    [Fact]
+    public async Task EqualReleasesPreferCnb()
+    {
+        using var handler = new Responses { Tag = "v0.1.7" };
+        using var http = new HttpClient(handler);
+        var release = await new UpdateClient(http).CheckNewestAsync(UpdateSource.Cnb, new(0, 1, 5), "x64", false, new(), null, default);
+        release!.Source.Should().Be(UpdateSource.Cnb);
+        release.Version.Should().Be("0.1.7");
+    }
+
+    [Fact]
+    public async Task CnbFailureFallsBackToGitHub()
+    {
+        using var handler = new Responses { Fail = "cnb.cool" };
+        using var http = new HttpClient(handler);
+        var failed = new List<UpdateSource>();
+        var release = await new UpdateClient(http).CheckNewestAsync(UpdateSource.Cnb, new(0, 1, 5), "x64", false, new(),
+            (source, _) => { lock (failed) { failed.Add(source); } }, default);
+        release!.Source.Should().Be(UpdateSource.GitHub);
+        failed.Should().Equal(UpdateSource.Cnb);
+    }
+
+    [Fact]
+    public async Task GitHubFailureKeepsCnbAndReportsIt()
+    {
+        using var handler = new Responses { Fail = "api.github.com" };
+        using var http = new HttpClient(handler);
+        var failed = new List<UpdateSource>();
+        var release = await new UpdateClient(http).CheckNewestAsync(UpdateSource.Cnb, new(0, 1, 5), "x64", false, new(),
+            (source, _) => { lock (failed) { failed.Add(source); } }, default);
+        release!.Source.Should().Be(UpdateSource.Cnb);
+        failed.Should().Equal(UpdateSource.GitHub);
+    }
+
+    [Fact]
+    public async Task BothFailingThrowsCnbsError()
+    {
+        // CNB answers 500 (HttpRequestException), GitHub serves a malformed tag (InvalidDataException): CNB's error wins.
+        using var handler = new Responses { Fail = "cnb.cool", GitHubTag = "v0.1.7\n" };
+        using var http = new HttpClient(handler);
+        var failed = new List<UpdateSource>();
+        var check = () => new UpdateClient(http).CheckNewestAsync(UpdateSource.Cnb, new(0, 1, 5), "x64", false, new(),
+            (source, _) => { lock (failed) { failed.Add(source); } }, default);
+        await check.Should().ThrowAsync<HttpRequestException>();
+        failed.Should().BeEquivalentTo([UpdateSource.Cnb, UpdateSource.GitHub]);
+        handler.Urls.Select(u => u.Host).Should().Contain("cnb.cool").And.Contain("api.github.com");
+    }
+
+    [Fact]
+    public async Task GitHubPreferenceNeverAsksCnb()
+    {
+        using var handler = new Responses { Fail = "cnb.cool" };
+        using var http = new HttpClient(handler);
+        var release = await new UpdateClient(http).CheckNewestAsync(UpdateSource.GitHub, new(0, 1, 5), "x64", false, new(), null, default);
+        release!.Source.Should().Be(UpdateSource.GitHub);
+        handler.Urls.Should().NotContain(u => u.Host.EndsWith("cnb.cool", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task SlowGitHubDoesNotHoldBackTheCnbAnswer()
+    {
+        using var handler = new Responses { Hang = "api.github.com" };
+        using var http = new HttpClient(handler);
+        var failed = new List<UpdateSource>();
+        var release = await new UpdateClient(http).CheckNewestAsync(UpdateSource.Cnb, new(0, 1, 5), "x64", false, new(),
+            (source, _) => { lock (failed) { failed.Add(source); } }, default, TimeSpan.FromMilliseconds(200))
+            .WaitAsync(TimeSpan.FromSeconds(5));
+        release!.Source.Should().Be(UpdateSource.Cnb);
+        failed.Should().Equal(UpdateSource.GitHub);
+    }
+
+    [Fact]
+    public async Task CallerCancellationIsNotAFallback()
+    {
+        // GitHub answers at once while CNB hangs: cancelling must not turn into "offer GitHub's release".
+        using var handler = new Responses { Hang = "cnb.cool" };
+        using var http = new HttpClient(handler);
+        using var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+        var failed = new List<UpdateSource>();
+        var check = () => new UpdateClient(http).CheckNewestAsync(UpdateSource.Cnb, new(0, 1, 5), "x64", false, new(),
+            (source, _) => { lock (failed) { failed.Add(source); } }, cancel.Token);
+        await check.Should().ThrowAsync<OperationCanceledException>();
+        failed.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(UpdateSource.Cnb)]
+    [InlineData(UpdateSource.GitHub)]
+    public async Task StrictOfflineMakesNoRequestForTheCombinedCheck(UpdateSource preferred)
+    {
+        using var handler = new Responses();
+        using var http = new HttpClient(handler);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => new UpdateClient(http).CheckNewestAsync(preferred, new(0, 1, 5), "x64", false, new(StrictOffline: true), null, default));
+        handler.Urls.Should().BeEmpty();
+    }
+
     private sealed class Responses(string architecture = "x64", string extension = ".msi") : HttpMessageHandler
     {
         public List<Uri> Urls { get; } = [];
         public string Tag { get; init; } = "v0.1.6";
+        public string? CnbTag { get; init; }
+        public string? GitHubTag { get; init; }
         public bool Prerelease { get; init; }
         public string? Redirect { get; init; }
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+
+        /// <summary>A host that answers 500.</summary>
+        public string? Fail { get; init; }
+
+        /// <summary>A host that never answers until the request is cancelled.</summary>
+        public string? Hang { get; init; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            Urls.Add(request.RequestUri!);
-            if (Redirect is not null)
+            var uri = request.RequestUri!;
+            lock (Urls)
             {
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Found) { Headers = { Location = new Uri(Redirect) } });
+                Urls.Add(uri);
             }
 
-            var name = $"DropHalo-0.1.6-{architecture}{extension}";
-            var path = request.RequestUri!.AbsolutePath;
+            if (Redirect is not null)
+            {
+                return new HttpResponseMessage(HttpStatusCode.Found) { Headers = { Location = new Uri(Redirect) } };
+            }
+
+            if (uri.Host == Hang)
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            }
+
+            if (uri.Host == Fail)
+            {
+                return new HttpResponseMessage(HttpStatusCode.InternalServerError);
+            }
+
+            var tag = uri.Host == "cnb.cool" ? CnbTag ?? Tag : GitHubTag ?? Tag;
+            var name = $"DropHalo-{tag[1..]}-{architecture}{extension}";
+            var path = uri.AbsolutePath;
             HttpContent content = path.EndsWith("latest", StringComparison.Ordinal) || path.EndsWith("latest.json", StringComparison.Ordinal)
-                ? new StringContent(JsonSerializer.Serialize(new { tag_name = Tag, prerelease = Prerelease, draft = false, assets = new[] { new { name, size = Package.Length }, new { name = "SHA256SUMS.txt", size = 100 } } }))
+                ? new StringContent(JsonSerializer.Serialize(new { tag_name = tag, prerelease = Prerelease, draft = false, assets = new[] { new { name, size = Package.Length }, new { name = "SHA256SUMS.txt", size = 100 } } }))
                 : path.EndsWith("SHA256SUMS.txt", StringComparison.Ordinal) ? new StringContent($"{Sha256}  {name}\n", Encoding.UTF8)
                 : new ByteArrayContent(Package);
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content });
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
         }
     }
 }

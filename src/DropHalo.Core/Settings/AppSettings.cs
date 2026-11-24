@@ -63,6 +63,9 @@ public sealed record AppSettings
 
     public WheelSettings Wheel { get; init; } = new();
 
+    /// <summary>Where the user dragged the dock to; null opens it at the screen edge the drag suggests.</summary>
+    public DockPosition? DockPosition { get; init; }
+
     /// <summary>The first-run guide has been shown (finished or skipped).</summary>
     public bool OnboardingDone { get; init; }
 

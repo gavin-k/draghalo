@@ -30,6 +30,7 @@ IUIAutomationSelectionItemPattern
 IUIAutomationSelectionPattern
 IUIAutomationValuePattern
 IUIAutomationExpandCollapsePattern
+IUIAutomationScrollPattern
 GetClassName
 SendMessage
 WM_GETTEXT
@@ -44,3 +45,4 @@ GetAncestor
 SetForegroundWindow
 AttachThreadInput
 GetCurrentThreadId
+GetDoubleClickTime

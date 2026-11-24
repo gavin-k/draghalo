@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -82,6 +83,66 @@ public sealed partial class UpdateClient(HttpClient http)
         }
 
         return new(source, version.ToString(), file, size, hashes[0][0].ToUpperInvariant());
+    }
+
+    /// <summary>
+    /// The check Settings runs. With <paramref name="preferred"/> GitHub only GitHub is asked. With CNB, GitHub is asked
+    /// too, within <paramref name="fallbackBudget"/> (10 s by default), so a mirror that lags or fails cannot hide a
+    /// release: CNB's update is offered whenever CNB has one, GitHub's only when CNB has nothing newer or failed. GitHub's
+    /// downloads may not reach a CNB user, so an update CNB can deliver is never traded for a newer one it might not; a
+    /// mirror two releases behind takes two updates to catch up. A source that fails is reported to
+    /// <paramref name="sourceFailed"/> and left out; when both fail, CNB's error is thrown. Cancelling
+    /// <paramref name="cancellationToken"/> cancels the whole check and is never treated as a source failure.
+    /// </summary>
+    public async Task<UpdateRelease?> CheckNewestAsync(UpdateSource preferred, Version current, string architecture, bool packaged,
+        PrivacySettings privacy, Action<UpdateSource, Exception>? sourceFailed, CancellationToken cancellationToken,
+        TimeSpan? fallbackBudget = null)
+    {
+        Offline(privacy);
+        if (preferred != UpdateSource.Cnb)
+        {
+            return await CheckAsync(preferred, current, architecture, packaged, privacy, cancellationToken).ConfigureAwait(false);
+        }
+
+        using var gitHubBudget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        gitHubBudget.CancelAfter(fallbackBudget ?? TimeSpan.FromSeconds(10));
+        var cnbCheck = Attempt(UpdateSource.Cnb, cancellationToken);
+        var gitHubCheck = Attempt(UpdateSource.GitHub, gitHubBudget.Token);
+        await Task.WhenAll(cnbCheck, gitHubCheck).ConfigureAwait(false);
+        var (cnb, cnbError) = await cnbCheck.ConfigureAwait(false);
+        var (gitHub, gitHubError) = await gitHubCheck.ConfigureAwait(false);
+        if (cnbError is not null)
+        {
+            sourceFailed?.Invoke(UpdateSource.Cnb, cnbError);
+        }
+
+        if (gitHubError is not null)
+        {
+            sourceFailed?.Invoke(UpdateSource.GitHub, gitHubError);
+        }
+
+        if (cnbError is not null && gitHubError is not null)
+        {
+            ExceptionDispatchInfo.Throw(cnbError);
+        }
+
+        return cnb ?? gitHub;
+
+        async Task<(UpdateRelease? Release, Exception? Error)> Attempt(UpdateSource source, CancellationToken token)
+        {
+            try
+            {
+                return (await CheckAsync(source, current, architecture, packaged, privacy, token).ConfigureAwait(false), null);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                return (null, ex);
+            }
+        }
     }
 
     public async Task DownloadAsync(UpdateRelease release, string path, PrivacySettings privacy, IProgress<double>? progress,

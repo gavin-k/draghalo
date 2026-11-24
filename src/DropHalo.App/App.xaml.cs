@@ -162,7 +162,7 @@ public partial class App : Application
             _wheel = new WheelWindow(white: commandLine.Contains("--white-wheel"));
             _wheel.SetBackgroundOpacity(settings.Current.Wheel.BackgroundOpacity);
             var controller = _controller = new WheelController(ui, _monitor, _host, _wheel, builder, _queue, recent, settings, tapper, longPress, typeAhead, layout);
-            _dock = new DockWindow(ui, _monitor, () => controller.IsOpen);
+            _dock = new DockWindow(ui, _monitor, () => controller.IsOpen, settings);
 
             _host.Start();
             _monitor.Start();

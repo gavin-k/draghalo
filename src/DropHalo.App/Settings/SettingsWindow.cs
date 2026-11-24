@@ -89,6 +89,7 @@ internal sealed partial class SettingsWindow
     private readonly ComboBox _layoutWheel = new() { Header = L.T("轮盘"), MinWidth = 120 };
     private readonly ComboBox _layoutKind = new() { Header = L.T("文件类型"), MinWidth = 140 };
     private readonly StackPanel _layoutRows = new() { Spacing = 4 };
+    private readonly LayoutDisc _layoutDisc = new();
     private readonly ComboBox _layoutUnplaced = new() { Header = L.T("没放上的"), MinWidth = 180 };
     private readonly ComboBox _layoutSector = new() { Header = L.T("放到扇区"), MinWidth = 100 };
     private readonly TextBlock _layoutNote = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.75, Visibility = Visibility.Collapsed };
@@ -280,6 +281,11 @@ internal sealed partial class SettingsWindow
         _layoutSector.SelectedIndex = 0;
         _layoutWheel.SelectionChanged += (_, _) => ShowLayout();
         _layoutKind.SelectionChanged += (_, _) => ShowLayout();
+        _layoutDisc.Moved += (from, to) =>
+        {
+            var (mode, kind, operations) = (LayoutMode, LayoutKind, Operations());
+            EditLayout(l => l.Swap(mode, kind, operations, from, to));
+        };
         var put = new Button { Content = L.T("放入"), VerticalAlignment = VerticalAlignment.Bottom };
         put.Click += (_, _) => PutUnplaced();
         var reset = new Button { Content = L.T("恢复默认") };
@@ -288,6 +294,8 @@ internal sealed partial class SettingsWindow
         AutomationProperties.SetName(reset, "layout-reset");
         page.Children.Add(Section(L.T("轮盘排布"), L.T("工具轮盘按文件类型各有六格，动作轮盘一套六格。这里改每格放什么：放到已经有东西的格子上就折成一个分组，拖文件时停在分组扇区上会展开外环。也可以让 AI 助手直接改 layout.json。"),
             new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { _layoutWheel, _layoutKind } },
+            _layoutDisc.View,
+            new TextBlock { Text = L.T("拖动扇区可以互换位置；用键盘时请用下面的上移、下移。"), TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.75 },
             _layoutRows,
             new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { _layoutUnplaced, _layoutSector, put } },
             _layoutNote,
@@ -532,6 +540,14 @@ internal sealed partial class SettingsWindow
         {
             _layoutRows.Children.Add(LayoutRow(mode, kind, operations, slots, i));
         }
+
+        string Label(string id) => operations.FirstOrDefault(o => o.Id == id)?.Label ?? id;
+        _layoutDisc.Show([.. slots.Take(WheelModel.SlotCount).Select(slot => slot switch
+        {
+            { Group: { } group } => new DiscSector(group.Name.Pick(), IsGroup: true, IsEmpty: false),
+            { Item: { } item } => new DiscSector(Label(item), IsGroup: false, IsEmpty: false),
+            _ => new DiscSector("", IsGroup: false, IsEmpty: true),
+        })]);
 
         static IEnumerable<string> IdsOf(LayoutSlot? slot) => slot switch
         {
