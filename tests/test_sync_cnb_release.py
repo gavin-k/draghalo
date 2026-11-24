@@ -1,4 +1,5 @@
 import copy
+from datetime import datetime, timezone
 import hashlib
 import importlib.util
 import io
@@ -313,6 +314,47 @@ class MirrorTests(unittest.TestCase):
         before_noop = run_git(cnb, "rev-parse", "HEAD")
         mirror_merge(cnb, gh)
         self.assertEqual(run_git(cnb, "rev-parse", "HEAD"), before_noop)
+
+
+class FeedHealthTests(unittest.TestCase):
+    NOW = datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc)
+
+    def check(self, feed, published_at):
+        latest = {"tag_name": "v0.1.7", "published_at": published_at, "draft": False, "prerelease": False}
+        def github(path):
+            self.assertEqual(path, "/latest")
+            return latest
+        reads = list(feed) if isinstance(feed, list) else [feed]
+        def opened(url, **kwargs):
+            self.assertEqual(url, mirror.RAW + "/latest.json")
+            self.assertFalse(kwargs.get("authenticated"))
+            body = reads.pop(0)
+            if isinstance(body, Exception):
+                raise body
+            return io.BytesIO(body if isinstance(body, bytes) else json.dumps(body).encode())
+        with patch.object(mirror, "github", side_effect=github), patch.object(mirror, "open_url", side_effect=opened), patch.object(mirror, "api", side_effect=AssertionError("the check must not use the CNB API")), patch.object(mirror.time, "sleep") as slept:
+            self.slept = slept
+            return mirror.check_latest(now=self.NOW)
+
+    def test_feed_check_passes_when_cnb_serves_githubs_latest(self):
+        self.assertIn("v0.1.7", self.check({"tag_name": "v0.1.7"}, "2026-11-20T08:00:00Z"))
+
+    def test_feed_check_tolerates_a_release_younger_than_the_grace_period(self):
+        self.assertIn("v0.1.6", self.check({"tag_name": "v0.1.6"}, "2026-11-23T13:00:00Z"))
+
+    def test_feed_check_alarms_when_cnb_lags_past_the_grace_period(self):
+        with self.assertRaisesRegex(mirror.FeedAlarm, "serves v0.1.6, which differs from GitHub's latest release v0.1.7"):
+            self.check({"tag_name": "v0.1.6"}, "2026-11-23T11:00:00Z")
+
+    def test_feed_check_alarms_distinctly_when_the_cnb_feed_cannot_be_read(self):
+        for broken in (b"<html>sign in</html>", b"[]", urllib.error.URLError("unreachable")):
+            with self.subTest(broken=broken), self.assertRaisesRegex(mirror.FeedAlarm, "could not be read"):
+                self.check([broken] * 3, "2026-11-20T08:00:00Z")
+            self.assertEqual(self.slept.call_count, 2)
+
+    def test_feed_check_retries_a_transient_cnb_failure(self):
+        self.check([urllib.error.URLError("blip"), {"tag_name": "v0.1.7"}], "2026-11-20T08:00:00Z")
+        self.assertEqual(self.slept.call_count, 1)
 
 
 if __name__ == "__main__":
