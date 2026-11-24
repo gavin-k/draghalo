@@ -35,6 +35,8 @@ GitHub 发布流程会等待 CNB 的对应版本记录，再匿名下载 CNB 的
 
 已发布的同一版本不得覆盖安装包。重跑发布流程时，已有 GitHub 文件必须与本次产物完全一致才可复用；重新构建或签名改变文件后，必须增加版本号。镜像网络故障恢复后，可以运行只读的 `Verify release mirrors` 工作流复验，不必重新打包。
 
+`Update feed health` 工作流每 6 小时只读比较一次 CNB 的 `updates/latest.json` 和 GitHub 的最新 Release。GitHub 发布 24 小时后两边仍不一致，或者 CNB 的更新源读不到，就失败并开一个 issue（之后只刷新正文，不再提醒）；下一次通过时自动关闭。本地可以运行 `python3 scripts/sync-cnb-release.py --check-latest`，退出码 3 表示更新源落后或读不到。
+
 应用通过公开 git raw 读取 CNB 清单，因为 CNB API 的 latest 读取需要认证。每 5 分钟是检查间隔，并非完成同步的时限；需要立即启动镜像时，在 CNB main 代码页点击“同步 GitHub 镜像”。无需为 GitHub 创建长期 CNB 令牌。共享出口的 GitHub 匿名限额或源不可达会使本次同步失败并保留旧清单，不代表上游没有更新。
 
 ## 验证入口

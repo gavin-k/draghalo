@@ -1,0 +1,78 @@
+name: Update feed health
+
+# Installed clients ask only CNB for updates, and CNB's feed (updates/latest.json) is filled by a cron mirror on CNB.
+# Every 6 hours this compares that feed with GitHub's latest release. When they still differ 24 hours after the
+# GitHub release, or the feed cannot be read, the job fails and opens one issue; later failing runs only refresh
+# its body, so nobody is notified again. The first passing run closes it. Read-only: no CNB credentials.
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: update-feed-health
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: CNB serves GitHub's latest release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TITLE: CNB update feed lags behind GitHub
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare CNB's update feed with GitHub's latest release
+        id: check
+        run: |
+          set +e
+          python3 scripts/sync-cnb-release.py --check-latest 2>&1 | tee "$RUNNER_TEMP/check.txt"
+          code=${PIPESTATUS[0]}
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          exit "$code"
+
+      # Only the bot's own issue with exactly this title is ever edited or closed.
+      - name: Find the open issue
+        id: issue
+        if: always() && (steps.check.outcome == 'success' || steps.check.outputs.code == '3')
+        run: |
+          number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 200 --json number,title,author \
+            | jq -r --arg t "$TITLE" '[.[] | select(.title == $t and .author.is_bot and (.author.login | test("github-actions")))][0].number // empty')
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+          echo "open issue: ${number:-none}"
+
+      - name: Open the issue, or refresh its body
+        if: always() && steps.check.outputs.code == '3' && steps.issue.outcome == 'success'
+        env:
+          NUMBER: ${{ steps.issue.outputs.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            echo "Installed DropHalo clients check only CNB for updates by default, so they are not being offered GitHub's latest release."
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/check.txt"
+            echo '```'
+            echo
+            echo "Fix it on CNB: open the \`mirror-github-release\` pipeline log in shhield-ai/drophalo, or run its web trigger. Do not tag a new release while this is open."
+            echo
+            echo "Last checked $(date -u '+%Y-%m-%d %H:%M UTC'): $RUN_URL. This issue closes itself after the next passing check."
+          } > "$RUNNER_TEMP/body.md"
+          if [ -n "$NUMBER" ]; then
+            gh issue edit "$NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body-file "$RUNNER_TEMP/body.md"
+          fi
+
+      - name: Close the issue after recovery
+        if: steps.check.outcome == 'success' && steps.issue.outputs.number != ''
+        env:
+          NUMBER: ${{ steps.issue.outputs.number }}
+        run: |
+          gh issue close "$NUMBER" --repo "$GITHUB_REPOSITORY" --comment "Recovered: $(cat "$RUNNER_TEMP/check.txt")"

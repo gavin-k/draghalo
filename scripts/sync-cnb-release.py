@@ -2,6 +2,7 @@
 """Mirror original GitHub assets; a CNB job's short-lived token never leaves the API host."""
 import hashlib
 import argparse
+from datetime import datetime, timezone
 import http.client
 import json
 import os
@@ -341,6 +342,32 @@ def verify(tag, assets_directory=None, wait_seconds=0, *, existing_only=False):
         print(f"{tag}: both update sources have the same six files and SHA-256 hashes")
 
 
+class FeedAlarm(RuntimeError):
+    """CNB's update feed does not serve GitHub's latest release, so installed clients, which ask only CNB, get no update."""
+
+
+def check_latest(now=None, grace_hours=24, attempts=3):
+    """Read-only health check: GitHub's latest release against CNB's public updates/latest.json, by tag."""
+    latest = github("/latest")
+    tag = latest["tag_name"]
+    for attempt in range(attempts):
+        try:
+            with open_url(f"{RAW}/latest.json") as response:
+                served = json.load(response).get("tag_name")
+            break
+        except (OSError, http.client.HTTPException, ValueError, AttributeError) as error:
+            if attempt + 1 == attempts:
+                raise FeedAlarm(f"CNB update feed could not be read ({error!r}); installed clients cannot see any update") from error
+            time.sleep(30)
+    if served == tag:
+        return f"CNB update feed serves {tag}, GitHub's latest release"
+    published = datetime.fromisoformat(latest["published_at"].replace("Z", "+00:00"))
+    hours = int(((now or datetime.now(timezone.utc)) - published).total_seconds() // 3600)
+    if hours < grace_hours:
+        return f"CNB update feed serves {served} while GitHub's latest release {tag} is {hours} h old; within the {grace_hours} h grace period"
+    raise FeedAlarm(f"CNB update feed serves {served}, which differs from GitHub's latest release {tag} published {hours} h ago; installed clients get no update until the CNB mirror syncs")
+
+
 def self_test():
     names = [f"DropHalo-0.1.6-{a}.{k}" for a in ("x64", "arm64") for k in ("msi", "msix")] + ["DropHalo-0.1.6.msixbundle", "SHA256SUMS.txt"]
     fixture = {"tag_name": "v0.1.6", "prerelease": False, "assets": [{"name": n, "size": 100, "browser_download_url": f"https://github.com/{GITHUB}/releases/download/v0.1.6/{n}"} for n in names]}
@@ -363,10 +390,17 @@ if __name__ == "__main__":
         operation = parser.add_mutually_exclusive_group()
         operation.add_argument("--verify", metavar="TAG")
         operation.add_argument("--check-existing", metavar="TAG")
+        operation.add_argument("--check-latest", action="store_true", help="read-only: fail with exit code 3 when CNB's update feed lags GitHub's latest release")
         parser.add_argument("--assets-dir", type=Path)
         parser.add_argument("--wait", type=int, default=0)
         args = parser.parse_args()
-        if args.verify or args.check_existing:
+        if args.check_latest:
+            try:
+                print(check_latest())
+            except FeedAlarm as alarm:
+                print(alarm)
+                sys.exit(3)
+        elif args.verify or args.check_existing:
             verify(args.verify or args.check_existing, args.assets_dir, args.wait, existing_only=bool(args.check_existing))
         else:
             mirror()
